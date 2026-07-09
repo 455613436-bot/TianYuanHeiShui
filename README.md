@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 思源村探案（Siyuan Village Mystery）
 
 > 基于《田原村跑团》设定的 LLM 驱动跑团探案游戏 · Godot 4.6 · 极乐迪斯科风格
@@ -86,3 +87,6 @@ siyuan-mystery/
     ├── wu_zhiyuan.json        # 村长老吴
     └── lin_deshan.json        # 河边老大爷林德山
 ```
+=======
+# TianYuanHeiShui
+>>>>>>> origin/main
