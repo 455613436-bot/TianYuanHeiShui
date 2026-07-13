@@ -53,8 +53,14 @@ func _ready() -> void:
 	LLMService.reply_failed.connect(_on_llm_failed)
 	LLMService.reply_chunk.connect(_on_llm_chunk)
 
+func is_open() -> bool:
+	return state != "closed"
+
+
 
 func open_dialogue(profile: Dictionary) -> void:
+	if is_open():
+		return
 	current_npc = profile
 	history.clear()
 	name_label.text = profile.get("display_name", "???")
@@ -121,7 +127,14 @@ func _request_llm(user_text: String) -> void:
 	state = "waiting_llm"
 	_set_input_enabled(false)
 	_append_history("system", "（%s 正在思考...）" % current_npc.get("short_name", current_npc.get("display_name", "对方")))
-	LLMService.chat(current_npc, history.duplicate(), user_text)
+	var request_history: Array = history.duplicate(true)
+	if not request_history.is_empty() and request_history[-1].get("role", "") == "system":
+		request_history.pop_back()
+	if not request_history.is_empty():
+		var last_entry: Dictionary = request_history[-1]
+		if last_entry.get("role", "") == "user" and last_entry.get("text", "") == user_text:
+			request_history.pop_back()
+	LLMService.chat(current_npc, request_history, user_text)
 	# 兜底超时：无论 Provider 有没有回信号，30 秒后强制恢复输入
 	_start_timeout()
 
@@ -162,6 +175,8 @@ func _on_llm_chunk(npc_id: String, accumulated: String) -> void:
 
 
 func _on_llm_reply(npc_id: String, reply: Dictionary) -> void:
+	if npc_id != current_npc.get("id", ""):
+		return
 	_cancel_timeout()
 	# 允许 waiting_llm（非流式直接完成）和 streaming（打字机完成）两种状态
 	if state != "waiting_llm" and state != "streaming":
@@ -187,7 +202,9 @@ func _on_llm_reply(npc_id: String, reply: Dictionary) -> void:
 	input_edit.grab_focus()
 
 
-func _on_llm_failed(_npc_id: String, error: String) -> void:
+func _on_llm_failed(npc_id: String, error: String) -> void:
+	if npc_id != current_npc.get("id", ""):
+		return
 	_cancel_timeout()
 	if state != "waiting_llm" and state != "streaming":
 		return
@@ -276,3 +293,4 @@ func _set_input_enabled(enabled: bool) -> void:
 	btn_investigate.disabled = not enabled
 	btn_give.disabled = not enabled
 	btn_skill.disabled = not enabled
+	btn_leave.disabled = not enabled

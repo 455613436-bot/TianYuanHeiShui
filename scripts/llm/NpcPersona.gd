@@ -242,41 +242,46 @@ static func _parse_fewshots(section: String, _short_name: String) -> Array:
 	var mode := ""     # "user" | "assistant"
 	var buf: PackedStringArray = []
 
-	var flush := func():
-		if mode == "" or buf.is_empty(): return
-		var text := "\n".join(buf).strip_edges()
-		if text != "":
-			out.append({"role": mode, "content": text})
-		buf = PackedStringArray()
-
 	for raw in lines:
 		var line: String = String(raw)
 		var s := line.strip_edges()
 		if s == "": continue
 		# 玩家行：### 玩家: xxx   或   ### 玩家：xxx
 		if s.begins_with("### 玩家"):
-			flush.call()
+			_append_fewshot(out, mode, buf)
 			mode = "user"
+			buf = PackedStringArray()
 			var body := _after_first_colon(s)
 			if body != "": buf.append(body)
 		# 角色行（任何以 "###" 开头且不是玩家 的情况我们也切）
 		elif s.begins_with("###"):
-			flush.call()
+			_append_fewshot(out, mode, buf)
 			mode = "assistant"
+			buf = PackedStringArray()
 			var body2 := _after_first_colon(s)
 			if body2 != "": buf.append(body2)
 		# 非 ### 开头且包含 "："，可能是角色回复行： "村长: xxx"
 		elif _looks_like_assistant_line(s):
-			flush.call()
+			_append_fewshot(out, mode, buf)
 			mode = "assistant"
+			buf = PackedStringArray()
 			var body3 := _after_first_colon(s)
 			if body3 != "": buf.append(body3)
 		else:
 			# 继续当前段
 			if mode != "": buf.append(line)
 
-	flush.call()
+	_append_fewshot(out, mode, buf)
 	return out
+
+
+## Flush explicitly so the lambda cannot capture a stale mode value.
+static func _append_fewshot(out: Array, mode: String, buf: PackedStringArray) -> void:
+	if mode == "" or buf.is_empty():
+		return
+	var text := "\n".join(buf).strip_edges()
+	if text != "":
+		out.append({"role": mode, "content": text})
 
 
 static func _looks_like_assistant_line(s: String) -> bool:

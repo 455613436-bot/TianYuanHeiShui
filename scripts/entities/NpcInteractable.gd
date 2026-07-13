@@ -73,5 +73,7 @@ func on_player_interact(_player: Node) -> void:
 	if ui == null:
 		push_error("[NPC] 场景中没有 dialogue_ui 组的节点")
 		return
+	if ui.has_method("is_open") and ui.is_open():
+		return
 	if ui.has_method("open_dialogue"):
 		ui.open_dialogue(profile)
