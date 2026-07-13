@@ -295,6 +295,18 @@ offset_bottom = 96.0
 text = "WASD 移动  ·  靠近 NPC 后按 E 对话"
 modulate = Color(0.9, 0.9, 0.7, 1)
 
+
+[node name="ReturnMapButton" type="Button" parent="HUD"]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -214.0
+offset_top = 20.0
+offset_right = -24.0
+offset_bottom = 68.0
+grow_horizontal = 0
+text = "打开地图  M / Esc"
+theme_override_font_sizes/font_size = 18
 ; ─── Dialogue UI ────────────────────────────────────────────────
 [node name="DialogueUI" type="CanvasLayer" parent="."]
 script = ExtResource("4_dialogue")
@@ -306,7 +318,7 @@ anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 0.0
-offset_top = -340.0
+offset_top = -420.0
 offset_right = 0.0
 offset_bottom = 0.0
 grow_horizontal = 2
@@ -365,6 +377,27 @@ size_flags_horizontal = 3
 size_flags_vertical = 3
 bbcode_enabled = true
 scroll_following = true
+
+[node name="ChoiceRow" type="HBoxContainer" parent="DialogueUI/RootPanel/HBox/Center"]
+visible = false
+custom_minimum_size = Vector2(0, 42)
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="Choice1" type="Button" parent="DialogueUI/RootPanel/HBox/Center/ChoiceRow"]
+custom_minimum_size = Vector2(0, 40)
+size_flags_horizontal = 3
+text = "选项一"
+
+[node name="Choice2" type="Button" parent="DialogueUI/RootPanel/HBox/Center/ChoiceRow"]
+custom_minimum_size = Vector2(0, 40)
+size_flags_horizontal = 3
+text = "选项二"
+
+[node name="Choice3" type="Button" parent="DialogueUI/RootPanel/HBox/Center/ChoiceRow"]
+custom_minimum_size = Vector2(0, 40)
+size_flags_horizontal = 3
+text = "选项三"
 
 [node name="InputRow" type="HBoxContainer" parent="DialogueUI/RootPanel/HBox/Center"]
 custom_minimum_size = Vector2(0, 48)

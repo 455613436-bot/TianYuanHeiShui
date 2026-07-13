@@ -20,17 +20,25 @@ extends CanvasLayer
 signal closed
 
 const HISTORY_LIMIT := 20
+const OPENING_REQUEST := "请以角色身份自然地先开口打招呼，并生成适合玩家继续交谈的选项。不要提及这条要求。"
 
 @onready var root_panel: Panel        = $RootPanel
 @onready var name_label: Label        = $RootPanel/HBox/Portrait/NameLabel
 @onready var portrait_rect: ColorRect = $RootPanel/HBox/Portrait/PortraitRect
 @onready var history_label: RichTextLabel = $RootPanel/HBox/Center/History
+@onready var input_row: HBoxContainer = $RootPanel/HBox/Center/InputRow
 @onready var input_edit: LineEdit     = $RootPanel/HBox/Center/InputRow/InputEdit
 @onready var send_btn: Button         = $RootPanel/HBox/Center/InputRow/SendBtn
 @onready var btn_investigate: Button  = $RootPanel/HBox/Actions/Investigate
 @onready var btn_give: Button         = $RootPanel/HBox/Actions/GiveItem
 @onready var btn_skill: Button        = $RootPanel/HBox/Actions/Skill
 @onready var btn_leave: Button        = $RootPanel/HBox/Actions/Leave
+@onready var choice_row: HBoxContainer = $RootPanel/HBox/Center/ChoiceRow
+@onready var choice_buttons: Array[Button] = [
+	$RootPanel/HBox/Center/ChoiceRow/Choice1,
+	$RootPanel/HBox/Center/ChoiceRow/Choice2,
+	$RootPanel/HBox/Center/ChoiceRow/Choice3,
+]
 
 var current_npc: Dictionary = {}
 var history: Array = []   # [{role, text}]
@@ -48,6 +56,9 @@ func _ready() -> void:
 	btn_skill.pressed.connect(func(): _on_action("使用技能"))
 	btn_leave.pressed.connect(_on_leave)
 
+	for button in choice_buttons:
+		button.pressed.connect(_on_choice_pressed.bind(button))
+
 	# 监听 LLMService
 	LLMService.reply_received.connect(_on_llm_reply)
 	LLMService.reply_failed.connect(_on_llm_failed)
@@ -55,6 +66,12 @@ func _ready() -> void:
 
 func is_open() -> bool:
 	return state != "closed"
+
+func _input(event: InputEvent) -> void:
+	if is_open() and event.is_action_pressed("ui_cancel"):
+		get_viewport().set_input_as_handled()
+		close_dialogue()
+
 
 
 
@@ -71,30 +88,14 @@ func open_dialogue(profile: Dictionary) -> void:
 	history_label.clear()
 	root_panel.visible = true
 	_append_history("system", "你走近了「%s」。" % profile.get("display_name", "???"))
-	# 开场不发 API：直接用本地预设台词做破冰，让玩家立刻能输入
-	var greeting := _pick_greeting(profile)
-	if greeting != "":
-		_append_history("npc", greeting)
-	# 直接进入 waiting_player，玩家可以马上打字
+	# 首次见面也交给模型生成 NPC 开场和 2～3 个上下文相关选项。
 	state = "waiting_player"
-	_set_input_enabled(true)
-	input_edit.grab_focus()
-
-
-## 选一句开场招呼：优先 few-shot 里第一条 assistant，其次 fallback_lines
-func _pick_greeting(profile: Dictionary) -> String:
-	var fs: Array = profile.get("fewshots", [])
-	for m in fs:
-		if m.get("role", "") == "assistant":
-			return String(m.get("content", ""))
-	var fbs: Array = profile.get("fallback_lines", [])
-	if not fbs.is_empty():
-		return String(fbs[0])
-	return "……（对方看了你一眼，没说话）"
+	_request_llm(OPENING_REQUEST)
 
 
 func close_dialogue() -> void:
 	root_panel.visible = false
+	_hide_choices()
 	state = "closed"
 	current_npc = {}
 	closed.emit()
@@ -108,12 +109,22 @@ func _set_portrait_letter(c: String) -> void:
 
 
 func _on_send() -> void:
+	_submit_player_text(input_edit.text)
+
+
+func _on_choice_pressed(button: Button) -> void:
+	var choice_text := String(button.get_meta("choice_text", button.text))
+	_submit_player_text(choice_text)
+
+
+func _submit_player_text(raw_text: String) -> void:
 	if state != "waiting_player":
 		return
-	var text := input_edit.text.strip_edges()
+	var text := raw_text.strip_edges()
 	if text == "":
 		return
 	input_edit.text = ""
+	_hide_choices()
 	_append_history("user", text)
 	_request_llm(text)
 
@@ -126,6 +137,7 @@ var _timeout_timer: SceneTreeTimer = null
 func _request_llm(user_text: String) -> void:
 	state = "waiting_llm"
 	_set_input_enabled(false)
+	_hide_choices()
 	_append_history("system", "（%s 正在思考...）" % current_npc.get("short_name", current_npc.get("display_name", "对方")))
 	var request_history: Array = history.duplicate(true)
 	if not request_history.is_empty() and request_history[-1].get("role", "") == "system":
@@ -144,11 +156,12 @@ func _start_timeout() -> void:
 	var t := _timeout_timer
 	t.timeout.connect(func():
 		# 只在等待 API 响应阶段触发；streaming 阶段（打字机在跑）不超时
-		if _timeout_timer == t and state == "waiting_llm":
+		if _timeout_timer == t and state in ["waiting_llm", "streaming"]:
 			_pop_last_system()
 			_append_history("system", "[LLM 超时] %d 秒内未收到 API 响应，请检查网络或 API Key。" % int(LLM_TIMEOUT_SEC))
 			state = "waiting_player"
 			_set_input_enabled(true)
+			_show_choices([])
 			input_edit.grab_focus()
 	)
 
@@ -162,7 +175,6 @@ func _on_llm_chunk(npc_id: String, accumulated: String) -> void:
 	if state != "waiting_llm" and state != "streaming": return
 	# 收到第一个 chunk：取消超时、切到 streaming 状态
 	if state == "waiting_llm":
-		_cancel_timeout()
 		state = "streaming"
 		_pop_last_system()   # 移除"正在思考..."
 	# 更新或插入 npc 气泡
@@ -182,15 +194,18 @@ func _on_llm_reply(npc_id: String, reply: Dictionary) -> void:
 	if state != "waiting_llm" and state != "streaming":
 		return
 	var text: String = reply.get("text", "……")
+	var reply_choices: Variant = reply.get("choices", [])
 	# 把最后一条 streaming 气泡标记为完成，或直接追加
 	if history.size() > 0 and history[-1].get("role", "") == "npc" and history[-1].get("streaming", false):
 		history[-1]["text"] = text
 		history[-1]["streaming"] = false
+		history[-1]["choices"] = reply_choices
 		_redraw_history()
 	else:
 		_pop_last_system()
 		if npc_id == current_npc.get("id", ""):
 			_append_history("npc", text)
+			history[-1]["choices"] = reply_choices
 		else:
 			_append_history("system", "[收到了非当前 NPC 的回复，已忽略]")
 	# 应用 meta
@@ -199,6 +214,7 @@ func _on_llm_reply(npc_id: String, reply: Dictionary) -> void:
 		_apply_meta(meta)
 	state = "waiting_player"
 	_set_input_enabled(true)
+	_show_choices(reply_choices)
 	input_edit.grab_focus()
 
 
@@ -213,6 +229,7 @@ func _on_llm_failed(npc_id: String, error: String) -> void:
 	_append_history("system", "[LLM 错误] %s" % error)
 	state = "waiting_player"
 	_set_input_enabled(true)
+	_show_choices([])
 	input_edit.grab_focus()
 
 
@@ -288,9 +305,49 @@ func _redraw_history() -> void:
 
 
 func _set_input_enabled(enabled: bool) -> void:
+	input_row.visible = true
+	input_edit.visible = true
+	send_btn.visible = true
 	input_edit.editable = enabled
 	send_btn.disabled = not enabled
 	btn_investigate.disabled = not enabled
 	btn_give.disabled = not enabled
 	btn_skill.disabled = not enabled
 	btn_leave.disabled = not enabled
+	for button in choice_buttons:
+		button.disabled = not enabled
+
+
+func _show_choices(raw_choices: Variant) -> void:
+	var choices: Array[String] = []
+	if raw_choices is Array:
+		for item in raw_choices:
+			var choice := String(item).strip_edges()
+			if choice == "" or choices.has(choice):
+				continue
+			choices.append(choice.left(80))
+			if choices.size() >= 3:
+				break
+
+
+	choice_row.visible = not choices.is_empty()
+	for i in range(choice_buttons.size()):
+		var button := choice_buttons[i]
+		var is_visible := i < choices.size()
+		button.visible = is_visible
+		if not is_visible:
+			continue
+		var full_text := choices[i]
+		var display_text := full_text
+		if display_text.length() > 18:
+			display_text = display_text.left(18) + "…"
+		button.text = display_text
+		button.tooltip_text = full_text
+		button.set_meta("choice_text", full_text)
+		button.disabled = false
+
+
+func _hide_choices() -> void:
+	choice_row.visible = false
+	for button in choice_buttons:
+		button.disabled = true

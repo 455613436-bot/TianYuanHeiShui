@@ -12,8 +12,8 @@ config_version=5
 
 config/name="思源村探案"
 config/description="Siyuan Village Mystery - 思源村跑团探案游戏（LLM 驱动 NPC）"
-run/main_scene="res://scenes/main/Main.tscn"
-config/features=PackedStringArray("4.6", "GL Compatibility")
+run/main_scene="res://scenes/map/WorldMap.tscn"
+config/features=PackedStringArray("4.7", "GL Compatibility")
 
 [autoload]
 

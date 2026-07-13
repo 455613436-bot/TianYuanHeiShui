@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/locations/LocationBase.tscn" id="1_base"]
+
+[node name="VillageChiefHouse" instance=ExtResource("1_base")]
+location_number = "3"
+location_name = "村长家"
+location_description = "村长吴志源的住处，也许藏着不愿示人的秘密。"
+accent_color = Color(0.62, 0.28, 0.2, 1)

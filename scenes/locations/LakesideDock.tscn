@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/locations/LocationBase.tscn" id="1_base"]
+
+[node name="LakesideDock" instance=ExtResource("1_base")]
+location_number = "6"
+location_name = "湖边码头"
+location_description = "小船停靠在思源湖边，湖水深处似乎隐藏着什么。"
+accent_color = Color(0.2, 0.42, 0.62, 1)

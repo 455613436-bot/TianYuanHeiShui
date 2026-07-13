@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/locations/LocationBase.tscn" id="1_base"]
+
+[node name="BackMountain" instance=ExtResource("1_base")]
+location_number = "7"
+location_name = "后山入口"
+location_description = "通往密林与山洞的小路，越往里走越令人不安。"
+accent_color = Color(0.25, 0.38, 0.22, 1)

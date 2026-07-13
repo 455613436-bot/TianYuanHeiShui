@@ -15,6 +15,7 @@ signal item_added(item_id: String)
 signal clue_triggered(clue_id: String)
 
 const MAX_POLLUTION := 6
+const DEFAULT_MAP_RETURN_SCENE := "res://scenes/main/Main.tscn"
 
 ## 玩家职业（Phase 1 默认医生，后续可在主菜单选）
 var player_role: String = "medic"
@@ -31,6 +32,9 @@ var inventory: Array[String] = []
 
 ## 已触发线索：{ clue_id: true }
 var clues: Dictionary = {}
+
+## 打开大地图前所在的场景；用于 M / Esc 关闭地图后返回。
+var map_return_scene_path: String = DEFAULT_MAP_RETURN_SCENE
 
 func add_pollution(amount: int = 1) -> void:
 	pollution = clamp(pollution + amount, 0, MAX_POLLUTION)
@@ -67,6 +71,12 @@ func trigger_clue(clue_id: String) -> void:
 
 func has_clue(clue_id: String) -> bool:
 	return clues.has(clue_id)
+
+
+func remember_map_return_scene(scene_path: String) -> void:
+	if scene_path.is_empty() or scene_path == "res://scenes/map/WorldMap.tscn":
+		return
+	map_return_scene_path = scene_path
 
 ## 给 LLM 的 prompt 用：把当前世界状态摘要成一段自然语言
 func summary_for_llm() -> String:

@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/locations/LocationBase.tscn" id="1_base"]
+
+[node name="ConstructionSite" instance=ExtResource("1_base")]
+location_number = "4"
+location_name = "旧工地"
+location_description = "停工多年的施工区域，事故留下的痕迹仍未消失。"
+accent_color = Color(0.72, 0.53, 0.2, 1)

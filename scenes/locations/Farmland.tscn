@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/locations/LocationBase.tscn" id="1_base"]
+
+[node name="Farmland" instance=ExtResource("1_base")]
+location_number = "5"
+location_name = "北侧农田"
+location_description = "受到村民精心照料的田地，作物生长得异常旺盛。"
+accent_color = Color(0.34, 0.56, 0.22, 1)

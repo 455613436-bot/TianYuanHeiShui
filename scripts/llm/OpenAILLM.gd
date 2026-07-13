@@ -89,17 +89,16 @@ func _on_completed(result: int, response_code: int, body: PackedByteArray, npc_i
 		service.deliver_failure(npc_id, "响应缺少 choices 字段: " + text.substr(0, 200))
 		return
 
-	var content: String = String(choices[0].get("message", {}).get("content", "")).strip_edges()
-	if content == "":
-		content = "……"
-
-	# 通过 deliver_chunk 模拟打字机效果（分段逐步发送）
-	_emit_typewriter(npc_id, content, service)
+	var raw_content: String = String(choices[0].get("message", {}).get("content", "")).strip_edges()
+	var model_reply := _parse_model_reply(raw_content)
+	# 只对 NPC 正文做打字机效果，选项在正文完成后一起交给 UI。
+	_emit_typewriter_stable(npc_id, model_reply, service)
 
 
 ## 把完整 content 分段发给 UI，制造逐字打字机效果
 ## 每 40ms 发一段（约 8 字），让玩家感觉字在"流"出来
-func _emit_typewriter(npc_id: String, content: String, service: Node) -> void:
+func _emit_typewriter(npc_id: String, reply: Dictionary, service: Node) -> void:
+	var content: String = String(reply.get("text", "……"))
 	var chunk_size: int = 8
 	var interval_ms: int = 40
 	var total: int = content.length()
@@ -109,9 +108,9 @@ func _emit_typewriter(npc_id: String, content: String, service: Node) -> void:
 
 	var step: Callable = func():
 		if ctx["i"] >= total:
-			service.deliver_reply(npc_id, {
-				"text": content, "meta": {}, "npc_id": npc_id,
-			})
+			reply["meta"] = {}
+			reply["npc_id"] = npc_id
+			service.deliver_reply(npc_id, reply)
 			return
 		ctx["i"] = mini(int(ctx["i"]) + chunk_size, total)
 		service.deliver_chunk(npc_id, content.substr(0, int(ctx["i"])))
@@ -124,6 +123,26 @@ func _emit_typewriter(npc_id: String, content: String, service: Node) -> void:
 	t0.timeout.connect(ctx["fn"])
 
 
+func _emit_typewriter_stable(npc_id: String, reply: Dictionary, service: Node) -> void:
+	var content: String = String(reply.get("text", "……"))
+	var chunk_size := 8
+	var total := content.length()
+	if total == 0:
+		content = "……"
+		total = content.length()
+	for end_index in range(chunk_size, total + chunk_size, chunk_size):
+		await get_tree().create_timer(0.04).timeout
+		if not is_instance_valid(service):
+			return
+		var visible_length := mini(end_index, total)
+		service.deliver_chunk(npc_id, content.substr(0, visible_length))
+		if visible_length >= total:
+			break
+	reply["meta"] = {}
+	reply["npc_id"] = npc_id
+	service.deliver_reply(npc_id, reply)
+
+
 func _build_messages(profile: Dictionary, history: Array, user_text: String) -> Array:
 	var messages: Array = []
 
@@ -131,6 +150,7 @@ func _build_messages(profile: Dictionary, history: Array, user_text: String) -> 
 	var sys_prompt: String = String(profile.get("system_prompt", ""))
 	if sys_prompt == "":
 		sys_prompt = "你是 %s，请始终保持角色扮演，用角色的语气回复，简洁口语化。" % profile.get("display_name", "?")
+	sys_prompt += "\n\n【强制输出格式】只输出一个合法 JSON 对象，不要输出 Markdown 代码块或额外文字。格式为：{\"text\":\"NPC 的回复正文\",\"choices\":[\"玩家可说的选项1\",\"玩家可说的选项2\",\"玩家可说的选项3\"]}。choices 必须提供 2～3 个贴合当前最新回复、含义不同、可以直接由玩家说出口的简短选项；不要替玩家决定行动结果。参考历史中已经出现过的 choices，本轮禁止原样重复旧选项。"
 	messages.append({"role": "system", "content": sys_prompt})
 
 	# 2. few-shot 样例（最多取前 6 对，控制 prompt 长度）
@@ -138,8 +158,11 @@ func _build_messages(profile: Dictionary, history: Array, user_text: String) -> 
 	var fs_limit: int = mini(fs.size(), 12)   # 6 对 = 12 条消息
 	for i in range(fs_limit):
 		var m: Dictionary = fs[i]
-		messages.append({"role": m.get("role", "user"), "content": m.get("content", "")})
-
+		var role := String(m.get("role", "user"))
+		var content := String(m.get("content", ""))
+		if role == "assistant":
+			content = JSON.stringify({"text": content, "choices": _collect_fewshot_choices(fs, i)})
+		messages.append({"role": role, "content": content})
 	# 3. 对话历史
 	for entry in history:
 		var role: String = entry.get("role", "")
@@ -147,12 +170,59 @@ func _build_messages(profile: Dictionary, history: Array, user_text: String) -> 
 		if t == "": continue
 		match role:
 			"user":  messages.append({"role": "user",      "content": t})
-			"npc":   messages.append({"role": "assistant", "content": t})
+			"npc":
+				var previous_choices: Variant = entry.get("choices", [])
+				messages.append({"role": "assistant", "content": JSON.stringify({"text": t, "choices": previous_choices})})
 			_:       pass  # system 提示不进 LLM context
 
 	# 4. 当前输入
 	messages.append({"role": "user", "content": user_text})
 	return messages
+
+
+
+func _parse_model_reply(raw_content: String) -> Dictionary:
+	var fallback_text := raw_content.strip_edges()
+	if fallback_text == "":
+		fallback_text = "……"
+	var json_text := fallback_text
+	var json_start := json_text.find("{")
+	var json_end := json_text.rfind("}")
+	if json_start >= 0 and json_end > json_start:
+		json_text = json_text.substr(json_start, json_end - json_start + 1)
+
+	var parsed = JSON.parse_string(json_text)
+	if typeof(parsed) == TYPE_DICTIONARY:
+		var reply_text := String(parsed.get("text", "")).strip_edges()
+		if reply_text == "":
+			reply_text = fallback_text
+		var parsed_choices: Array[String] = []
+		var raw_choices: Variant = parsed.get("choices", [])
+		if raw_choices is Array:
+			for item in raw_choices:
+				var choice := String(item).strip_edges()
+				if choice == "" or parsed_choices.has(choice):
+					continue
+				parsed_choices.append(choice.left(80))
+				if parsed_choices.size() >= 3:
+					break
+		return {"text": reply_text, "choices": parsed_choices}
+
+	return {"text": fallback_text, "choices": []}
+
+
+func _collect_fewshot_choices(fewshots: Array, assistant_index: int) -> Array[String]:
+	var result: Array[String] = []
+	if fewshots.is_empty(): return result
+	for offset in range(1, fewshots.size() + 1):
+		var index := (assistant_index + offset) % fewshots.size()
+		var candidate: Dictionary = fewshots[index]
+		if candidate.get("role", "") != "user": continue
+		var choice := String(candidate.get("content", "")).strip_edges()
+		if choice == "" or result.has(choice): continue
+		result.append(choice.left(80))
+		if result.size() >= 3: break
+	return result
 
 
 static func _truncate(s: String, n: int) -> String:

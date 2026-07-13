@@ -1,0 +1,115 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/map/WorldMap.gd" id="1_map"]
+[ext_resource type="Texture2D" path="res://assets/maps/tianyuan_village_map.jpg" id="2_texture"]
+
+[node name="WorldMap" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_map")
+
+[node name="Backdrop" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.035, 0.045, 0.04, 1)
+
+[node name="MapTexture" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("2_texture")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="TopShade" type="ColorRect" parent="."]
+z_index = 10
+layout_mode = 1
+anchors_preset = 10
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -220.0
+offset_right = 220.0
+offset_bottom = 92.0
+grow_horizontal = 2
+mouse_filter = 2
+color = Color(0.02, 0.025, 0.02, 0.76)
+
+[node name="Title" type="Label" parent="TopShade"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_top = 10.0
+offset_bottom = 52.0
+grow_horizontal = 2
+text = "田原村地图"
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(1, 0.91, 0.65, 1)
+theme_override_font_sizes/font_size = 30
+
+[node name="Subtitle" type="Label" parent="TopShade"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_top = 50.0
+offset_bottom = 82.0
+grow_horizontal = 2
+text = "悬停查看 · 点击前往 · M/Esc 返回"
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(0.88, 0.88, 0.8, 1)
+theme_override_font_sizes/font_size = 17
+
+[node name="BottomPanel" type="Panel" parent="."]
+z_index = 10
+layout_mode = 1
+anchors_preset = 12
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 180.0
+offset_top = -126.0
+offset_right = -180.0
+offset_bottom = -18.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="LocationLabel" type="Label" parent="BottomPanel"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 18.0
+offset_top = 12.0
+offset_right = -18.0
+offset_bottom = 48.0
+grow_horizontal = 2
+text = "选择一个地点"
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(1, 0.88, 0.55, 1)
+theme_override_font_sizes/font_size = 24
+
+[node name="HintLabel" type="Label" parent="BottomPanel"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 24.0
+offset_top = 52.0
+offset_right = -24.0
+offset_bottom = 94.0
+grow_horizontal = 2
+text = "移动鼠标查看地点 · 点击进入"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+theme_override_colors/font_color = Color(0.84, 0.84, 0.78, 1)
+theme_override_font_sizes/font_size = 16

@@ -18,7 +18,8 @@ func generate(npc_profile: Dictionary, _history: Array, user_text: String, servi
 
 	var npc_id: String = String(npc_profile.get("id", "?"))
 	var text := _pick_reply(npc_profile, user_text)
-	service.deliver_reply(npc_id, {"text": text, "meta": {}, "npc_id": npc_id})
+	var choices := _build_choices(npc_profile, user_text)
+	service.deliver_reply(npc_id, {"text": text, "choices": choices, "meta": {}, "npc_id": npc_id})
 
 
 func _pick_reply(profile: Dictionary, user_text: String) -> String:
@@ -57,3 +58,17 @@ static func _similar(a: String, b: String) -> bool:
 	var pref_a := a.substr(0, n)
 	var pref_b := b.substr(0, n)
 	return a.contains(pref_b) or b.contains(pref_a)
+
+
+func _build_choices(profile: Dictionary, user_text: String) -> Array[String]:
+	var result: Array[String] = []
+	var fewshots: Array = profile.get("fewshots", [])
+	for message in fewshots:
+		if message.get("role", "") != "user": continue
+		var choice := String(message.get("content", "")).strip_edges()
+		if choice != "" and choice != user_text and not result.has(choice):
+			result.append(choice.left(80))
+		if result.size() >= 3:
+			break
+
+	return result
