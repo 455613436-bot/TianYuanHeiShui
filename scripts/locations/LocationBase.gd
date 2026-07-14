@@ -9,6 +9,7 @@ const MAP_SCENE := "res://scenes/map/WorldMap.tscn"
 @export var background_texture: Texture2D
 @export var accent_color: Color = Color(0.45, 0.58, 0.36)
 
+@onready var content_panel: Panel = $Content
 @onready var number_label: Label = $Content/NumberLabel
 @onready var title_label: Label = $Content/TitleLabel
 @onready var description_label: Label = $Content/DescriptionLabel
@@ -18,6 +19,8 @@ const MAP_SCENE := "res://scenes/map/WorldMap.tscn"
 
 
 func _ready() -> void:
+	resized.connect(_apply_responsive_layout)
+	GameState.restore_current_scene()
 	background.texture = background_texture
 	background.visible = background_texture != null
 	number_label.text = location_number
@@ -26,21 +29,23 @@ func _ready() -> void:
 	accent.color = accent_color
 	return_button.pressed.connect(_open_map)
 	return_button.grab_focus()
+	call_deferred("_apply_responsive_layout")
 
 
-func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("ui_cancel") or _is_map_shortcut(event):
-		get_viewport().set_input_as_handled()
-		_open_map()
-
-
-func _is_map_shortcut(event: InputEvent) -> bool:
-	return event is InputEventKey and event.pressed and not event.echo \
-		and (event.keycode == KEY_M or event.physical_keycode == KEY_M)
-
+func _apply_responsive_layout() -> void:
+	if size.x <= 0.0 or size.y <= 0.0:
+		return
+	var safe_margin := clampf(size.x * 0.06, 16.0, 64.0)
+	var panel_width := minf(780.0, size.x - safe_margin * 2.0)
+	var panel_height := minf(440.0, size.y - 120.0)
+	content_panel.offset_left = -panel_width * 0.5
+	content_panel.offset_right = panel_width * 0.5
+	content_panel.offset_top = -panel_height * 0.5
+	content_panel.offset_bottom = panel_height * 0.5
+	return_button.offset_left = -minf(214.0, size.x * 0.42)
+	return_button.offset_right = -safe_margin
+	return_button.offset_top = safe_margin
+	return_button.offset_bottom = safe_margin + 52.0
 
 func _open_map() -> void:
-	var current_scene := get_tree().current_scene
-	if current_scene != null:
-		GameState.remember_map_return_scene(current_scene.scene_file_path)
-	get_tree().change_scene_to_file(MAP_SCENE)
+	InputManager.request_open_map()

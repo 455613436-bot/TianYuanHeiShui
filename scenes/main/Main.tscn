@@ -378,7 +378,7 @@ size_flags_vertical = 3
 bbcode_enabled = true
 scroll_following = true
 
-[node name="ChoiceRow" type="HBoxContainer" parent="DialogueUI/RootPanel/HBox/Center"]
+[node name="ChoiceRow" type="HFlowContainer" parent="DialogueUI/RootPanel/HBox/Center"]
 visible = false
 custom_minimum_size = Vector2(0, 42)
 size_flags_horizontal = 3
@@ -399,6 +399,11 @@ custom_minimum_size = Vector2(0, 40)
 size_flags_horizontal = 3
 text = "选项三"
 
+[node name="RegenerateChoices" type="Button" parent="DialogueUI/RootPanel/HBox/Center/ChoiceRow"]
+custom_minimum_size = Vector2(112, 40)
+text = "重新生成选项"
+tooltip_text = "只重新生成对话选项，不追加 NPC 正文"
+
 [node name="InputRow" type="HBoxContainer" parent="DialogueUI/RootPanel/HBox/Center"]
 custom_minimum_size = Vector2(0, 48)
 size_flags_horizontal = 3
@@ -415,6 +420,12 @@ placeholder_text = "对 NPC 说点什么... (Enter 发送)"
 custom_minimum_size = Vector2(96, 44)
 size_flags_vertical = 4
 text = "发送"
+
+[node name="RetryBtn" type="Button" parent="DialogueUI/RootPanel/HBox/Center/InputRow"]
+visible = false
+custom_minimum_size = Vector2(80, 44)
+size_flags_vertical = 4
+text = "重试"
 
 [node name="Actions" type="VBoxContainer" parent="DialogueUI/RootPanel/HBox"]
 custom_minimum_size = Vector2(160, 0)

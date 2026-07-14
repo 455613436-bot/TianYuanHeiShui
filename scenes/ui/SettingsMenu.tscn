@@ -1,0 +1,163 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/SettingsMenu.gd" id="1_settings"]
+
+[node name="SettingsMenu" type="CanvasLayer"]
+layer = 100
+process_mode = 3
+script = ExtResource("1_settings")
+
+[node name="Dimmer" type="ColorRect" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+color = Color(0.015, 0.02, 0.018, 0.9)
+
+[node name="Panel" type="PanelContainer" parent="Dimmer"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -330.0
+offset_top = -290.0
+offset_right = 330.0
+offset_bottom = 290.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="Dimmer/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="Dimmer/Panel/VBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 56)
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 30
+
+[node name="Separator1" type="HSeparator" parent="Dimmer/Panel/VBox"]
+layout_mode = 2
+
+[node name="Options" type="GridContainer" parent="Dimmer/Panel/VBox"]
+layout_mode = 2
+columns = 2
+theme_override_constants/h_separation = 16
+theme_override_constants/v_separation = 12
+
+[node name="ResolutionLabel" type="Label" parent="Dimmer/Panel/VBox/Options"]
+layout_mode = 2
+custom_minimum_size = Vector2(150, 44)
+vertical_alignment = 1
+
+[node name="ResolutionOption" type="OptionButton" parent="Dimmer/Panel/VBox/Options"]
+layout_mode = 2
+custom_minimum_size = Vector2(280, 44)
+size_flags_horizontal = 3
+
+[node name="ModeLabel" type="Label" parent="Dimmer/Panel/VBox/Options"]
+layout_mode = 2
+custom_minimum_size = Vector2(150, 44)
+vertical_alignment = 1
+
+[node name="ModeOption" type="OptionButton" parent="Dimmer/Panel/VBox/Options"]
+layout_mode = 2
+custom_minimum_size = Vector2(280, 44)
+size_flags_horizontal = 3
+
+[node name="ApplyButton" type="Button" parent="Dimmer/Panel/VBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 46)
+
+[node name="Separator2" type="HSeparator" parent="Dimmer/Panel/VBox"]
+layout_mode = 2
+
+[node name="SaveLoadRow" type="HBoxContainer" parent="Dimmer/Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="SaveButton" type="Button" parent="Dimmer/Panel/VBox/SaveLoadRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 52)
+size_flags_horizontal = 3
+
+[node name="LoadButton" type="Button" parent="Dimmer/Panel/VBox/SaveLoadRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 52)
+size_flags_horizontal = 3
+
+[node name="StatusLabel" type="Label" parent="Dimmer/Panel/VBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 58)
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="HintLabel" type="Label" parent="Dimmer/Panel/VBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 48)
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+modulate = Color(0.75, 0.78, 0.72, 1)
+
+[node name="CloseButton" type="Button" parent="Dimmer/Panel/VBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 48)
+
+[node name="SaveDialog" type="ColorRect" parent="."]
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+color = Color(0.005, 0.008, 0.007, 0.92)
+
+[node name="Panel" type="PanelContainer" parent="SaveDialog"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -390.0
+offset_top = -330.0
+offset_right = 390.0
+offset_bottom = 330.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="SaveDialog/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Title" type="Label" parent="SaveDialog/Panel/VBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 52)
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 26
+
+[node name="Separator" type="HSeparator" parent="SaveDialog/Panel/VBox"]
+layout_mode = 2
+
+[node name="SlotList" type="VBoxContainer" parent="SaveDialog/Panel/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+
+[node name="Status" type="Label" parent="SaveDialog/Panel/VBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 46)
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="CloseButton" type="Button" parent="SaveDialog/Panel/VBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 48)

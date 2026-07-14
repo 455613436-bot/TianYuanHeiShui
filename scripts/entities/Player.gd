@@ -13,6 +13,29 @@ const INTERACT_ACTION := "interact"
 ## 当前可交互的 NPC（None 表示玩家不在任何 NPC 触发区内）
 var current_npc: Node = null
 
+func _ready() -> void:
+	add_to_group("player")
+	add_to_group("persistent_scene_state")
+
+
+func get_persistent_id() -> String:
+	return "player"
+
+
+func capture_scene_state() -> Dictionary:
+	return {"position": [global_position.x, global_position.y]}
+
+
+func restore_scene_state(saved_state: Dictionary) -> void:
+	var saved_position: Variant = saved_state.get("position", [])
+	if saved_position is not Array or saved_position.size() < 2:
+		return
+	var x: Variant = saved_position[0]
+	var y: Variant = saved_position[1]
+	if (x is int or x is float) and (y is int or y is float):
+		global_position = Vector2(float(x), float(y))
+
+
 
 func _physics_process(_delta: float) -> void:
 	if _is_dialogue_open():

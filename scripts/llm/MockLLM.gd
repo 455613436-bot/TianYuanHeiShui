@@ -11,15 +11,25 @@ extends Node
 const THINKING_DELAY_MS_MIN := 500
 const THINKING_DELAY_MS_MAX := 1200
 
+var _cancelled_requests: Dictionary = {}
 
-func generate(npc_profile: Dictionary, _history: Array, user_text: String, service: Node) -> void:
+
+func generate(request_id: int, npc_profile: Dictionary, _history: Array, user_text: String, service: Node) -> void:
+	if _cancelled_requests.erase(request_id) or not is_instance_valid(service) or not service.is_request_active(request_id):
+		return
 	var delay_ms := randi_range(THINKING_DELAY_MS_MIN, THINKING_DELAY_MS_MAX)
 	await get_tree().create_timer(delay_ms / 1000.0).timeout
+	if not is_instance_valid(service) or not service.is_request_active(request_id):
+		return
 
 	var npc_id: String = String(npc_profile.get("id", "?"))
 	var text := _pick_reply(npc_profile, user_text)
 	var choices := _build_choices(npc_profile, user_text)
-	service.deliver_reply(npc_id, {"text": text, "choices": choices, "meta": {}, "npc_id": npc_id})
+	service.deliver_reply(request_id, npc_id, {"text": text, "choices": choices, "meta": {}, "npc_id": npc_id})
+
+
+func cancel_request(request_id: int) -> void:
+	_cancelled_requests[request_id] = true
 
 
 func _pick_reply(profile: Dictionary, user_text: String) -> String:
@@ -60,15 +70,15 @@ static func _similar(a: String, b: String) -> bool:
 	return a.contains(pref_b) or b.contains(pref_a)
 
 
-func _build_choices(profile: Dictionary, user_text: String) -> Array[String]:
+func _build_choices(_profile: Dictionary, user_text: String) -> Array[String]:
+	# Mock 只提供安全的通用选项，不再把人设 few-shot 中的未来提问泄露给玩家。
+	var candidates: Array[String] = [
+		"这件事能再说详细一点吗？",
+		"为什么你会这么认为？",
+		"后来又发生了什么？",
+	]
 	var result: Array[String] = []
-	var fewshots: Array = profile.get("fewshots", [])
-	for message in fewshots:
-		if message.get("role", "") != "user": continue
-		var choice := String(message.get("content", "")).strip_edges()
-		if choice != "" and choice != user_text and not result.has(choice):
-			result.append(choice.left(80))
-		if result.size() >= 3:
-			break
-
+	for choice in candidates:
+		if choice != user_text:
+			result.append(choice)
 	return result

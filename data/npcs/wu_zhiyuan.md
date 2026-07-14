@@ -4,7 +4,9 @@ display_name: 村长 吴志源
 short_name: 村长老吴
 style_hint: 热情爽朗、慈眉善目、笑容满面、说话带乡音
 portrait_letter: 村
-model:
+choice_forbidden_terms: [iPhone, iphone, AI, 人工智能, ChatGPT, 提示词, 大模型]
+choice_locks:
+  wu_hides_gun: [保险柜, 猎枪, 枪, 武器]model:
   temperature: 0.85
   max_tokens: 320
 triggers:

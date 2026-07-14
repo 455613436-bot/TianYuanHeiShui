@@ -58,6 +58,8 @@ const LOCATIONS := [
 	},
 ]
 
+@onready var bottom_panel: Panel = $BottomPanel
+@onready var top_shade: ColorRect = $TopShade
 @onready var location_label: Label = $BottomPanel/LocationLabel
 @onready var hint_label: Label = $BottomPanel/HintLabel
 
@@ -65,19 +67,14 @@ var _hotspots: Array[Button] = []
 
 
 func _ready() -> void:
+	add_to_group("world_map")
+	GameState.restore_current_scene()
 	for location in LOCATIONS:
 		_create_hotspot(location)
-	resized.connect(_layout_hotspots)
-	call_deferred("_layout_hotspots")
+	resized.connect(_on_resized)
+	call_deferred("_on_resized")
 	location_label.text = "选择一个地点"
 	hint_label.text = "移动鼠标查看地点 · 点击进入"
-
-func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("ui_cancel") or _is_map_shortcut(event):
-		get_viewport().set_input_as_handled()
-		_close_map()
-
-
 
 func _create_hotspot(location: Dictionary) -> void:
 	var button := Button.new()
@@ -116,6 +113,29 @@ func _make_hotspot_style(background: Color, border: Color, width: int = 3) -> St
 	return style
 
 
+func _on_resized() -> void:
+	_apply_responsive_layout()
+	_layout_hotspots()
+
+
+func _apply_responsive_layout() -> void:
+	if size.x <= 0.0 or size.y <= 0.0:
+		return
+	var safe_margin := clampf(size.x * 0.08, 16.0, 180.0)
+	bottom_panel.offset_left = safe_margin
+	bottom_panel.offset_right = -safe_margin
+	bottom_panel.offset_bottom = -clampf(size.y * 0.025, 12.0, 24.0)
+	bottom_panel.offset_top = bottom_panel.offset_bottom - clampf(size.y * 0.15, 96.0, 126.0)
+	var top_half_width := minf(220.0, size.x * 0.45)
+	top_shade.offset_left = -top_half_width
+	top_shade.offset_right = top_half_width
+	var hotspot_diameter := clampf(minf(size.x, size.y) * 0.105, 52.0, 82.0)
+	for button in _hotspots:
+		button.custom_minimum_size = Vector2.ONE * hotspot_diameter
+		button.size = Vector2.ONE * hotspot_diameter
+		button.pivot_offset = button.size * 0.5
+		button.add_theme_font_size_override("font_size", int(clampf(hotspot_diameter * 0.34, 18.0, 28.0)))
+
 func _layout_hotspots() -> void:
 	if size.x <= 0.0 or size.y <= 0.0:
 		return
@@ -124,7 +144,7 @@ func _layout_hotspots() -> void:
 	var map_origin := (size - displayed_size) * 0.5
 	for button in _hotspots:
 		var normalized_position: Vector2 = button.get_meta("map_position")
-		button.position = map_origin + normalized_position * displayed_size - HOTSPOT_SIZE * 0.5
+		button.position = map_origin + normalized_position * displayed_size - button.size * 0.5
 
 
 func _on_hotspot_entered(button: Button, location: Dictionary) -> void:
@@ -139,24 +159,23 @@ func _on_hotspot_exited(button: Button) -> void:
 	hint_label.text = "移动鼠标查看地点 · 点击进入"
 
 
-func _is_map_shortcut(event: InputEvent) -> bool:
-	return event is InputEventKey and event.pressed and not event.echo \
-		and (event.keycode == KEY_M or event.physical_keycode == KEY_M)
+func is_ui_open() -> bool:
+	return true
+
+
+func close_top_ui() -> void:
+	_close_map()
 
 
 func _close_map() -> void:
-	var return_scene := GameState.map_return_scene_path
-	if return_scene.is_empty() or return_scene == scene_file_path:
-		return_scene = DEFAULT_RETURN_SCENE
-	var error := get_tree().change_scene_to_file(return_scene)
+	var error := GameState.close_world_map()
 	if error != OK:
 		location_label.text = "无法关闭地图"
 		hint_label.text = "返回场景加载失败：%s" % error_string(error)
 
-
 func _enter_location(location: Dictionary) -> void:
 	var scene_path := String(location["scene"])
-	var error := get_tree().change_scene_to_file(scene_path)
+	var error := GameState.enter_location(scene_path)
 	if error != OK:
 		location_label.text = "无法进入 %s" % location["name"]
 		hint_label.text = "场景加载失败：%s" % error_string(error)

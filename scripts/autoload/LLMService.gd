@@ -8,15 +8,17 @@ extends Node
 ##
 ## Provider 只负责生成 text，返回时 LLMService 会在 emit 之前合并 meta。
 
-signal reply_received(npc_id: String, reply: Dictionary)
-signal reply_failed(npc_id: String, error: String)
-signal reply_chunk(npc_id: String, accumulated_text: String)
+signal reply_received(request_id: int, session_id: int, npc_id: String, reply: Dictionary)
+signal reply_failed(request_id: int, session_id: int, npc_id: String, error: String)
+signal reply_chunk(request_id: int, session_id: int, npc_id: String, accumulated_text: String)
+signal request_cancelled(request_id: int, session_id: int, npc_id: String)
 
 const MockLLMScript := preload("res://scripts/llm/MockLLM.gd")
 
 var _provider: Node = null
 
 ## 当前正在进行的会话上下文：npc_id -> {profile, user_text}
+var _next_request_id: int = 1
 ## 用于在收到 provider 回复时能查回 triggers 计算 meta
 var _inflight: Dictionary = {}
 
@@ -31,6 +33,7 @@ func _ready() -> void:
 
 
 func set_provider(provider: Node) -> void:
+	cancel_all_requests()
 	if _provider:
 		_provider.queue_free()
 	_provider = provider
@@ -40,14 +43,24 @@ func set_provider(provider: Node) -> void:
 
 
 ## 由 DialogueUI 调用
-func chat(npc_profile: Dictionary, history: Array, user_text: String) -> void:
-	if _provider == null:
-		reply_failed.emit(npc_profile.get("id", "?"), "no provider")
-		return
+func chat(npc_profile: Dictionary, history: Array, user_text: String, session_id: int = 0, purpose: String = "dialogue") -> int:
 	var npc_id: String = String(npc_profile.get("id", "?"))
 	# 记录本轮的上下文，用于收到 Provider 回复时合并 meta
-	_inflight[npc_id] = {"profile": npc_profile, "user_text": user_text}
-	_provider.generate(npc_profile, history, user_text, self)
+	var request_id := _next_request_id
+	_next_request_id += 1
+	_inflight[request_id] = {
+		"session_id": session_id,
+		"npc_id": npc_id,
+		"profile": npc_profile,
+		"user_text": user_text,
+		"purpose": purpose,
+	}
+	if _provider == null:
+		call_deferred("deliver_failure", request_id, npc_id, "no provider")
+		return request_id
+	# Deferred dispatch lets the caller store request_id before a provider can reply.
+	_provider.call_deferred("generate", request_id, npc_profile, history, user_text, self)
+	return request_id
 
 
 ## 覆盖 Node.emit_signal 无用，我们自己拦截 Provider 的信号发送
@@ -63,9 +76,13 @@ func chat(npc_profile: Dictionary, history: Array, user_text: String) -> void:
 ## 我用一个更简单的方案：在这个类内定义一个 relay 方法给 Provider 调。
 ## 修改 Provider：把 service.reply_received.emit(...) 改为 service.deliver_reply(...)
 
-func deliver_reply(npc_id: String, reply: Dictionary) -> void:
-	var ctx: Dictionary = _inflight.get(npc_id, {})
-	_inflight.erase(npc_id)
+func deliver_reply(request_id: int, npc_id: String, reply: Dictionary) -> void:
+	if not _inflight.has(request_id):
+		return
+	var ctx: Dictionary = _inflight[request_id]
+	if String(ctx.get("npc_id", "")) != npc_id:
+		return
+	_inflight.erase(request_id)
 	var final_meta: Dictionary = _compute_meta(ctx.get("profile", {}), ctx.get("user_text", ""))
 	# 合并（Provider 也可能自己带 meta，Mock 就带；真 LLM 不带）
 	var provider_meta: Dictionary = reply.get("meta", {})
@@ -73,16 +90,45 @@ func deliver_reply(npc_id: String, reply: Dictionary) -> void:
 		if not final_meta.has(k) or final_meta[k] == "" or final_meta[k] == 0:
 			final_meta[k] = provider_meta[k]
 	reply["meta"] = final_meta
-	reply_received.emit(npc_id, reply)
+	reply_received.emit(request_id, int(ctx.get("session_id", 0)), npc_id, reply)
 
 
-func deliver_chunk(npc_id: String, accumulated_text: String) -> void:
-	reply_chunk.emit(npc_id, accumulated_text)
+func deliver_chunk(request_id: int, npc_id: String, accumulated_text: String) -> void:
+	if not _inflight.has(request_id):
+		return
+	var ctx: Dictionary = _inflight[request_id]
+	if String(ctx.get("npc_id", "")) != npc_id:
+		return
+	reply_chunk.emit(request_id, int(ctx.get("session_id", 0)), npc_id, accumulated_text)
 
 
-func deliver_failure(npc_id: String, error: String) -> void:
-	_inflight.erase(npc_id)
-	reply_failed.emit(npc_id, error)
+func deliver_failure(request_id: int, npc_id: String, error: String) -> void:
+	if not _inflight.has(request_id):
+		return
+	var ctx: Dictionary = _inflight[request_id]
+	if String(ctx.get("npc_id", "")) != npc_id:
+		return
+	_inflight.erase(request_id)
+	reply_failed.emit(request_id, int(ctx.get("session_id", 0)), npc_id, error)
+
+
+func cancel_request(request_id: int) -> void:
+	if not _inflight.has(request_id):
+		return
+	var ctx: Dictionary = _inflight[request_id]
+	_inflight.erase(request_id)
+	if _provider != null and _provider.has_method("cancel_request"):
+		_provider.cancel_request(request_id)
+	request_cancelled.emit(request_id, int(ctx.get("session_id", 0)), String(ctx.get("npc_id", "")))
+
+
+func cancel_all_requests() -> void:
+	for request_id in _inflight.keys().duplicate():
+		cancel_request(int(request_id))
+
+
+func is_request_active(request_id: int) -> bool:
+	return _inflight.has(request_id)
 
 
 ## 根据 profile.triggers 对 user_text 做关键词匹配，聚合所有命中项的 meta

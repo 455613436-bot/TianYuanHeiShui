@@ -9,18 +9,20 @@ extends Node2D
 @export_file("*.json") var npc_json_path: String = ""
 
 var profile: Dictionary = {}
+var dialogue_stage: int = 0
 @onready var prompt_label: Label = $PromptLabel if has_node("PromptLabel") else null
 
 
 func _ready() -> void:
 	_load_profile()
+	dialogue_stage = GameState.get_npc_dialogue_stage(npc_id)
+	profile["dialogue_stage"] = dialogue_stage
 	if prompt_label:
 		prompt_label.visible = false
 	var area := $InteractArea if has_node("InteractArea") else null
 	if area:
 		area.body_entered.connect(_on_body_entered)
 		area.body_exited.connect(_on_body_exited)
-
 
 func _load_profile() -> void:
 	# 1. 优先 .md
@@ -75,5 +77,7 @@ func on_player_interact(_player: Node) -> void:
 		return
 	if ui.has_method("is_open") and ui.is_open():
 		return
+	dialogue_stage = GameState.get_npc_dialogue_stage(npc_id)
+	profile["dialogue_stage"] = dialogue_stage
 	if ui.has_method("open_dialogue"):
 		ui.open_dialogue(profile)
