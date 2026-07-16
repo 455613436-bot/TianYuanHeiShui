@@ -326,15 +326,23 @@ func _build_messages(profile: Dictionary, history: Array, user_text: String) -> 
 - 禁止现代越界测试、元话题、无关科技、剧透和玩家尚未获得的线索。
 - 建议应简短、自然、含义不同，不能替玩家决定行动结果，也不能重复历史建议。
 
+## 表情差分 mood 字段（必填）
+在每次输出的 JSON 里**必须**包含一个 mood 字段，从下列 3 个值中选**最贴合本次 NPC 当下情绪**的一个：
+- "happy"：友好、亲切、欢迎、愉快、赞同、寒暄招呼
+- "thinking"：犹豫、权衡、沉思、含糊、不确定；**触发 check_request 时必须选这个**
+- "surprised"：吃惊、震惊、意外、被戳中痛处、语气突然强烈
+
+只允许这 3 个英文小写值；不要输出中文，不要输出别的情绪词。
+
 ## 输出格式
 只输出合法 JSON，不要 Markdown 或额外文字。**字段顺序按下面来写**，先写 check_request（或省略），
-再写 text，最后写 mentions / choices：
+再写 text，然后 mood，最后 mentions / choices：
 
 需要检定时：
-{"check_request":{"attribute":"力量","difficulty":21,"reason":"玩家用暴力威胁要看保险柜"},"text":"（老吴脸色一僵，粗声吸了口气，手指下意识攥紧烟斗……）","mentions":[],"choices":[{"text":"...","kind":"response","grounded_in":""}]}
+{"check_request":{"attribute":"力量","difficulty":21,"reason":"玩家用暴力威胁要看保险柜"},"text":"（老吴脸色一僵，粗声吸了口气，手指下意识攥紧烟斗……）","mood":"thinking","mentions":[],"choices":[{"text":"...","kind":"response","grounded_in":""}]}
 
 不需要检定时（省略 check_request）：
-{"text":"NPC 正文","mentions":[...],"choices":[...]}
+{"text":"NPC 正文","mood":"happy","mentions":[...],"choices":[...]}
 
 犹豫台词范例（供参考，不要原样照搬）：
 - "（脸上的笑容凝固了一下，粗糙的手指反复摩挲着烟斗……）"

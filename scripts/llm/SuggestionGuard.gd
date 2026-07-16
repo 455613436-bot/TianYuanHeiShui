@@ -113,12 +113,22 @@ static func parse(raw_content: String, prior_context: String, current_user_text:
 	if not check_request.is_empty():
 		reply_text = _sanitize_hesitation_text(reply_text, profile)
 
+	# 透传 mood 字段（值由 DialogueUI/MoodPortrait 侧再做归一化和白名单校验，
+	# 这里只保留原始字符串，避免耦合 UI 层的常量）
+	var mood_raw: String = ""
+	var mood_value: Variant = parsed.get("mood", null)
+	if mood_value is String:
+		mood_raw = String(mood_value).strip_edges().to_lower()
+		if mood_raw.length() > 20:
+			mood_raw = ""
+
 	return {
 		"text": reply_text,
 		"choices": choices,
 		"mentions": new_mentions,
 		"format_valid": valid_model_choices >= 2,
 		"check_request": check_request,
+		"mood": mood_raw,
 	}
 
 
@@ -223,7 +233,7 @@ static func training_example_is_safe(text: String, profile: Dictionary) -> bool:
 static func _fallback_reply(reply_text: String, prior_context: String, current_user_text: String, profile: Dictionary) -> Dictionary:
 	var choices: Array[String] = []
 	_fill_safe_choices(choices, reply_text, prior_context + "\n" + current_user_text, profile)
-	return {"text": reply_text, "choices": choices, "mentions": [], "format_valid": false, "check_request": {}}
+	return {"text": reply_text, "choices": choices, "mentions": [], "format_valid": false, "check_request": {}, "mood": ""}
 
 
 static func _parse_new_mentions(raw_mentions: Variant, reply_text: String, knowledge_context: String, profile: Dictionary) -> Array[Dictionary]:

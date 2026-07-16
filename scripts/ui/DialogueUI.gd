@@ -14,8 +14,13 @@ enum DialogueState {
 
 const HISTORY_LIMIT := 20
 const LLM_TIMEOUT_SEC := 30.0
-const DIALOGUE_MIN_HEIGHT := 300.0
-const DIALOGUE_MAX_HEIGHT := 520.0
+const DIALOGUE_MIN_HEIGHT := 220.0
+const DIALOGUE_MAX_HEIGHT := 320.0
+const DIALOGUE_HEIGHT_RATIO := 0.34
+const DIALOGUE_HEIGHT_RATIO_COMPACT := 0.48
+const PORTRAIT_OVERLAY_TOP_OVERHANG := 120.0
+const PORTRAIT_OVERLAY_WIDTH := 200.0
+const PORTRAIT_OVERLAY_LEFT_MARGIN := 32.0
 const COMPACT_WIDTH := 1050.0
 const OPENING_REQUEST := "请以角色身份自然地先开口打招呼，并生成适合玩家继续交谈的选项。不要提及这条要求。"
 const REGENERATE_REQUEST := "请根据刚才 NPC 的最新回复，只重新生成 2 到 3 个含义不同、可由玩家直接说出口的简短选项。仍按约定的 JSON 格式输出。"
@@ -25,8 +30,11 @@ const REGENERATE_REQUEST := "请根据刚才 NPC 的最新回复，只重新生�
 @onready var portrait_box: VBoxContainer = $RootPanel/HBox/Portrait
 @onready var center_box: VBoxContainer = $RootPanel/HBox/Center
 @onready var actions_box: VBoxContainer = $RootPanel/HBox/Actions
-@onready var name_label: Label = $RootPanel/HBox/Portrait/NameLabel
-@onready var portrait_rect: ColorRect = $RootPanel/HBox/Portrait/PortraitRect
+@onready var portrait_overlay: Control = $PortraitOverlay
+@onready var name_label: Label = $PortraitOverlay/NameLabel
+@onready var portrait_rect: ColorRect = $PortraitOverlay/PortraitRect
+@onready var portrait_image: TextureRect = $PortraitOverlay/PortraitRect/PortraitImage
+@onready var mood_badge: Label = $PortraitOverlay/PortraitRect/MoodBadge
 @onready var history_label: RichTextLabel = $RootPanel/HBox/Center/History
 @onready var input_row: HBoxContainer = $RootPanel/HBox/Center/InputRow
 @onready var input_edit: LineEdit = $RootPanel/HBox/Center/InputRow/InputEdit
@@ -47,6 +55,8 @@ const REGENERATE_REQUEST := "请根据刚才 NPC 的最新回复，只重新生�
 var current_npc: Dictionary = {}
 var history: Array = []
 var state: DialogueState = DialogueState.CLOSED
+## 当前立绘的表情 mood（happy / thinking / surprised），用于切换差分
+var current_mood: String = MoodPortrait.DEFAULT_MOOD
 
 var _session_id := 0
 var _current_request_id := 0
@@ -89,16 +99,31 @@ func _apply_responsive_layout() -> void:
 	if viewport_size.x <= 0.0 or viewport_size.y <= 0.0:
 		return
 	var compact := viewport_size.x < COMPACT_WIDTH
-	var panel_height := clampf(viewport_size.y * (0.68 if compact else 0.52), DIALOGUE_MIN_HEIGHT, DIALOGUE_MAX_HEIGHT)
+	var ratio := DIALOGUE_HEIGHT_RATIO_COMPACT if compact else DIALOGUE_HEIGHT_RATIO
+	var panel_height := clampf(viewport_size.y * ratio, DIALOGUE_MIN_HEIGHT, DIALOGUE_MAX_HEIGHT)
 	panel_height = minf(panel_height, viewport_size.y - 16.0)
 	root_panel.offset_top = -panel_height
 	layout_box.offset_left = 12.0
 	layout_box.offset_right = -12.0
 	layout_box.offset_top = 10.0
 	layout_box.offset_bottom = -10.0
-	portrait_box.visible = not compact and viewport_size.y >= 650.0
+	portrait_box.visible = not compact and viewport_size.y >= 500.0
 	actions_box.visible = viewport_size.x >= 820.0
-	history_label.custom_minimum_size.y = 92.0 if compact else 150.0
+	history_label.custom_minimum_size.y = 72.0 if compact else 108.0
+
+	# PortraitOverlay：立绘作为 RootPanel 的兄弟节点绝对定位，让它从对话框顶部探出。
+	# 可见性严格跟随对话框开关 —— 布局函数只负责摆位置，绝不主动打开它。
+	if is_instance_valid(portrait_overlay):
+		var should_show := is_open() and portrait_box.visible
+		portrait_overlay.visible = should_show
+		if should_show:
+			var overhang := PORTRAIT_OVERLAY_TOP_OVERHANG
+			# 立绘上沿 = 对话框顶部再往上 overhang，下沿 = 对话框底部内侧 16px
+			portrait_overlay.offset_left = PORTRAIT_OVERLAY_LEFT_MARGIN
+			portrait_overlay.offset_right = PORTRAIT_OVERLAY_LEFT_MARGIN + PORTRAIT_OVERLAY_WIDTH
+			portrait_overlay.offset_top = -(panel_height + overhang)
+			portrait_overlay.offset_bottom = -24.0
+
 	var reserved_width := 48.0
 	if portrait_box.visible:
 		reserved_width += portrait_box.custom_minimum_size.x
@@ -134,6 +159,7 @@ func open_dialogue(profile: Dictionary) -> void:
 	name_label.text = profile.get("display_name", "???")
 	portrait_rect.color = Color(0.2, 0.18, 0.16)
 	_set_portrait_letter(String(profile.get("display_name", "?")).substr(0, 1))
+	_apply_mood(MoodPortrait.DEFAULT_MOOD)
 	history_label.clear()
 
 	# 恢复该 NPC 的持久化历史（user/npc 交替），此处是"跨会话记忆"
@@ -176,6 +202,8 @@ func _change_state(next_state: DialogueState) -> void:
 	state = next_state
 	var open := state != DialogueState.CLOSED
 	root_panel.visible = open
+	if is_instance_valid(portrait_overlay):
+		portrait_overlay.visible = open and (portrait_box == null or portrait_box.visible)
 	var can_interact := state in [DialogueState.WAITING_PLAYER, DialogueState.ERROR]
 	input_row.visible = open
 	input_edit.visible = open
@@ -194,10 +222,42 @@ func _change_state(next_state: DialogueState) -> void:
 
 
 func _set_portrait_letter(value: String) -> void:
-	var path := "RootPanel/HBox/Portrait/PortraitRect/PortraitLetter"
+	var path := "PortraitOverlay/PortraitRect/PortraitLetter"
 	var label: Label = get_node(path) if has_node(path) else null
 	if label:
 		label.text = value
+
+
+## 切换立绘表情差分。传入的 mood 会先经 MoodPortrait.normalize_mood 规范化，非法值回退到 DEFAULT_MOOD。
+func _apply_mood(mood_raw: String) -> void:
+	var mood := MoodPortrait.normalize_mood(mood_raw)
+	if mood == "":
+		mood = MoodPortrait.DEFAULT_MOOD
+	current_mood = mood
+
+	var npc_id: String = String(current_npc.get("id", ""))
+	var portrait_size := Vector2i(200, 240)
+	if is_instance_valid(portrait_rect) and portrait_rect.size.x > 8 and portrait_rect.size.y > 8:
+		portrait_size = Vector2i(int(portrait_rect.size.x), int(portrait_rect.size.y))
+	var texture: Texture2D = MoodPortrait.load_or_generate(npc_id, mood, portrait_size)
+
+	if is_instance_valid(portrait_image):
+		portrait_image.texture = texture
+		portrait_image.visible = texture != null
+	# 贴图存在时字母兜底就藏起来，避免"?"字盖脸
+	var letter_label := get_node_or_null("PortraitOverlay/PortraitRect/PortraitLetter") as Label
+	if letter_label:
+		letter_label.visible = texture == null
+	if is_instance_valid(mood_badge):
+		mood_badge.text = _mood_badge_text(mood)
+
+
+func _mood_badge_text(mood: String) -> String:
+	match mood:
+		MoodPortrait.MOOD_HAPPY: return "开心"
+		MoodPortrait.MOOD_THINKING: return "思考"
+		MoodPortrait.MOOD_SURPRISED: return "惊讶"
+	return ""
 
 
 func _on_send() -> void:
@@ -378,6 +438,10 @@ func _on_llm_reply(request_id: int, session_id: int, npc_id: String, reply: Dict
 		_remove_thinking_message()
 		history.append({"role": "npc", "text": text, "choices": reply_choices})
 		_redraw_history()
+
+	# 根据 LLM 输出的 mood（若有）+ 正文关键词兜底切换立绘表情
+	var resolved_mood := MoodPortrait.resolve_mood(String(reply.get("mood", "")), text)
+	_apply_mood(resolved_mood)
 
 	_apply_meta(reply.get("meta", {}))
 	GameState.advance_npc_dialogue_stage(npc_id)
@@ -579,6 +643,9 @@ func _run_check_flow(check_request: Dictionary) -> void:
 	var display_line: String = CheckSystem.result_to_display_text(result)
 	history.append({"role": "check", "text": display_line, "check_result": result})
 	_redraw_history()
+
+	# 掷骰结果一出，NPC 立即切到"思考"状态；下一轮 check_followup 会根据结果重新解析 mood
+	_apply_mood(MoodPortrait.MOOD_THINKING)
 
 	# 关键叙事事件写入全局记忆；骰子过程本身不再单独写 NPC 历史
 	# （NPC 后续 check_followup 的反应会被 _persist_turn_to_memory 正常记录）

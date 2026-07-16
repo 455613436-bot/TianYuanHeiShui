@@ -326,7 +326,7 @@ anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 0.0
-offset_top = -420.0
+offset_top = -260.0
 offset_right = 0.0
 offset_bottom = 0.0
 grow_horizontal = 2
@@ -344,35 +344,16 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 14
 
+; Portrait 占位（VBox 内部保留一个不可见节点撑宽度，真正的立绘由 PortraitOverlay 显示，
+; 让立绘可以突出到对话框顶部之外，视觉上更像半身像）
 [node name="Portrait" type="VBoxContainer" parent="DialogueUI/RootPanel/HBox"]
 custom_minimum_size = Vector2(220, 0)
 size_flags_vertical = 3
 
-[node name="PortraitRect" type="ColorRect" parent="DialogueUI/RootPanel/HBox/Portrait"]
-custom_minimum_size = Vector2(220, 240)
+[node name="Spacer" type="Control" parent="DialogueUI/RootPanel/HBox/Portrait"]
+custom_minimum_size = Vector2(220, 0)
 size_flags_vertical = 3
-color = Color(0.15, 0.13, 0.12, 1)
-
-[node name="PortraitLetter" type="Label" parent="DialogueUI/RootPanel/HBox/Portrait/PortraitRect"]
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 0.0
-offset_top = 0.0
-offset_right = 0.0
-offset_bottom = 0.0
-grow_horizontal = 2
-grow_vertical = 2
-text = "?"
-horizontal_alignment = 1
-vertical_alignment = 1
-modulate = Color(0.95, 0.85, 0.7, 1)
-theme_override_font_sizes/font_size = 96
 mouse_filter = 2
-
-[node name="NameLabel" type="Label" parent="DialogueUI/RootPanel/HBox/Portrait"]
-custom_minimum_size = Vector2(220, 40)
-text = "???"
-horizontal_alignment = 1
 
 [node name="Center" type="VBoxContainer" parent="DialogueUI/RootPanel/HBox"]
 size_flags_horizontal = 3
@@ -380,11 +361,15 @@ size_flags_vertical = 3
 theme_override_constants/separation = 8
 
 [node name="History" type="RichTextLabel" parent="DialogueUI/RootPanel/HBox/Center"]
-custom_minimum_size = Vector2(0, 180)
+custom_minimum_size = Vector2(0, 120)
 size_flags_horizontal = 3
 size_flags_vertical = 3
 bbcode_enabled = true
 scroll_following = true
+theme_override_font_sizes/normal_font_size = 20
+theme_override_font_sizes/bold_font_size = 20
+theme_override_font_sizes/italics_font_size = 20
+theme_override_constants/line_separation = 4
 
 [node name="ChoiceRow" type="HFlowContainer" parent="DialogueUI/RootPanel/HBox/Center"]
 visible = false
@@ -454,3 +439,89 @@ text = "使用技能"
 
 [node name="Leave" type="Button" parent="DialogueUI/RootPanel/HBox/Actions"]
 text = "离开"
+
+; ─── Portrait Overlay ──────────────────────────────────────────
+; 作为 RootPanel 的兄弟节点，绝对定位，让立绘可以"探出"对话框顶部
+; 初始隐藏；由 DialogueUI._change_state / _apply_responsive_layout 按对话框开关切换
+[node name="PortraitOverlay" type="Control" parent="DialogueUI"]
+visible = false
+anchor_left = 0.0
+anchor_top = 1.0
+anchor_right = 0.0
+anchor_bottom = 1.0
+offset_left = 32.0
+offset_top = -380.0
+offset_right = 232.0
+offset_bottom = -100.0
+mouse_filter = 2
+
+[node name="PortraitRect" type="ColorRect" parent="DialogueUI/PortraitOverlay"]
+anchor_right = 1.0
+anchor_top = 0.0
+anchor_bottom = 1.0
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 0.0
+offset_bottom = -36.0
+grow_horizontal = 2
+color = Color(0.15, 0.13, 0.12, 1)
+
+[node name="PortraitImage" type="TextureRect" parent="DialogueUI/PortraitOverlay/PortraitRect"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 0.0
+offset_bottom = 0.0
+grow_horizontal = 2
+grow_vertical = 2
+expand_mode = 1
+stretch_mode = 6
+mouse_filter = 2
+
+[node name="PortraitLetter" type="Label" parent="DialogueUI/PortraitOverlay/PortraitRect"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 0.0
+offset_bottom = 0.0
+grow_horizontal = 2
+grow_vertical = 2
+text = "?"
+horizontal_alignment = 1
+vertical_alignment = 1
+modulate = Color(0.95, 0.85, 0.7, 1)
+theme_override_font_sizes/font_size = 108
+mouse_filter = 2
+
+[node name="MoodBadge" type="Label" parent="DialogueUI/PortraitOverlay/PortraitRect"]
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 0.0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = -8.0
+offset_bottom = 40.0
+text = "开心"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 20
+theme_override_colors/font_color = Color(0.1, 0.08, 0.05, 1)
+theme_override_colors/font_outline_color = Color(1, 1, 1, 0.7)
+theme_override_constants/outline_size = 4
+mouse_filter = 2
+
+[node name="NameLabel" type="Label" parent="DialogueUI/PortraitOverlay"]
+anchor_left = 0.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 0.0
+offset_top = -28.0
+offset_right = 0.0
+offset_bottom = 0.0
+text = "???"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 18
