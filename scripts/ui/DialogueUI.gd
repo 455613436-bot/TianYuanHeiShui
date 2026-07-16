@@ -55,6 +55,10 @@ var _last_user_text := ""
 var _last_request_purpose := "dialogue"
 var _last_request_was_opening := false
 var _timeout_timer: SceneTreeTimer = null
+## 缓存本轮玩家输入 → 收到 NPC 回复后一起写入 MemoryStore
+var _pending_user_text_for_memory := ""
+## 本轮请求是否属于「检定结果回填」，用于避免二次检定与选项覆盖
+var _current_is_check_followup := false
 
 
 func _ready() -> void:
@@ -74,6 +78,8 @@ func _ready() -> void:
 	LLMService.reply_received.connect(_on_llm_reply)
 	LLMService.reply_failed.connect(_on_llm_failed)
 	LLMService.reply_chunk.connect(_on_llm_chunk)
+	LLMService.summary_ready.connect(_on_summary_ready)
+	LLMService.summary_failed.connect(_on_summary_failed)
 	_change_state(DialogueState.CLOSED)
 	call_deferred("_apply_responsive_layout")
 
@@ -123,11 +129,34 @@ func open_dialogue(profile: Dictionary) -> void:
 		return
 	_session_id += 1
 	current_npc = profile
+	_pending_user_text_for_memory = ""
 	history.clear()
 	name_label.text = profile.get("display_name", "???")
 	portrait_rect.color = Color(0.2, 0.18, 0.16)
 	_set_portrait_letter(String(profile.get("display_name", "?")).substr(0, 1))
 	history_label.clear()
+
+	# 恢复该 NPC 的持久化历史（user/npc 交替），此处是"跨会话记忆"
+	var npc_id: String = String(profile.get("id", ""))
+	var persisted: Array = MemoryStore.get_history(npc_id)
+	if not persisted.is_empty():
+		for entry in persisted:
+			history.append(entry.duplicate(true))
+		_append_history("system", "（你回想起之前与「%s」的对话……）" % profile.get("display_name", "???"))
+		_redraw_history()
+		# 已有历史时，直接进入等待玩家状态，不再让 NPC 主动重开场白。
+		_change_state(DialogueState.WAITING_PLAYER)
+		# 若最后一轮 NPC 回复带有 choices，把它复原为按钮
+		var last_choices: Variant = []
+		for i in range(history.size() - 1, -1, -1):
+			var probe: Dictionary = history[i]
+			if String(probe.get("role", "")) == "npc":
+				last_choices = probe.get("choices", [])
+				break
+		_show_choices(last_choices)
+		input_edit.grab_focus()
+		return
+
 	_append_history("system", "你走近了「%s」。" % profile.get("display_name", "???"))
 	_request_llm(OPENING_REQUEST, "dialogue", true)
 
@@ -232,10 +261,39 @@ func _request_llm(user_text: String, purpose: String = "dialogue", opening: bool
 		if last_entry.get("role", "") == "user" and last_entry.get("text", "") == user_text:
 			request_history.pop_back()
 
+	# 只把最近 MAX_TURNS 轮送给 LLM，避免超上下文；更早内容靠 NPC 记忆文档承载
+	request_history = _tail_turns(request_history, MemoryStore.NPC_TURNS_TO_SEND_LLM)
+
 	var request_profile := current_npc.duplicate(true)
 	request_profile["unlocked_clues"] = GameState.clues.keys()
+	# 把「全局记忆 + NPC 独立记忆文档」拼到 system_prompt 末尾
+	var npc_id_for_mem: String = String(current_npc.get("id", ""))
+	var memory_block: String = MemoryStore.build_memory_prompt_block(npc_id_for_mem)
+	if memory_block != "":
+		request_profile["system_prompt"] = String(request_profile.get("system_prompt", "")) + memory_block
+
+	# 记住本轮玩家输入，等 NPC 回复回来时一并写入长期历史（非 opening / 非 choices_only 才算一轮）
+	if purpose == "dialogue" and not opening:
+		_pending_user_text_for_memory = user_text
+	else:
+		_pending_user_text_for_memory = ""
+
+	_current_is_check_followup = (purpose == "check_followup")
+
 	_current_request_id = LLMService.chat(request_profile, request_history, user_text, _session_id, purpose)
 	_start_timeout(_current_request_id, _session_id)
+
+
+func _tail_turns(entries: Array, max_turns: int) -> Array:
+	## 从尾部往前，只保留最近 max_turns 个 user 行及其后续内容
+	var kept_pairs := 0
+	for i in range(entries.size() - 1, -1, -1):
+		var role := String((entries[i] as Dictionary).get("role", ""))
+		if role == "user":
+			kept_pairs += 1
+			if kept_pairs > max_turns:
+				return entries.slice(i + 1)
+	return entries
 
 
 func _start_timeout(request_id: int, session_id: int) -> void:
@@ -324,6 +382,16 @@ func _on_llm_reply(request_id: int, session_id: int, npc_id: String, reply: Dict
 	_apply_meta(reply.get("meta", {}))
 	GameState.advance_npc_dialogue_stage(npc_id)
 	current_npc["dialogue_stage"] = GameState.get_npc_dialogue_stage(npc_id)
+
+	# 将本轮 user+npc 写入 MemoryStore 长期历史，并按 5 轮阈值触发总结
+	_persist_turn_to_memory(npc_id, text, reply_choices)
+
+	# 检定分支：仅在非检定回填的普通对话轮次里检查 check_request；避免死循环。
+	var check_request: Dictionary = reply.get("check_request", {}) if reply.get("check_request", null) is Dictionary else {}
+	if not _current_is_check_followup and not check_request.is_empty():
+		_run_check_flow(check_request)
+		return
+
 	_change_state(DialogueState.WAITING_PLAYER)
 	_show_choices(reply_choices)
 	input_edit.grab_focus()
@@ -393,6 +461,8 @@ func _redraw_history() -> void:
 				history_label.add_text(text)
 				history_label.pop()
 				history_label.pop()
+			"check":
+				_redraw_check_entry(entry)
 			_:
 				history_label.add_text(text)
 		history_label.add_text("\n\n")
@@ -430,3 +500,109 @@ func _hide_choices() -> void:
 	for button in choice_buttons:
 		button.visible = false
 		button.disabled = true
+
+
+# ─── 记忆持久化 & 总结 ────────────────────────────────────────────────
+
+func _persist_turn_to_memory(npc_id: String, npc_text: String, choices: Variant) -> void:
+	if npc_id == "":
+		return
+	var choice_list: Array = []
+	if choices is Array:
+		for c in (choices as Array):
+			var s := String(c).strip_edges()
+			if s != "":
+				choice_list.append(s)
+
+	if _pending_user_text_for_memory.strip_edges() == "":
+		# 没有玩家输入的场景：
+		# - opening / choices_only：不记
+		# - check_followup：把 NPC 的最终反应作为一条独立 NPC 记录写入（属于对之前请求的回应）
+		if _current_is_check_followup and npc_text.strip_edges() != "":
+			MemoryStore.append_turn(npc_id, "", npc_text, choice_list)
+			_maybe_trigger_summary(npc_id)
+		_pending_user_text_for_memory = ""
+		return
+
+	MemoryStore.append_turn(npc_id, _pending_user_text_for_memory, npc_text, choice_list)
+	_pending_user_text_for_memory = ""
+	_maybe_trigger_summary(npc_id)
+
+
+func _maybe_trigger_summary(npc_id: String) -> void:
+	if not MemoryStore.should_summarize(npc_id):
+		return
+	var recent := MemoryStore.get_recent_turns_for_summary(npc_id, MemoryStore.SUMMARIZE_EVERY_TURNS)
+	if recent.is_empty():
+		return
+	MemoryStore.mark_summarize_started(npc_id)
+	var previous := MemoryStore.get_summary(npc_id)
+	# profile 使用当前 npc 的原始 profile（不含记忆注入），避免记忆嵌套
+	var profile := current_npc.duplicate(true)
+	profile["id"] = npc_id
+	LLMService.summarize(profile, previous, recent)
+
+
+func _on_summary_ready(npc_id: String, summary: String) -> void:
+	if npc_id == "":
+		return
+	MemoryStore.set_summary(npc_id, summary)
+	MemoryStore.mark_summarize_finished(npc_id, true)
+
+
+func _on_summary_failed(npc_id: String, error: String) -> void:
+	push_warning("[DialogueUI] NPC %s 记忆总结失败: %s" % [npc_id, error])
+	MemoryStore.mark_summarize_finished(npc_id, false)
+
+
+# ─── 检定流程 ────────────────────────────────────────────────────────
+
+func _run_check_flow(check_request: Dictionary) -> void:
+	## 由 LLM 发起 check_request → 执行掷骰 → 展示 → 再调 LLM 让 NPC 反应
+	var attribute_raw: String = String(check_request.get("attribute", ""))
+	var difficulty: int = int(check_request.get("difficulty", 0))
+	var reason: String = String(check_request.get("reason", ""))
+	if CheckSystem.normalize_attribute(attribute_raw) == "" or difficulty <= 0:
+		# 非法请求 → 静默降级为普通回复：直接进入等待玩家状态
+		_change_state(DialogueState.WAITING_PLAYER)
+		input_edit.grab_focus()
+		return
+
+	var result: Dictionary = CheckSystem.perform_check(attribute_raw, difficulty, 0, reason)
+	if not bool(result.get("ok", false)):
+		_append_history("system", "[检定异常] " + String(result.get("error", "")))
+		_change_state(DialogueState.WAITING_PLAYER)
+		input_edit.grab_focus()
+		return
+
+	# 记录到对话记录（醒目样式）
+	var display_line: String = CheckSystem.result_to_display_text(result)
+	history.append({"role": "check", "text": display_line, "check_result": result})
+	_redraw_history()
+
+	# 关键叙事事件写入全局记忆；骰子过程本身不再单独写 NPC 历史
+	# （NPC 后续 check_followup 的反应会被 _persist_turn_to_memory 正常记录）
+	var npc_id: String = String(current_npc.get("id", ""))
+	var npc_name: String = String(current_npc.get("display_name", current_npc.get("short_name", "村民")))
+	match String(result.get("severity", "")):
+		"crit_success":
+			MemoryStore.add_global_memory("玩家在与 %s 交涉时投出了大成功，取得了对方额外的信任。" % npc_name, ["check", "crit_success"])
+		"crit_failure":
+			MemoryStore.add_global_memory("玩家在与 %s 交涉时投出了大失败，招致对方严厉的训斥。" % npc_name, ["check", "crit_failure"])
+
+	# 再次调用 LLM，让 NPC 根据结果反应；purpose=check_followup 避免二次检定
+	var feedback: String = CheckSystem.result_to_llm_feedback(result, npc_name)
+	_request_llm(feedback, "check_followup", false)
+
+
+func _redraw_check_entry(entry: Dictionary) -> void:
+	## 让 check 类历史条目在 RichTextLabel 里有醒目样式
+	var text := String(entry.get("text", ""))
+	var passed := false
+	if entry.has("check_result"):
+		passed = bool((entry["check_result"] as Dictionary).get("passed", false))
+	history_label.push_bold()
+	history_label.push_color(Color(0.55, 1.0, 0.65) if passed else Color(1.0, 0.55, 0.55))
+	history_label.add_text(text)
+	history_label.pop()
+	history_label.pop()

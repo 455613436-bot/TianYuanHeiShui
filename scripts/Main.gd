@@ -8,6 +8,7 @@ extends Node2D
 const MAP_SCENE := "res://scenes/map/WorldMap.tscn"
 
 @onready var hud_label: Label = $HUD/HUDPanel/HUDLabel if has_node("HUD/HUDPanel/HUDLabel") else null
+@onready var attr_label: Label = $HUD/HUDPanel/AttrLabel if has_node("HUD/HUDPanel/AttrLabel") else null
 @onready var return_map_button: Button = $HUD/ReturnMapButton
 
 
@@ -15,7 +16,9 @@ func _ready() -> void:
 	GameState.restore_current_scene()
 	GameState.pollution_changed.connect(_refresh_hud)
 	GameState.clue_triggered.connect(_on_clue)
+	GameState.attributes_changed.connect(_refresh_attributes)
 	_refresh_hud(GameState.pollution)
+	_refresh_attributes()
 	return_map_button.pressed.connect(_open_map)
 	print("[Main] 村口场景就绪。玩家职业=%s" % GameState.player_role)
 
@@ -28,6 +31,15 @@ func _refresh_hud(_p: int = 0) -> void:
 			GameState.clues.size(),
 			GameState.inventory.size()
 		]
+
+
+func _refresh_attributes() -> void:
+	if attr_label == null:
+		return
+	if GameState.attributes_allocated():
+		attr_label.text = GameState.attributes_summary_text()
+	else:
+		attr_label.text = "属性未分配"
 
 
 func _on_clue(clue_id: String) -> void:

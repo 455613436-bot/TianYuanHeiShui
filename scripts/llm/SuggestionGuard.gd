@@ -106,11 +106,89 @@ static func parse(raw_content: String, prior_context: String, current_user_text:
 			break
 		_append_unique(choices, choice)
 	_fill_safe_choices(choices, reply_text, knowledge_context, profile)
+
+	var check_request := _parse_check_request(parsed.get("check_request", null))
+	# 若本轮触发检定，则强制把 text 收敛为一段"NPC 正在犹豫"的中性过渡句，
+	# 防止 LLM 一次把"完整拒绝/答复"和"检定"同时输出，让玩家看到"回复→骰→再回复"的三段体。
+	if not check_request.is_empty():
+		reply_text = _sanitize_hesitation_text(reply_text, profile)
+
 	return {
 		"text": reply_text,
 		"choices": choices,
 		"mentions": new_mentions,
 		"format_valid": valid_model_choices >= 2,
+		"check_request": check_request,
+	}
+
+
+## 若 text 看起来已经给出决定性回答（答应 / 拒绝 / 转移话题），把它替换为中性犹豫过渡句。
+## 只有非常明显是"纯犹豫描写"的 text 才会原样保留。
+const _HESITATION_FALLBACKS: Array[String] = [
+	"（对方神情微微一凝，手指下意识地攥紧，一时没答话……）",
+	"（眉头轻皱，像是在心里飞快地掂量什么，没马上开口。）",
+	"唔——这个嘛，让我想想……",
+	"（顿住脚步，眯起眼上下打量了一下，没作声。）",
+	"（对方明显犹豫了一下，脸上闪过复杂的神色。）",
+]
+## 表示"已经给出决定"的关键词——命中即视为违规
+const _DECISIVE_MARKERS: Array[String] = [
+	"没啥好看的", "没什么好看的", "没什么可看", "没啥可看",
+	"不能", "不行", "不可以", "拒绝",
+	"好吧", "行吧", "可以", "答应你", "满足你",
+	"你走吧", "滚开", "滚出去", "别在这", "别再来",
+	"要不", "不如", "咱们去", "咱去", "换个话题",
+	"我告诉你", "让我告诉", "其实是", "实话跟你说",
+]
+
+static func _sanitize_hesitation_text(text: String, _profile: Dictionary) -> String:
+	var trimmed := text.strip_edges()
+	if trimmed == "":
+		return _pick_hesitation_fallback()
+	# 过长本身就不像犹豫过渡（阈值宽一点，避免误伤合法的犹豫描写）
+	if trimmed.length() > 60:
+		return _pick_hesitation_fallback()
+	# 命中"决定性"关键词就直接替换
+	for marker in _DECISIVE_MARKERS:
+		if trimmed.contains(marker):
+			return _pick_hesitation_fallback()
+	# 出现问号 / 感叹号且不是纯语气词，通常代表已经作出反应
+	if (trimmed.contains("？") or trimmed.contains("?")) and not trimmed.begins_with("（") and not trimmed.begins_with("("):
+		return _pick_hesitation_fallback()
+	if trimmed.contains("！") or trimmed.contains("!"):
+		return _pick_hesitation_fallback()
+	return trimmed
+
+
+static func _pick_hesitation_fallback() -> String:
+	if _HESITATION_FALLBACKS.is_empty():
+		return "（对方沉默了一下，没马上答话……）"
+	return _HESITATION_FALLBACKS[randi() % _HESITATION_FALLBACKS.size()]
+
+
+static func _parse_check_request(value: Variant) -> Dictionary:
+	## 校验 LLM 返回的 check_request，非法则返回空 dict
+	if value is not Dictionary:
+		return {}
+	var raw: Dictionary = value
+	var attribute_raw: String = String(raw.get("attribute", "")).strip_edges()
+	if attribute_raw == "":
+		return {}
+	var difficulty_raw: Variant = raw.get("difficulty", 0)
+	if not (difficulty_raw is int or difficulty_raw is float):
+		return {}
+	var difficulty := int(difficulty_raw)
+	# 只接受工具契约允许的 1-25 范围，超出则视为格式非法
+	if difficulty < 1 or difficulty > 25:
+		return {}
+	var reason: String = String(raw.get("reason", "")).strip_edges()
+	# 长度上限，避免 LLM 灌超长文本
+	if reason.length() > 160:
+		reason = reason.substr(0, 160)
+	return {
+		"attribute": attribute_raw,
+		"difficulty": difficulty,
+		"reason": reason,
 	}
 
 
@@ -145,7 +223,7 @@ static func training_example_is_safe(text: String, profile: Dictionary) -> bool:
 static func _fallback_reply(reply_text: String, prior_context: String, current_user_text: String, profile: Dictionary) -> Dictionary:
 	var choices: Array[String] = []
 	_fill_safe_choices(choices, reply_text, prior_context + "\n" + current_user_text, profile)
-	return {"text": reply_text, "choices": choices, "mentions": [], "format_valid": false}
+	return {"text": reply_text, "choices": choices, "mentions": [], "format_valid": false, "check_request": {}}
 
 
 static func _parse_new_mentions(raw_mentions: Variant, reply_text: String, knowledge_context: String, profile: Dictionary) -> Array[Dictionary]:

@@ -1,0 +1,92 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/AttributeAllocation.gd" id="1_attr"]
+
+[node name="AttributeAllocation" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_attr")
+
+[node name="Backdrop" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.05, 0.06, 0.08, 1)
+
+[node name="Panel" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -420.0
+offset_top = -300.0
+offset_right = 420.0
+offset_bottom = 300.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="Panel"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 32.0
+offset_top = 28.0
+offset_right = -32.0
+offset_bottom = -28.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 18
+
+[node name="Title" type="Label" parent="Panel/VBox"]
+text = "分配你的属性"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 34
+
+[node name="Intro" type="Label" parent="Panel/VBox"]
+text = "在跑团检定中，属性点越高，同类挑战的难度越低（-1/点）。将 10 点分配到下面四项，每项最高 5 点。"
+autowrap_mode = 3
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 16
+theme_override_colors/font_color = Color(0.85, 0.85, 0.85, 1)
+
+[node name="HeaderRow" type="HBoxContainer" parent="Panel/VBox"]
+alignment = 1
+
+[node name="RemainingLabel" type="Label" parent="Panel/VBox/HeaderRow"]
+text = "剩余点数：10 / 10"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 22
+theme_override_colors/font_color = Color(1, 0.85, 0.55, 1)
+
+[node name="Rows" type="VBoxContainer" parent="Panel/VBox"]
+theme_override_constants/separation = 10
+
+[node name="TipLabel" type="Label" parent="Panel/VBox"]
+text = "把剩余点数分配完毕后即可开始冒险。"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 14
+theme_override_colors/font_color = Color(0.85, 0.85, 0.85, 1)
+
+[node name="Footer" type="HBoxContainer" parent="Panel/VBox"]
+alignment = 1
+theme_override_constants/separation = 24
+
+[node name="ResetBtn" type="Button" parent="Panel/VBox/Footer"]
+custom_minimum_size = Vector2(140, 48)
+text = "重置"
+theme_override_font_sizes/font_size = 20
+
+[node name="StartBtn" type="Button" parent="Panel/VBox/Footer"]
+custom_minimum_size = Vector2(200, 48)
+disabled = true
+text = "开始冒险"
+theme_override_font_sizes/font_size = 22

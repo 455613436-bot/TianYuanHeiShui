@@ -164,6 +164,109 @@ func cancel_request(request_id: int) -> void:
 		http.queue_free()
 
 
+## 记忆总结：让模型基于旧记忆 + 最近对话产出新的记忆文档（≤ SUMMARY_MAX_CHARS）。
+## 结果一律作为纯文本返回，不做 JSON 反序列化。
+func summarize(npc_profile: Dictionary, previous_summary: String, recent_turns: Array, service: Node) -> void:
+	if not is_instance_valid(service):
+		return
+	var npc_id: String = String(npc_profile.get("id", "?"))
+	if api_key.strip_edges() == "":
+		service.deliver_summary_failure(npc_id, "api_key 为空，无法生成记忆")
+		return
+
+	var display_name := String(npc_profile.get("display_name", "该角色"))
+	var system_prompt := """你是一个记忆整理助手。请为 NPC「%s」维护一份第一人称的"关键印象笔记"。
+输入包含：
+1) 上一版记忆文档（可能为空）
+2) 最近的几轮 NPC 与玩家对话
+
+要求：
+- 输出一份**更新后**的记忆文档，用 NPC 的第一人称口吻记录他/她对玩家目前所记得的关键印象。
+- 保留旧记忆里仍然重要的条目，把最近对话中出现的新事实、玩家表现出的态度、承诺、争执、被追问的敏感话题等合并进去；相互矛盾时以最新对话为准。
+- 用短句列点或段落均可，务必精炼，不超过 400 字。
+- 不要复读原始对话原文，不要出现"上一版记忆"字样。
+- 不要输出 JSON、Markdown 代码块或额外解释，直接输出记忆正文。""" % display_name
+
+	var user_lines: PackedStringArray = []
+	user_lines.append("【上一版记忆】")
+	user_lines.append(previous_summary if previous_summary.strip_edges() != "" else "（还没有记忆）")
+	user_lines.append("")
+	user_lines.append("【最近对话】")
+	for entry in recent_turns:
+		if entry is not Dictionary:
+			continue
+		var role := String((entry as Dictionary).get("role", ""))
+		var text := String((entry as Dictionary).get("text", "")).strip_edges()
+		if text == "":
+			continue
+		if role == "user":
+			user_lines.append("玩家：" + text)
+		elif role == "npc":
+			user_lines.append("我（%s）：%s" % [display_name, text])
+
+	var payload := {
+		"model": model_name,
+		"messages": [
+			{"role": "system", "content": system_prompt},
+			{"role": "user", "content": "\n".join(user_lines)},
+		],
+		"temperature": 0.3,
+		"max_tokens": 600,
+		"stream": false,
+	}
+
+	var http := HTTPRequest.new()
+	http.timeout = request_timeout
+	http.body_size_limit = http_max_body_bytes
+	add_child(http)
+
+	var url := base_url.rstrip("/") + "/chat/completions"
+	var headers := PackedStringArray([
+		"Content-Type: application/json",
+		"Authorization: Bearer " + api_key,
+	])
+
+	http.request_completed.connect(
+		func(result: int, response_code: int, _hs: PackedStringArray, body: PackedByteArray):
+			_on_summary_completed(result, response_code, body, npc_id, service, http)
+	)
+
+	var err := http.request(url, headers, HTTPClient.METHOD_POST, JSON.stringify(payload))
+	if err != OK:
+		http.queue_free()
+		service.deliver_summary_failure(npc_id, "记忆请求发起失败，err=%d" % err)
+
+
+func _on_summary_completed(result: int, response_code: int, body: PackedByteArray, npc_id: String, service: Node, http: HTTPRequest) -> void:
+	if is_instance_valid(http):
+		http.queue_free()
+	if not is_instance_valid(service):
+		return
+	if result != HTTPRequest.RESULT_SUCCESS:
+		service.deliver_summary_failure(npc_id, "记忆请求网络错误 result=%d" % result)
+		return
+	var text := body.get_string_from_utf8()
+	if response_code < 200 or response_code >= 300:
+		service.deliver_summary_failure(npc_id, "记忆请求 HTTP %d" % response_code)
+		return
+	var parsed = JSON.parse_string(text)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		service.deliver_summary_failure(npc_id, "记忆响应非 JSON")
+		return
+	if (parsed as Dictionary).has("error"):
+		service.deliver_summary_failure(npc_id, "记忆响应错误")
+		return
+	var choices: Array = (parsed as Dictionary).get("choices", [])
+	if choices.is_empty():
+		service.deliver_summary_failure(npc_id, "记忆响应缺 choices")
+		return
+	var raw_content: String = String((choices[0] as Dictionary).get("message", {}).get("content", "")).strip_edges()
+	if raw_content == "":
+		service.deliver_summary_failure(npc_id, "记忆响应为空")
+		return
+	service.deliver_summary(npc_id, raw_content)
+
+
 func _build_messages(profile: Dictionary, history: Array, user_text: String) -> Array:
 	var messages: Array = []
 	var system_prompt := String(profile.get("system_prompt", ""))
@@ -171,7 +274,46 @@ func _build_messages(profile: Dictionary, history: Array, user_text: String) -> 
 		system_prompt = "你是 %s，请始终保持角色扮演，用角色语气简洁回答。" % profile.get("display_name", "?")
 	system_prompt += """
 
-## 对话建议生成规则（最高优先级）
+## 检定工具（跑团骰子）——最高优先级流程
+请**在动笔写 text 之前**先做一次自问自答：玩家这一句话，属不属于「NPC 会犹豫、不愿意直接答应」的请求？
+可能触发检定的典型情况：参观家里、要看私人物品、刺探秘密、说服、恳求、忽悠、动作威胁、
+强闯、潜行、扒窃、翻找、拆解观察等。寒暄、公开信息、明显无害的请求**不**触发。
+
+判断结果只有两种，并且**决定了接下来该怎么写 text**：
+
+【A. 判断为「需要检定」】——**你必须**同时满足以下所有约束：
+  A1. **必须**输出 check_request 字段，且它是本轮**唯一**代表 NPC 立场的表态。
+  A2. text **只能**是一小段"NPC 明显在犹豫 / 打量玩家 / 权衡要不要答应"的过渡描写或半句话，
+      不超过 40 个汉字，句末通常带"……" "让我想想" "这个嘛" "唔——" 等停顿。
+  A3. text **绝对禁止**做以下事情：
+      - 给出任何形式的决定（无论答应、拒绝、转移话题、反问都不行）
+      - 报出玩家请求以外的信息、透露秘密、否认罪状、给建议
+      - 说"不行"/"可以"/"我拒绝"/"你走吧"/"好吧"之类带明确态度的词
+      - 顺势推销别的地点或话题（如"要不咱们去村口"、"你不如去问 XX"）
+      写完 text 之后**问自己**：这句话如果单独发给玩家，玩家能不能从中判断 NPC 到底答不答应？
+      如果能——就是违规，重写成更中立的犹豫。
+  A4. mentions/choices 仍按对话规则生成，但 choices 里也不能预设检定结果。
+  A5. 掷骰结果会以【系统·检定结果】形式在下一轮回传给你，届时你**再**根据结果写 NPC 的真正反应。
+
+【B. 判断为「不需要检定」】——**不要**输出 check_request 字段，text 正常回复即可。
+
+## check_request 结构
+{"attribute":"力量|敏捷|智力|魅力","difficulty":<1-25>,"reason":"玩家请求的简短概述"}
+- attribute 选与玩家行为方式最贴合的：
+  - 力量：动作威胁、破门、体力对抗、强硬压制
+  - 敏捷：潜行、扒窃、灵巧动作、快速反应
+  - 智力：推理、专业知识、拆解观察、找漏洞
+  - 魅力：说服、恳求、社交周旋、忽悠、谈判
+- difficulty 是 1-25 整数：
+  - 5：几乎必定成功的小事
+  - 10：略过分但合理（例：想进院子转转）
+  - 15：需要 NPC 让步（例：想进屋看看）
+  - 20：明显触碰隐私（例：翻看抽屉）
+  - 23-25：直接踩底线（例：要看保险柜、交出禁物）
+  可按"玩家话术是否合理/投其所好"±3 微调。
+- 一轮最多一次检定；上一条系统消息已给出【系统·检定结果】的话题不要再骰。
+
+## 对话建议生成规则（与检定并行遵守）
 你同时要生成 2～3 条玩家下一步可以直接说出口的建议，但建议只能来自玩家当前已经知道的内容。
 - NPC 人设中的秘密、禁区和内部知识不是玩家知识，绝不能因为它们出现在 system prompt 或 few-shot 中就写进建议。
 - few-shot 的玩家提问只用于展示 NPC 如何回答，绝不是建议问题素材。
@@ -184,8 +326,21 @@ func _build_messages(profile: Dictionary, history: Array, user_text: String) -> 
 - 禁止现代越界测试、元话题、无关科技、剧透和玩家尚未获得的线索。
 - 建议应简短、自然、含义不同，不能替玩家决定行动结果，也不能重复历史建议。
 
-只输出合法 JSON，不要 Markdown 或额外文字：
-{"text":"NPC 正文","mentions":[{"name":"正文中的名称","type":"person|place|item|event"}],"choices":[{"text":"玩家可直接说的话","kind":"follow_up|response|topic_shift","grounded_in":"follow_up 所依据的正文原词，其他类型可为空"}]}
+## 输出格式
+只输出合法 JSON，不要 Markdown 或额外文字。**字段顺序按下面来写**，先写 check_request（或省略），
+再写 text，最后写 mentions / choices：
+
+需要检定时：
+{"check_request":{"attribute":"力量","difficulty":21,"reason":"玩家用暴力威胁要看保险柜"},"text":"（老吴脸色一僵，粗声吸了口气，手指下意识攥紧烟斗……）","mentions":[],"choices":[{"text":"...","kind":"response","grounded_in":""}]}
+
+不需要检定时（省略 check_request）：
+{"text":"NPC 正文","mentions":[...],"choices":[...]}
+
+犹豫台词范例（供参考，不要原样照搬）：
+- "（脸上的笑容凝固了一下，粗糙的手指反复摩挲着烟斗……）"
+- "（眉头微微一皱，像是在心里飞快地掂量什么，没马上答话。）"
+- "唔——这个嘛……老头子得想想。"
+- "（顿住脚步，眯起眼上下打量了对方一眼。）"
 """
 
 	messages.append({"role": "system", "content": system_prompt})

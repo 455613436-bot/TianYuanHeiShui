@@ -8,6 +8,7 @@ signal clue_triggered(clue_id: String)
 signal save_completed(path: String)
 signal load_completed(path: String)
 signal load_failed(path: String, reason: String)
+signal attributes_changed()
 
 const MAX_POLLUTION := 6
 const SAVE_VERSION := 1
@@ -18,12 +19,27 @@ const AUTO_SAVE_INTERVAL_SECONDS := 300.0
 const MAP_SCENE := "res://scenes/map/WorldMap.tscn"
 const DEFAULT_MAP_RETURN_SCENE := "res://scenes/main/Main.tscn"
 
+## 玩家属性系统：4 维，每维 0-5，总分固定 10
+const ATTRIBUTE_KEYS := ["strength", "agility", "intellect", "charisma"]
+const ATTRIBUTE_MIN := 0
+const ATTRIBUTE_MAX := 5
+const ATTRIBUTE_TOTAL_POINTS := 10
+const ATTRIBUTE_LABELS := {
+	"strength": "力量",
+	"agility": "敏捷",
+	"intellect": "智力",
+	"charisma": "魅力",
+}
+
 var player_role: String = "medic"
 var player_name: String = "圆鸮"
 var pollution: int = 0
 var affinity: Dictionary = {}
 var inventory: Array[String] = []
 var clues: Dictionary = {}
+## 玩家四维属性，0-5；首次启动前为空 -> attributes_allocated()==false 时应该跳转到属性分配 UI
+var attributes: Dictionary = {}
+var attributes_locked_in: bool = false
 
 var map_return_scene_path: String = DEFAULT_MAP_RETURN_SCENE
 var current_scene_path: String = MAP_SCENE
@@ -46,6 +62,48 @@ func _ready() -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
 		save_game(AUTO_SAVE_PATH)
+
+
+## ─── 属性系统 ────────────────────────────────────────────────────────
+func get_attribute(key: String) -> int:
+	return int(attributes.get(key, 0))
+
+
+func attributes_allocated() -> bool:
+	if not attributes_locked_in:
+		return false
+	var total := 0
+	for key in ATTRIBUTE_KEYS:
+		total += get_attribute(key)
+	return total == ATTRIBUTE_TOTAL_POINTS
+
+
+func set_attributes(values: Dictionary, lock_in: bool = true) -> bool:
+	## 严格校验：只接受 4 个已知维度、每维 0-5、总和 ATTRIBUTE_TOTAL_POINTS
+	var normalized: Dictionary = {}
+	var total := 0
+	for key in ATTRIBUTE_KEYS:
+		var raw: Variant = values.get(key, 0)
+		if not (raw is int or raw is float):
+			return false
+		var v := clampi(int(raw), ATTRIBUTE_MIN, ATTRIBUTE_MAX)
+		if v != int(raw):
+			return false
+		normalized[key] = v
+		total += v
+	if total != ATTRIBUTE_TOTAL_POINTS:
+		return false
+	attributes = normalized
+	attributes_locked_in = lock_in
+	attributes_changed.emit()
+	return true
+
+
+func attributes_summary_text() -> String:
+	var parts: PackedStringArray = []
+	for key in ATTRIBUTE_KEYS:
+		parts.append("%s %d" % [ATTRIBUTE_LABELS.get(key, key), get_attribute(key)])
+	return "  ".join(parts)
 
 
 func add_pollution(amount: int = 1) -> void:
@@ -102,6 +160,7 @@ func trigger_clue(clue_id: String) -> void:
 	if clue_id.is_empty() or clues.has(clue_id):
 		return
 	clues[clue_id] = true
+	MemoryStore.add_global_memory("外来者在村里揭开了一件事：%s" % clue_id, ["clue", clue_id])
 	clue_triggered.emit(clue_id)
 
 
@@ -274,6 +333,9 @@ func save_game(path: String = SAVE_PATH, capture_scene: bool = true) -> Error:
 		"triggered_events": triggered_events,
 		"one_shot_items": one_shot_items,
 		"scene_states": scene_states,
+		"memory": MemoryStore.to_dict(),
+		"attributes": attributes.duplicate(true),
+		"attributes_locked_in": attributes_locked_in,
 	}
 	file.store_string(JSON.stringify(_json_safe(data), "\t"))
 	file.close()
@@ -317,6 +379,8 @@ func load_game(path: String = SAVE_PATH, switch_scene: bool = true) -> Error:
 	triggered_events = _bool_dictionary(data.get("triggered_events", {}))
 	one_shot_items = _bool_dictionary(data.get("one_shot_items", {}))
 	scene_states = _sanitize_scene_states(data.get("scene_states", {}))
+	MemoryStore.load_from_dict(data.get("memory", {}))
+	_load_attributes(data.get("attributes", {}), data.get("attributes_locked_in", false))
 	current_scene_path = loaded_scene
 	map_return_scene_path = loaded_return
 	if not scene_states.has(current_scene_path) and data.has("player_position"):
@@ -348,11 +412,16 @@ func clear_save(path: String = SAVE_PATH) -> Error:
 func summary_for_llm() -> String:
 	var lines: PackedStringArray = []
 	lines.append("【玩家信息】职业：%s，姓名：%s" % [player_role, player_name])
+	if attributes_allocated():
+		lines.append("【玩家属性】" + attributes_summary_text())
 	lines.append("【污染度】%d/%d" % [pollution, MAX_POLLUTION])
 	if not inventory.is_empty():
 		lines.append("【已持有道具】%s" % ", ".join(inventory))
 	if not clues.is_empty():
 		lines.append("【已触发线索】%s" % ", ".join(clues.keys()))
+	var global_memory_text := MemoryStore.get_global_memory_text()
+	if global_memory_text != "":
+		lines.append("【村庄共享记忆】\n" + global_memory_text)
 	return "\n".join(lines)
 
 
@@ -480,6 +549,34 @@ func _sanitize_scene_states(value: Variant) -> Dictionary:
 			state["nodes"] = {}
 		result[path] = state
 	return result
+
+
+func _load_attributes(value: Variant, locked_in_value: Variant) -> void:
+	var candidate: Dictionary = {}
+	if value is Dictionary:
+		for key in ATTRIBUTE_KEYS:
+			var raw: Variant = (value as Dictionary).get(key, 0)
+			var v: int = int(raw) if (raw is int or raw is float) else 0
+			candidate[key] = clampi(v, ATTRIBUTE_MIN, ATTRIBUTE_MAX)
+	var lock_in: bool = false
+	if locked_in_value is bool:
+		lock_in = locked_in_value
+	if candidate.is_empty():
+		attributes = {}
+		attributes_locked_in = false
+		return
+	# 严格校验总和；不合法则视为未分配，强制回退到分配 UI
+	var total := 0
+	for key in ATTRIBUTE_KEYS:
+		total += int(candidate.get(key, 0))
+	if total != ATTRIBUTE_TOTAL_POINTS:
+		attributes = {}
+		attributes_locked_in = false
+		return
+	attributes = candidate
+	attributes_locked_in = lock_in
+
+
 
 
 func _vector_to_array(value: Vector2) -> Array[float]:

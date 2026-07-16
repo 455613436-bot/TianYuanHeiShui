@@ -12,12 +12,14 @@ config_version=5
 
 config/name="思源村探案"
 config/description="Siyuan Village Mystery - 思源村跑团探案游戏（LLM 驱动 NPC）"
-run/main_scene="res://scenes/map/WorldMap.tscn"
+run/main_scene="res://scenes/ui/AttributeAllocation.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 
 [autoload]
 
 GameState="*res://scripts/autoload/GameState.gd"
+MemoryStore="*res://scripts/autoload/MemoryStore.gd"
+CheckSystem="*res://scripts/autoload/CheckSystem.gd"
 LLMService="*res://scripts/autoload/LLMService.gd"
 LLMConfig="*res://scripts/autoload/LLMConfig.gd"
 InputManager="*res://scripts/autoload/InputManager.gd"

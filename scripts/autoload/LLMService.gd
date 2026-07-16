@@ -12,6 +12,8 @@ signal reply_received(request_id: int, session_id: int, npc_id: String, reply: D
 signal reply_failed(request_id: int, session_id: int, npc_id: String, error: String)
 signal reply_chunk(request_id: int, session_id: int, npc_id: String, accumulated_text: String)
 signal request_cancelled(request_id: int, session_id: int, npc_id: String)
+signal summary_ready(npc_id: String, summary: String)
+signal summary_failed(npc_id: String, error: String)
 
 const MockLLMScript := preload("res://scripts/llm/MockLLM.gd")
 
@@ -129,6 +131,59 @@ func cancel_all_requests() -> void:
 
 func is_request_active(request_id: int) -> bool:
 	return _inflight.has(request_id)
+
+
+## ─── 记忆总结通道 ──────────────────────────────────────────────
+## 由 MemoryStore/DialogueUI 触发，用于把最近若干轮对话浓缩到 NPC 的记忆文档里。
+## 与常规对话请求隔离，不占用 request_id 序列，不影响 UI 的 pending state。
+##
+## Provider 需实现 summarize(npc_profile, previous_summary, recent_turns, service)
+## 完成后调用 service.deliver_summary(npc_id, summary_text)
+## 或 service.deliver_summary_failure(npc_id, error)
+## 如果 Provider 未实现，会走本地兜底拼接（最后 5 条 user/npc 文本压缩）。
+func summarize(npc_profile: Dictionary, previous_summary: String, recent_turns: Array) -> void:
+	var npc_id: String = String(npc_profile.get("id", "?"))
+	if _provider != null and _provider.has_method("summarize"):
+		_provider.call_deferred("summarize", npc_profile, previous_summary, recent_turns, self)
+	else:
+		# 本地兜底：把最近对话直接以「玩家说 / NPC 说」形式拼到已有摘要之后。
+		var text := _local_fallback_summary(previous_summary, recent_turns)
+		call_deferred("deliver_summary", npc_id, text)
+
+
+func deliver_summary(npc_id: String, summary: String) -> void:
+	summary_ready.emit(npc_id, summary)
+
+
+func deliver_summary_failure(npc_id: String, error: String) -> void:
+	summary_failed.emit(npc_id, error)
+
+
+func _local_fallback_summary(previous_summary: String, recent_turns: Array) -> String:
+	var lines: PackedStringArray = []
+	if previous_summary.strip_edges() != "":
+		lines.append(previous_summary.strip_edges())
+	var latest_lines: PackedStringArray = []
+	for entry in recent_turns:
+		if entry is not Dictionary:
+			continue
+		var role := String((entry as Dictionary).get("role", ""))
+		var text := String((entry as Dictionary).get("text", "")).strip_edges()
+		if text == "":
+			continue
+		if role == "user":
+			latest_lines.append("- 玩家说：" + _short_text(text, 60))
+		elif role == "npc":
+			latest_lines.append("- 我回应：" + _short_text(text, 60))
+	if not latest_lines.is_empty():
+		lines.append("最近对话要点：\n" + "\n".join(latest_lines))
+	return "\n\n".join(lines)
+
+
+func _short_text(text: String, limit: int) -> String:
+	if text.length() <= limit:
+		return text
+	return text.substr(0, limit) + "…"
 
 
 ## 根据 profile.triggers 对 user_text 做关键词匹配，聚合所有命中项的 meta
