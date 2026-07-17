@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://dwc1wlb3iy2qx"
+path="res://.godot/imported/17 And bliss everywhere bliss.mp3-9a077d2b80ee8fbe49d4efff3ecd3c11.mp3str"
+
+[deps]
+
+source_file="res://assets/audio/17 And bliss everywhere bliss.mp3"
+dest_files=["res://.godot/imported/17 And bliss everywhere bliss.mp3-9a077d2b80ee8fbe49d4efff3ecd3c11.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

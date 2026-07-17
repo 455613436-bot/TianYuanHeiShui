@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://6f61n68gbxvh"
+path="res://.godot/imported/All That Follows is True.mp3-5ac8d8af5ffcc90b3365c1ce17d4152b.mp3str"
+
+[deps]
+
+source_file="res://assets/audio/All That Follows is True.mp3"
+dest_files=["res://.godot/imported/All That Follows is True.mp3-5ac8d8af5ffcc90b3365c1ce17d4152b.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4
