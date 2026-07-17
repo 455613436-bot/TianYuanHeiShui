@@ -1,6 +1,8 @@
 extends CanvasLayer
 ## Dialogue UI with explicit request/session ownership.
 
+const MoodPortraitUtil := preload("res://scripts/ui/MoodPortrait.gd")
+
 signal closed
 
 enum DialogueState {
@@ -56,7 +58,7 @@ var current_npc: Dictionary = {}
 var history: Array = []
 var state: DialogueState = DialogueState.CLOSED
 ## 当前立绘的表情 mood（happy / thinking / surprised），用于切换差分
-var current_mood: String = MoodPortrait.DEFAULT_MOOD
+var current_mood: String = MoodPortraitUtil.DEFAULT_MOOD
 
 var _session_id := 0
 var _current_request_id := 0
@@ -159,7 +161,7 @@ func open_dialogue(profile: Dictionary) -> void:
 	name_label.text = profile.get("display_name", "???")
 	portrait_rect.color = Color(0.2, 0.18, 0.16)
 	_set_portrait_letter(String(profile.get("display_name", "?")).substr(0, 1))
-	_apply_mood(MoodPortrait.DEFAULT_MOOD)
+	_apply_mood(MoodPortraitUtil.DEFAULT_MOOD)
 	history_label.clear()
 
 	# 恢复该 NPC 的持久化历史（user/npc 交替），此处是"跨会话记忆"
@@ -228,18 +230,18 @@ func _set_portrait_letter(value: String) -> void:
 		label.text = value
 
 
-## 切换立绘表情差分。传入的 mood 会先经 MoodPortrait.normalize_mood 规范化，非法值回退到 DEFAULT_MOOD。
+## 切换立绘表情差分。传入的 mood 会先经 MoodPortraitUtil.normalize_mood 规范化，非法值回退到 DEFAULT_MOOD。
 func _apply_mood(mood_raw: String) -> void:
-	var mood := MoodPortrait.normalize_mood(mood_raw)
+	var mood := MoodPortraitUtil.normalize_mood(mood_raw)
 	if mood == "":
-		mood = MoodPortrait.DEFAULT_MOOD
+		mood = MoodPortraitUtil.DEFAULT_MOOD
 	current_mood = mood
 
 	var npc_id: String = String(current_npc.get("id", ""))
 	var portrait_size := Vector2i(200, 240)
 	if is_instance_valid(portrait_rect) and portrait_rect.size.x > 8 and portrait_rect.size.y > 8:
 		portrait_size = Vector2i(int(portrait_rect.size.x), int(portrait_rect.size.y))
-	var texture: Texture2D = MoodPortrait.load_or_generate(npc_id, mood, portrait_size)
+	var texture: Texture2D = MoodPortraitUtil.load_or_generate(npc_id, mood, portrait_size)
 
 	if is_instance_valid(portrait_image):
 		portrait_image.texture = texture
@@ -254,9 +256,9 @@ func _apply_mood(mood_raw: String) -> void:
 
 func _mood_badge_text(mood: String) -> String:
 	match mood:
-		MoodPortrait.MOOD_HAPPY: return "开心"
-		MoodPortrait.MOOD_THINKING: return "思考"
-		MoodPortrait.MOOD_SURPRISED: return "惊讶"
+		MoodPortraitUtil.MOOD_HAPPY: return "开心"
+		MoodPortraitUtil.MOOD_THINKING: return "思考"
+		MoodPortraitUtil.MOOD_SURPRISED: return "惊讶"
 	return ""
 
 
@@ -440,7 +442,7 @@ func _on_llm_reply(request_id: int, session_id: int, npc_id: String, reply: Dict
 		_redraw_history()
 
 	# 根据 LLM 输出的 mood（若有）+ 正文关键词兜底切换立绘表情
-	var resolved_mood := MoodPortrait.resolve_mood(String(reply.get("mood", "")), text)
+	var resolved_mood := MoodPortraitUtil.resolve_mood(String(reply.get("mood", "")), text)
 	_apply_mood(resolved_mood)
 
 	_apply_meta(reply.get("meta", {}))
@@ -645,7 +647,7 @@ func _run_check_flow(check_request: Dictionary) -> void:
 	_redraw_history()
 
 	# 掷骰结果一出，NPC 立即切到"思考"状态；下一轮 check_followup 会根据结果重新解析 mood
-	_apply_mood(MoodPortrait.MOOD_THINKING)
+	_apply_mood(MoodPortraitUtil.MOOD_THINKING)
 
 	# 关键叙事事件写入全局记忆；骰子过程本身不再单独写 NPC 历史
 	# （NPC 后续 check_followup 的反应会被 _persist_turn_to_memory 正常记录）
