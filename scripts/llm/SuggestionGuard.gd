@@ -31,12 +31,13 @@ static func parse(raw_content: String, prior_context: String, current_user_text:
 	var fallback_text := raw_content.strip_edges()
 	if fallback_text == "":
 		fallback_text = "……"
-	var json_start := fallback_text.find("{")
-	var json_end := fallback_text.rfind("}")
-	if json_start < 0 or json_end <= json_start:
+
+	# 抽取真正的 JSON 主体：去掉 markdown 代码块围栏，再用括号平衡找完整对象
+	var json_body := _extract_json_object(fallback_text)
+	if json_body == "":
 		return _fallback_reply(fallback_text, prior_context, current_user_text, profile)
 
-	var parsed = JSON.parse_string(fallback_text.substr(json_start, json_end - json_start + 1))
+	var parsed = JSON.parse_string(json_body)
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return _fallback_reply(fallback_text, prior_context, current_user_text, profile)
 
@@ -46,8 +47,13 @@ static func parse(raw_content: String, prior_context: String, current_user_text:
 			reply_text = String(parsed[key]).strip_edges()
 			if reply_text != "":
 				break
+	# 主 key 未命中或值为空时，尝试从 JSON 里其它字符串字段抢救出一段人话
+	# （避免直接给玩家一个空 "……"，同时不泄漏 raw JSON）
 	if reply_text == "":
-		reply_text = fallback_text
+		reply_text = _salvage_text_from_parsed(parsed)
+	# 依然没抢救出：给一个中性的场景描述，让开场不至于空白
+	if reply_text == "":
+		reply_text = "……（对方看着你，一时没开口。）"
 
 	var knowledge_context := prior_context + "\n" + current_user_text
 	var new_mentions := _parse_new_mentions(parsed.get("mentions", []), reply_text, knowledge_context, profile)
@@ -176,6 +182,133 @@ static func _pick_hesitation_fallback() -> String:
 	return _HESITATION_FALLBACKS[randi() % _HESITATION_FALLBACKS.size()]
 
 
+## 智能提取一段可解析的 JSON 对象字符串。
+## 处理：
+##   - 前后 markdown 代码块围栏 ``` 或 ```json
+##   - 前后中/英文散文
+##   - 多段并列时只取第一个平衡完整的 {...}
+##   - 忽略字符串内部的 { }（走引号状态机）
+## 找不到就返回 ""。
+static func _extract_json_object(raw: String) -> String:
+	var text := raw.strip_edges()
+	if text == "":
+		return ""
+
+	# 去掉常见的 markdown 代码块围栏
+	text = _strip_code_fences(text)
+
+	# 用括号平衡 + 引号状态机找第一个完整的 { ... }
+	var start := text.find("{")
+	if start < 0:
+		return ""
+	var depth := 0
+	var in_string := false
+	var escape := false
+	for i in range(start, text.length()):
+		var ch: String = text[i]
+		if in_string:
+			if escape:
+				escape = false
+			elif ch == "\\":
+				escape = true
+			elif ch == "\"":
+				in_string = false
+			continue
+		if ch == "\"":
+			in_string = true
+			continue
+		if ch == "{":
+			depth += 1
+		elif ch == "}":
+			depth -= 1
+			if depth == 0:
+				return text.substr(start, i - start + 1)
+	return ""
+
+
+## 剥掉 ```json ... ``` / ``` ... ``` 这种 markdown 代码块包裹
+static func _strip_code_fences(text: String) -> String:
+	var trimmed := text.strip_edges()
+	if not trimmed.begins_with("```"):
+		# 也可能围栏在中间；粗暴替换掉所有围栏行
+		trimmed = trimmed.replace("```json", "").replace("```JSON", "").replace("```Json", "")
+		trimmed = trimmed.replace("```", "")
+		return trimmed.strip_edges()
+	# 去掉开头围栏
+	var first_newline := trimmed.find("\n")
+	if first_newline >= 0:
+		trimmed = trimmed.substr(first_newline + 1)
+	else:
+		trimmed = trimmed.substr(3)
+	# 去掉结尾围栏
+	var last_fence := trimmed.rfind("```")
+	if last_fence >= 0:
+		trimmed = trimmed.substr(0, last_fence)
+	return trimmed.strip_edges()
+
+
+## 粗略判断字符串看起来像 JSON（未成功解析但含大括号+引号+冒号），
+## 用于在完全解析失败时防止把 raw JSON 泄漏给玩家。
+static func _looks_like_json(text: String) -> bool:
+	if text.length() < 8:
+		return false
+	if not (text.contains("{") and text.contains("}")):
+		return false
+	# 至少一对 "xxx": 的模式
+	var quote_idx := text.find("\"")
+	if quote_idx < 0:
+		return false
+	# 简单启发：出现 " 后面接 :，或者出现 "text" / "reply" / "choices" 之一
+	for probe in ["\"text\"", "\"reply\"", "\"content\"", "\"message\"", "\"choices\"", "\"check_request\"", "\"mood\""]:
+		if text.contains(probe):
+			return true
+	# 兜底：形如 "..." : ... 的模式
+	return text.contains("\":") or text.contains("\" :")
+
+
+## 从解析成功的 dict 里抢救一段"能给玩家看的文字"。
+## 场景：LLM 忘了填 text/reply/content/message，但把内容塞到了 dialogue / say / speech / npc_text
+## 之类的自造字段里。这里再多兜住一层，找不到才让上层用最终占位。
+const _META_KEYS: Array[String] = [
+	# 已知的非"正文"字段，遍历时跳过
+	"text", "reply", "content", "message",
+	"mood", "attribute", "difficulty", "reason",
+	"kind", "grounded_in", "type", "name",
+	"mentions", "choices", "options", "suggestions",
+	"check_request", "meta", "npc_id", "streaming",
+	"pollution_delta", "affinity_delta", "clue_id", "give_item",
+]
+
+static func _salvage_text_from_parsed(parsed: Dictionary) -> String:
+	# 优先：明显"像正文"的自造字段名
+	for candidate_key in ["dialogue", "say", "speech", "npc_text", "narration", "response", "answer", "line", "utterance"]:
+		if parsed.has(candidate_key):
+			var v: Variant = parsed[candidate_key]
+			if v is String:
+				var s := String(v).strip_edges()
+				if s.length() >= 2:
+					return s
+	# 次优：遍历所有字符串字段，找一个非元数据键且长度合适的
+	for key in parsed.keys():
+		if not (key is String):
+			continue
+		if _META_KEYS.has(String(key).to_lower()):
+			continue
+		var val: Variant = parsed[key]
+		if not (val is String):
+			continue
+		var s2 := String(val).strip_edges()
+		if s2.length() >= 4 and s2.length() <= 500:
+			return s2
+	return ""
+
+
+
+
+
+
+
+
 static func _parse_check_request(value: Variant) -> Dictionary:
 	## 校验 LLM 返回的 check_request，非法则返回空 dict
 	if value is not Dictionary:
@@ -231,9 +364,16 @@ static func training_example_is_safe(text: String, profile: Dictionary) -> bool:
 
 
 static func _fallback_reply(reply_text: String, prior_context: String, current_user_text: String, profile: Dictionary) -> Dictionary:
+	# 如果 raw 看起来像 JSON 但主路径没能解析出来，说明 LLM 输出了畸形 JSON。
+	# 直接把它当 text 展示会让玩家看到 { "text": ... } 一堆花括号，非常糟糕。
+	# 此时用中性占位覆盖，并打一条 warning 方便定位。
+	var display_text := reply_text
+	if _looks_like_json(reply_text):
+		push_warning("[SuggestionGuard] LLM 输出疑似畸形 JSON，已回退为中性文本；原文前 200 字: %s" % reply_text.substr(0, 200))
+		display_text = "……"
 	var choices: Array[String] = []
-	_fill_safe_choices(choices, reply_text, prior_context + "\n" + current_user_text, profile)
-	return {"text": reply_text, "choices": choices, "mentions": [], "format_valid": false, "check_request": {}, "mood": ""}
+	_fill_safe_choices(choices, display_text, prior_context + "\n" + current_user_text, profile)
+	return {"text": display_text, "choices": choices, "mentions": [], "format_valid": false, "check_request": {}, "mood": ""}
 
 
 static func _parse_new_mentions(raw_mentions: Variant, reply_text: String, knowledge_context: String, profile: Dictionary) -> Array[Dictionary]:
