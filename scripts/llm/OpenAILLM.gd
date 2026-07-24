@@ -12,6 +12,15 @@ const SuggestionGuard = preload("res://scripts/llm/SuggestionGuard.gd")
 @export var request_timeout: float = 30.0
 @export var http_max_body_bytes: int = 4 * 1024 * 1024
 var _active_http: Dictionary = {}
+## 可选：外部（如调试 CLI）注入一个 tracer，用于记录本 provider 实际发出去的 payload / 原始响应。
+## 不注入时业务行为完全等同旧版。约定的方法（用 has_method 检查后再调）：
+##   on_chat_request(request_id, npc_profile, sent_messages, sent_payload, provider_info)
+##   on_chat_raw_response(request_id, npc_id, http_status, raw_text, latency_ms)
+##   on_summary_request(npc_id, previous_summary, recent_turns, sent_messages)
+##   on_summary_raw_response(npc_id, http_status, raw_text, latency_ms)
+var tracer: Object = null
+## 记 request_id → 发起时刻 usec，用于算 latency
+var _req_started_usec: Dictionary = {}
 
 
 ## 由 LLMService 调用
@@ -51,6 +60,16 @@ func generate(request_id: int, npc_profile: Dictionary, history: Array, user_tex
 			_on_completed(result, response_code, body, request_id, npc_id, npc_profile, prior_context, user_text, service, http)
 	)
 
+	# --- tracer hook: 让调试 CLI 拿到"即将发出去"的完整 payload ---
+	if tracer != null and is_instance_valid(tracer) and tracer.has_method("on_chat_request"):
+		var provider_info := {
+			"class": "OpenAILLM",
+			"base_url": base_url,
+			"model": model_name,
+		}
+		tracer.call("on_chat_request", request_id, npc_profile, messages, payload, provider_info)
+	_req_started_usec[request_id] = Time.get_ticks_usec()
+
 	var err := http.request(url, headers, HTTPClient.METHOD_POST, JSON.stringify(payload))
 	if err != OK:
 		_active_http.erase(request_id)
@@ -64,6 +83,14 @@ func _on_completed(result: int, response_code: int, body: PackedByteArray, reque
 	if not is_instance_valid(service) or not service.is_request_active(request_id):
 		return
 
+	# --- tracer hook: 记录 raw response（无论成功失败都记） ---
+	var raw_text_for_trace := body.get_string_from_utf8()
+	if tracer != null and is_instance_valid(tracer) and tracer.has_method("on_chat_raw_response"):
+		var started_usec: int = int(_req_started_usec.get(request_id, Time.get_ticks_usec()))
+		var latency_ms: int = int((Time.get_ticks_usec() - started_usec) / 1000)
+		tracer.call("on_chat_raw_response", request_id, npc_id, response_code, raw_text_for_trace, latency_ms)
+	_req_started_usec.erase(request_id)
+
 	if result != HTTPRequest.RESULT_SUCCESS:
 		var err_names := {
 			2: "连接失败",
@@ -76,7 +103,7 @@ func _on_completed(result: int, response_code: int, body: PackedByteArray, reque
 		service.deliver_failure(request_id, npc_id, "%s (result=%d)" % [desc, result])
 		return
 
-	var text := body.get_string_from_utf8()
+	var text := raw_text_for_trace
 
 	if response_code < 200 or response_code >= 300:
 		push_warning("[OpenAILLM] HTTP %d: %s" % [response_code, text.substr(0, 300)])
@@ -234,6 +261,11 @@ func summarize(npc_profile: Dictionary, previous_summary: String, recent_turns: 
 			_on_summary_completed(result, response_code, body, npc_id, service, http)
 	)
 
+	# tracer hook
+	if tracer != null and is_instance_valid(tracer) and tracer.has_method("on_summary_request"):
+		tracer.call("on_summary_request", npc_id, previous_summary, recent_turns, payload["messages"])
+	_req_started_usec[-1] = Time.get_ticks_usec()  # 用 -1 存 summary 起始时间（同时刻最多一个）
+
 	var err := http.request(url, headers, HTTPClient.METHOD_POST, JSON.stringify(payload))
 	if err != OK:
 		http.queue_free()
@@ -245,10 +277,16 @@ func _on_summary_completed(result: int, response_code: int, body: PackedByteArra
 		http.queue_free()
 	if not is_instance_valid(service):
 		return
+	var text := body.get_string_from_utf8()
+	# tracer hook
+	if tracer != null and is_instance_valid(tracer) and tracer.has_method("on_summary_raw_response"):
+		var started_usec: int = int(_req_started_usec.get(-1, Time.get_ticks_usec()))
+		var latency_ms: int = int((Time.get_ticks_usec() - started_usec) / 1000)
+		tracer.call("on_summary_raw_response", npc_id, response_code, text, latency_ms)
+	_req_started_usec.erase(-1)
 	if result != HTTPRequest.RESULT_SUCCESS:
 		service.deliver_summary_failure(npc_id, "记忆请求网络错误 result=%d" % result)
 		return
-	var text := body.get_string_from_utf8()
 	if response_code < 200 or response_code >= 300:
 		service.deliver_summary_failure(npc_id, "记忆请求 HTTP %d" % response_code)
 		return
@@ -396,13 +434,11 @@ NPC 是活人，不是"信息发放机"。玩家问什么就答什么、把秘�
 **目标分布**（每 5 轮里应该大致有）：
 - **1~2 次极短回应**（3~10 字）——如"哎哟，你们好呀。" / "去吧去吧，路上小心。" / "那怎么好意思。"
 - **2~3 次中等回应**（15~35 字）——大多数正常对话
-- **最多 1 次长回应**（40~80 字）——只在给关键信息 / 承认铁证 / 主动讲背景故事时用
+- **1~2次长回应**（40~80 字）——只在给关键信息 / 承认铁证 / 主动讲背景故事时用
 
 **硬性规则**：
-- **写 text 之前先看你上一轮长度**：如果上一轮≥ 30 字，这一轮**必须**写 20 字以内的短句。
 - **不要每轮都以"哎呀"/"哈哈"/"这个嘛"/"哎哟"起头**——首字要变化。
 - 如果玩家问的是简单问题、寒暄、招呼，NPC 应该也用**短句**回应，不要凑句子。
-- 如果 few-shot 里对该问题的示范回复是 5 字的短句，你的输出也应该维持在 5-15 字，不要扩展到 30 字。
 - **禁止用铺陈式回复**：每句加一个"这""那""咯"、每次带一句关切、每次结尾都劝几句——这会让所有回复都变成同一档中长句。
 
 ## 避免与上次回应过于相近
