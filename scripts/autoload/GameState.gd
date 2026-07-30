@@ -19,6 +19,9 @@ const AUTO_SAVE_INTERVAL_SECONDS := 300.0
 const MAP_SCENE := "res://scenes/map/WorldMap.tscn"
 const DEFAULT_MAP_RETURN_SCENE := "res://scenes/main/Main.tscn"
 
+## 新游戏开始时默认发放的初始物品（id 需要在 data/items/ 里有对应定义）
+const INITIAL_INVENTORY: Array[String] = ["camera"]
+
 ## 玩家属性系统：4 维，每维 0-5，总分固定 10
 const ATTRIBUTE_KEYS := ["strength", "agility", "intellect", "charisma"]
 const ATTRIBUTE_MIN := 0
@@ -62,6 +65,31 @@ func _ready() -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
 		save_game(AUTO_SAVE_PATH)
+
+
+## 新游戏开始前把所有玩家进度归零，并发放 INITIAL_INVENTORY 里配置的初始物品。
+## TitleScreen._on_new_game 应在跳转到属性分配 UI 之前调用此函数。
+func reset_for_new_game() -> void:
+	pollution = 0
+	affinity = {}
+	inventory = []
+	clues = {}
+	attributes = {}
+	attributes_locked_in = false
+	unlocked_locations = {DEFAULT_MAP_RETURN_SCENE: true}
+	quest_stages = {}
+	investigation_states = {}
+	npc_dialogue_stages = {}
+	triggered_events = {}
+	one_shot_items = {}
+	scene_states = {}
+	map_return_scene_path = DEFAULT_MAP_RETURN_SCENE
+	current_scene_path = MAP_SCENE
+	# 发放初始物品；不 emit item_added 以免弹出"获得道具"toast（这时候还没进入任何场景）
+	for item_id in INITIAL_INVENTORY:
+		if not item_id.is_empty() and not inventory.has(item_id):
+			inventory.append(item_id)
+	pollution_changed.emit(pollution)
 
 
 ## ─── 属性系统 ────────────────────────────────────────────────────────
@@ -389,6 +417,10 @@ func load_game(path: String = SAVE_PATH, switch_scene: bool = true) -> Error:
 			"nodes": {},
 		}
 	unlocked_locations[DEFAULT_MAP_RETURN_SCENE] = true
+	# 向后兼容：老存档没发过初始物品时，加载后补发（避免玩家手里没有相机等基本工具）
+	for initial_item in INITIAL_INVENTORY:
+		if not initial_item.is_empty() and not inventory.has(initial_item):
+			inventory.append(initial_item)
 
 	pollution_changed.emit(pollution)
 	load_completed.emit(path)

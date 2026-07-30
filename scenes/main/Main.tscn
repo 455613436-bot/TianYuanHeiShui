@@ -1,283 +1,438 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene format=3 uid="uid://c2qhwd26xics4"]
 
-[ext_resource type="Script" path="res://scripts/Main.gd" id="1_main"]
-[ext_resource type="Texture2D" path="res://assets/scenes/village_chief_house.png" id="2_background"]
-[ext_resource type="Script" path="res://scripts/entities/NpcInteractable.gd" id="3_npc"]
-[ext_resource type="Script" path="res://scripts/ui/DialogueUI.gd" id="4_dialogue"]
+[ext_resource type="Script" uid="uid://upn3jrtjyoiq" path="res://scripts/Main.gd" id="1_main"]
+[ext_resource type="Texture2D" uid="uid://c8al6gonsgiyv" path="res://assets/scenes/village_chief_house.png" id="2_background"]
+[ext_resource type="Script" uid="uid://6vaht2m22ulw" path="res://scripts/entities/NpcInteractable.gd" id="3_npc"]
+[ext_resource type="Script" uid="uid://dbg5575j2sryd" path="res://scripts/ui/DialogueUI.gd" id="4_dialogue"]
+[ext_resource type="PackedScene" path="res://scenes/ui/ItemBagPopup.tscn" id="5_bag"]
+[ext_resource type="Texture2D" uid="uid://dvto03mrqb8fc" path="res://assets/scenes/village_chief_portrait.png" id="6_portrait"]
+[ext_resource type="Texture2D" uid="uid://b1hjvki4wa08o" path="res://assets/ui/btn_open_map.png" id="7_btn_map"]
+[ext_resource type="Texture2D" uid="uid://cavvkhorkrxaf" path="res://assets/ui/dialogue_panel.png" id="8_dlg_bg"]
+[ext_resource type="Texture2D" uid="uid://xj864tyi4l7r" path="res://assets/ui/portrait_frame.png" id="9_frame"]
+[ext_resource type="Texture2D" uid="uid://14ut325b2rgb" path="res://assets/ui/btn_investigate.png" id="10_btn_inv"]
+[ext_resource type="Texture2D" uid="uid://dbg20vmpv2c3k" path="res://assets/ui/btn_give_item.png" id="11_btn_give"]
+[ext_resource type="Texture2D" uid="uid://c4sftn3j0nx52" path="res://assets/ui/btn_skill.png" id="12_btn_skill"]
+[ext_resource type="Texture2D" uid="uid://b5ej2s0hk2516" path="res://assets/ui/btn_leave.png" id="13_btn_leave"]
+[ext_resource type="Texture2D" uid="uid://bqq7tlwdsa56k" path="res://assets/ui/btn_send.png" id="14_btn_send"]
+[ext_resource type="Texture2D" uid="uid://c85nasqe8ppka" path="res://assets/ui/btn_retry.png" id="15_btn_retry"]
+[ext_resource type="Texture2D" uid="uid://xnpnkc8tnxlb" path="res://assets/ui/choice_bg.png" id="16_choice_bg"]
+[ext_resource type="Texture2D" uid="uid://jqexew1m5bk6" path="res://assets/ui/choice_bg_hover.png" id="17_choice_hover"]
+[ext_resource type="FontFile" path="res://assets/fonts/SourceHanSerifSC-Bold.tres" id="19_font_bold"]
+[ext_resource type="FontFile" path="res://assets/fonts/SourceHanSerifSC-Heavy.tres" id="20_font_heavy"]
 
-; ─── 村长家场景：固定背景，进入即对话 ──────────────────────────────
-; 玩家从世界地图选择"村口广场"后会进入本场景，看到村长家室内背景，
-; DialogueUI 会自动打开，无需移动或按键触发。
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_dlg"]
+bg_color = Color(0, 0, 0, 0)
 
-[node name="Main" type="Node2D"]
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_choice_normal"]
+content_margin_left = 12.0
+content_margin_top = 6.0
+content_margin_right = 12.0
+content_margin_bottom = 6.0
+texture = ExtResource("16_choice_bg")
+axis_stretch_horizontal = 1
+axis_stretch_vertical = 1
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_choice_hover"]
+content_margin_left = 12.0
+content_margin_top = 6.0
+content_margin_right = 12.0
+content_margin_bottom = 6.0
+texture = ExtResource("17_choice_hover")
+axis_stretch_horizontal = 1
+axis_stretch_vertical = 1
+
+[node name="Main" type="Node2D" unique_id=1789519613]
 script = ExtResource("1_main")
 
-; ─── 场景背景：村长家室内（CanvasLayer + Control 保证铺满屏幕） ──
-[node name="BackgroundLayer" type="CanvasLayer" parent="."]
+[node name="BackgroundLayer" type="CanvasLayer" parent="." unique_id=823635839]
 layer = -1
 
-[node name="Background" type="TextureRect" parent="BackgroundLayer"]
+[node name="Background" type="TextureRect" parent="BackgroundLayer" unique_id=962038599]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_right = 0.0
-offset_bottom = 0.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
+texture = ExtResource("2_background")
 expand_mode = 1
 stretch_mode = 5
-texture = ExtResource("2_background")
 
-[node name="TopShade" type="ColorRect" parent="BackgroundLayer"]
+[node name="TopShade" type="ColorRect" parent="BackgroundLayer" unique_id=1982748516]
+anchors_preset = 10
 anchor_right = 1.0
 offset_bottom = 84.0
 mouse_filter = 2
 color = Color(0.02, 0.025, 0.02, 0.72)
 
-[node name="LocationTitle" type="Label" parent="BackgroundLayer/TopShade"]
+[node name="LocationTitle" type="Label" parent="BackgroundLayer/TopShade" unique_id=545200315]
+layout_mode = 0
 anchor_right = 1.0
 offset_top = 14.0
 offset_bottom = 50.0
-text = "村口广场 · 村长家"
-horizontal_alignment = 1
 theme_override_colors/font_color = Color(1, 0.91, 0.65, 1)
 theme_override_font_sizes/font_size = 26
+text = "村口广场 · 村长家"
+horizontal_alignment = 1
 
-[node name="LocationSubtitle" type="Label" parent="BackgroundLayer/TopShade"]
+[node name="LocationSubtitle" type="Label" parent="BackgroundLayer/TopShade" unique_id=1649703010]
+layout_mode = 0
 anchor_right = 1.0
 offset_top = 50.0
 offset_bottom = 80.0
-text = "进入场景自动开启与村长的对话"
-horizontal_alignment = 1
 theme_override_colors/font_color = Color(0.88, 0.88, 0.8, 1)
 theme_override_font_sizes/font_size = 16
+text = "点击场景中的村长开始对话"
+horizontal_alignment = 1
 
-; ─── 村长 NPC（不可移动，仅用于绑定 profile + 自动开对话） ───────
-[node name="NpcWuZhiyuan" type="Node2D" parent="."]
+[node name="PortraitLayer" type="CanvasLayer" parent="." unique_id=1615406272]
+layer = 0
+
+[node name="VillageChiefPortrait" type="TextureButton" parent="PortraitLayer" unique_id=1078176869]
+modulate = Color(0.85, 0.85, 0.85, 1)
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = 40.0
+offset_top = -600.0
+offset_right = 440.0
+offset_bottom = -80.0
+grow_horizontal = 2
+grow_vertical = 0
+tooltip_text = "与村长交谈"
+texture_normal = ExtResource("6_portrait")
+texture_hover = ExtResource("6_portrait")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="NpcWuZhiyuan" type="Node2D" parent="." unique_id=1062131257]
 script = ExtResource("3_npc")
 npc_id = "wu_zhiyuan"
 npc_md_path = "res://data/npcs/wu_zhiyuan.md"
 npc_json_path = "res://data/npcs/wu_zhiyuan.json"
 
-; ─── HUD：右上角返回世界地图按钮 ──────────────────────────────────
-[node name="HUD" type="CanvasLayer" parent="."]
+[node name="HUD" type="CanvasLayer" parent="." unique_id=1007119877]
 
-[node name="ReturnMapButton" type="Button" parent="HUD"]
+[node name="ReturnMapButton" type="TextureButton" parent="HUD" unique_id=1330646601]
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -214.0
-offset_top = 20.0
-offset_right = -24.0
-offset_bottom = 68.0
+offset_left = -180.0
+offset_top = -8.0
+offset_right = -16.0
+offset_bottom = 92.0
 grow_horizontal = 0
-text = "打开地图  M / Esc"
-theme_override_font_sizes/font_size = 18
+tooltip_text = "打开地图  M / Esc"
+texture_normal = ExtResource("7_btn_map")
+texture_hover = ExtResource("7_btn_map")
+ignore_texture_size = true
+stretch_mode = 5
 
-; ─── Dialogue UI：进入场景即打开 ──────────────────────────────────
-[node name="DialogueUI" type="CanvasLayer" parent="."]
-script = ExtResource("4_dialogue")
+[node name="DialogueUI" type="CanvasLayer" parent="." unique_id=1622938339]
 layer = 10
+script = ExtResource("4_dialogue")
 
-[node name="RootPanel" type="Panel" parent="DialogueUI"]
-anchor_left = 0.0
+[node name="DialogueBg" type="TextureRect" parent="DialogueUI" unique_id=1239011946]
+anchors_preset = 12
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 0.0
+offset_left = 256.0
 offset_top = -260.0
-offset_right = 0.0
-offset_bottom = 0.0
+offset_right = -216.0
 grow_horizontal = 2
 grow_vertical = 0
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+texture = ExtResource("8_dlg_bg")
 
-[node name="HBox" type="HBoxContainer" parent="DialogueUI/RootPanel"]
-anchors_preset = 15
+[node name="RootPanel" type="Panel" parent="DialogueUI" unique_id=829115842]
+anchors_preset = 12
+anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 10.0
-offset_top = 10.0
-offset_right = -10.0
-offset_bottom = -10.0
+offset_left = 256.0
+offset_top = -260.0
+offset_right = -216.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_dlg")
+
+[node name="HBox" type="HBoxContainer" parent="DialogueUI/RootPanel" unique_id=829115842]
+layout_mode = 0
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 40.0
+offset_top = 50.0
+offset_right = -40.0
+offset_bottom = -30.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 14
 
-[node name="Portrait" type="VBoxContainer" parent="DialogueUI/RootPanel/HBox"]
+[node name="Portrait" type="VBoxContainer" parent="DialogueUI/RootPanel/HBox" unique_id=2033286671]
 custom_minimum_size = Vector2(220, 0)
+layout_mode = 2
 size_flags_vertical = 3
 
-[node name="Spacer" type="Control" parent="DialogueUI/RootPanel/HBox/Portrait"]
+[node name="Spacer" type="Control" parent="DialogueUI/RootPanel/HBox/Portrait" unique_id=2024747883]
 custom_minimum_size = Vector2(220, 0)
+layout_mode = 2
 size_flags_vertical = 3
 mouse_filter = 2
 
-[node name="Center" type="VBoxContainer" parent="DialogueUI/RootPanel/HBox"]
+[node name="Center" type="VBoxContainer" parent="DialogueUI/RootPanel/HBox" unique_id=760857972]
+layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_constants/separation = 8
 
-[node name="History" type="RichTextLabel" parent="DialogueUI/RootPanel/HBox/Center"]
-custom_minimum_size = Vector2(0, 120)
+[node name="History" type="RichTextLabel" parent="DialogueUI/RootPanel/HBox/Center" unique_id=1664300832]
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-bbcode_enabled = true
-scroll_following = true
+theme_override_colors/default_color = Color(0.2, 0.15, 0.1, 1)
+theme_override_constants/line_separation = 4
+theme_override_fonts/normal_font = ExtResource("19_font_bold")
+theme_override_fonts/bold_font = ExtResource("19_font_bold")
+theme_override_fonts/bold_italics_font = ExtResource("19_font_bold")
+theme_override_fonts/italics_font = ExtResource("19_font_bold")
 theme_override_font_sizes/normal_font_size = 20
 theme_override_font_sizes/bold_font_size = 20
 theme_override_font_sizes/italics_font_size = 20
-theme_override_constants/line_separation = 4
+bbcode_enabled = true
+scroll_following = true
 
-[node name="ChoiceRow" type="HFlowContainer" parent="DialogueUI/RootPanel/HBox/Center"]
-visible = false
+[node name="ChoiceRow" type="HFlowContainer" parent="DialogueUI/RootPanel/HBox/Center" unique_id=1245148057]
 custom_minimum_size = Vector2(0, 42)
+layout_mode = 2
 size_flags_horizontal = 3
-theme_override_constants/separation = 8
+modulate = Color(1, 1, 1, 0)
 
-[node name="Choice1" type="Button" parent="DialogueUI/RootPanel/HBox/Center/ChoiceRow"]
+[node name="Choice1" type="Button" parent="DialogueUI/RootPanel/HBox/Center/ChoiceRow" unique_id=2029859430]
 custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
 size_flags_horizontal = 3
-text = "选项一"
+theme_override_colors/font_color = Color(0.2, 0.15, 0.1, 1)
+theme_override_fonts/font = ExtResource("19_font_bold")
+theme_override_font_sizes/font_size = 20
+theme_override_styles/normal = SubResource("StyleBoxTexture_choice_normal")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_choice_normal")
+theme_override_styles/hover = SubResource("StyleBoxTexture_choice_hover")
+theme_override_styles/focus = SubResource("StyleBoxTexture_choice_hover")
 
-[node name="Choice2" type="Button" parent="DialogueUI/RootPanel/HBox/Center/ChoiceRow"]
+[node name="Choice2" type="Button" parent="DialogueUI/RootPanel/HBox/Center/ChoiceRow" unique_id=1283402298]
 custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
 size_flags_horizontal = 3
-text = "选项二"
+theme_override_colors/font_color = Color(0.2, 0.15, 0.1, 1)
+theme_override_fonts/font = ExtResource("19_font_bold")
+theme_override_font_sizes/font_size = 20
+theme_override_styles/normal = SubResource("StyleBoxTexture_choice_normal")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_choice_normal")
+theme_override_styles/hover = SubResource("StyleBoxTexture_choice_hover")
+theme_override_styles/focus = SubResource("StyleBoxTexture_choice_hover")
 
-[node name="Choice3" type="Button" parent="DialogueUI/RootPanel/HBox/Center/ChoiceRow"]
-custom_minimum_size = Vector2(0, 40)
-size_flags_horizontal = 3
-text = "选项三"
-
-[node name="RegenerateChoices" type="Button" parent="DialogueUI/RootPanel/HBox/Center/ChoiceRow"]
+[node name="RegenerateChoices" type="Button" parent="DialogueUI/RootPanel/HBox/Center/ChoiceRow" unique_id=768761308]
 custom_minimum_size = Vector2(112, 40)
-text = "重新生成选项"
+layout_mode = 2
 tooltip_text = "只重新生成对话选项，不追加 NPC 正文"
+theme_override_colors/font_color = Color(0.2, 0.15, 0.1, 1)
+theme_override_fonts/font = ExtResource("19_font_bold")
+theme_override_font_sizes/font_size = 20
+text = "⟳"
 
-[node name="InputRow" type="HBoxContainer" parent="DialogueUI/RootPanel/HBox/Center"]
+[node name="TokenRow" type="HFlowContainer" parent="DialogueUI/RootPanel/HBox/Center" unique_id=1530095689]
+visible = false
+custom_minimum_size = Vector2(0, 32)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/h_separation = 6
+theme_override_constants/v_separation = 4
+
+[node name="InputRow" type="HBoxContainer" parent="DialogueUI/RootPanel/HBox/Center" unique_id=405303902]
 custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 0
 theme_override_constants/separation = 8
 
-[node name="InputEdit" type="LineEdit" parent="DialogueUI/RootPanel/HBox/Center/InputRow"]
+[node name="InputEdit" type="LineEdit" parent="DialogueUI/RootPanel/HBox/Center/InputRow" unique_id=1757081647]
 custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 4
+theme_override_colors/font_color = Color(0.2, 0.15, 0.1, 1)
+theme_override_fonts/font = ExtResource("19_font_bold")
+theme_override_font_sizes/font_size = 20
 placeholder_text = "对 NPC 说点什么... (Enter 发送)"
 
-[node name="SendBtn" type="Button" parent="DialogueUI/RootPanel/HBox/Center/InputRow"]
-custom_minimum_size = Vector2(96, 44)
+[node name="SendBtn" type="TextureButton" parent="DialogueUI/RootPanel/HBox/Center/InputRow" unique_id=21940328]
+custom_minimum_size = Vector2(64, 44)
+layout_mode = 2
 size_flags_vertical = 4
-text = "发送"
+tooltip_text = "发送"
+texture_normal = ExtResource("14_btn_send")
+texture_hover = ExtResource("14_btn_send")
+ignore_texture_size = true
+stretch_mode = 5
 
-[node name="RetryBtn" type="Button" parent="DialogueUI/RootPanel/HBox/Center/InputRow"]
+[node name="RetryBtn" type="TextureButton" parent="DialogueUI/RootPanel/HBox/Center/InputRow" unique_id=328529822]
 visible = false
-custom_minimum_size = Vector2(80, 44)
+custom_minimum_size = Vector2(64, 44)
+layout_mode = 2
 size_flags_vertical = 4
-text = "重试"
+tooltip_text = "重试"
+texture_normal = ExtResource("15_btn_retry")
+texture_hover = ExtResource("15_btn_retry")
+ignore_texture_size = true
+stretch_mode = 5
 
-[node name="Actions" type="VBoxContainer" parent="DialogueUI/RootPanel/HBox"]
-custom_minimum_size = Vector2(160, 0)
-theme_override_constants/separation = 8
-
-[node name="ActionsTitle" type="Label" parent="DialogueUI/RootPanel/HBox/Actions"]
-text = "动作"
-horizontal_alignment = 1
-
-[node name="Investigate" type="Button" parent="DialogueUI/RootPanel/HBox/Actions"]
-text = "调查环境"
-
-[node name="GiveItem" type="Button" parent="DialogueUI/RootPanel/HBox/Actions"]
-text = "给物品"
-
-[node name="Skill" type="Button" parent="DialogueUI/RootPanel/HBox/Actions"]
-text = "使用技能"
-
-[node name="Leave" type="Button" parent="DialogueUI/RootPanel/HBox/Actions"]
-text = "离开"
-
-; ─── Portrait Overlay：立绘从对话框顶部探出 ─────────────────────
-[node name="PortraitOverlay" type="Control" parent="DialogueUI"]
+[node name="Actions" type="VBoxContainer" parent="DialogueUI" unique_id=1497858591]
 visible = false
-anchor_left = 0.0
+anchors_preset = 3
+anchor_left = 1.0
 anchor_top = 1.0
-anchor_right = 0.0
+anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 32.0
-offset_top = -380.0
-offset_right = 232.0
-offset_bottom = -100.0
+offset_left = -216.0
+offset_top = -260.0
+offset_right = -8.0
+offset_bottom = -12.0
+grow_horizontal = 0
+grow_vertical = 0
+size_flags_vertical = 3
+theme_override_constants/separation = 16
+
+[node name="Investigate" type="TextureButton" parent="DialogueUI/Actions" unique_id=701615301]
+custom_minimum_size = Vector2(160, 48)
+layout_mode = 2
+tooltip_text = "调查环境"
+texture_normal = ExtResource("10_btn_inv")
+texture_hover = ExtResource("10_btn_inv")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="OpenBag" type="TextureButton" parent="DialogueUI/Actions" unique_id=802343884]
+custom_minimum_size = Vector2(160, 48)
+layout_mode = 2
+tooltip_text = "选择要在本轮对话里使用的道具（可选多个）"
+texture_normal = ExtResource("11_btn_give")
+texture_hover = ExtResource("11_btn_give")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="Skill" type="TextureButton" parent="DialogueUI/Actions" unique_id=1293595572]
+custom_minimum_size = Vector2(160, 48)
+layout_mode = 2
+tooltip_text = "使用技能"
+texture_normal = ExtResource("12_btn_skill")
+texture_hover = ExtResource("12_btn_skill")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="Leave" type="TextureButton" parent="DialogueUI/Actions" unique_id=71026402]
+custom_minimum_size = Vector2(160, 48)
+layout_mode = 2
+tooltip_text = "离开"
+texture_normal = ExtResource("13_btn_leave")
+texture_hover = ExtResource("13_btn_leave")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="PortraitOverlay" type="Control" parent="DialogueUI" unique_id=1361991808]
+visible = false
+layout_mode = 3
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 8.0
+offset_top = -362.0
+offset_right = 248.0
+offset_bottom = -12.0
 mouse_filter = 2
 
-[node name="PortraitRect" type="ColorRect" parent="DialogueUI/PortraitOverlay"]
+[node name="PortraitRect" type="ColorRect" parent="DialogueUI/PortraitOverlay" unique_id=1694460847]
+layout_mode = 0
 anchor_right = 1.0
-anchor_top = 0.0
 anchor_bottom = 1.0
-offset_left = 0.0
-offset_top = 0.0
-offset_right = 0.0
-offset_bottom = -36.0
 grow_horizontal = 2
 color = Color(0.15, 0.13, 0.12, 1)
 
-[node name="PortraitImage" type="TextureRect" parent="DialogueUI/PortraitOverlay/PortraitRect"]
+[node name="PortraitFrame" type="TextureRect" parent="DialogueUI/PortraitOverlay/PortraitRect" unique_id=531208726]
+layout_mode = 0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 0.0
-offset_top = 0.0
-offset_right = 0.0
-offset_bottom = 0.0
 grow_horizontal = 2
 grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("9_frame")
 expand_mode = 1
 stretch_mode = 6
-mouse_filter = 2
 
-[node name="PortraitLetter" type="Label" parent="DialogueUI/PortraitOverlay/PortraitRect"]
+[node name="PortraitImage" type="TextureRect" parent="DialogueUI/PortraitOverlay/PortraitRect" unique_id=1899204655]
+layout_mode = 0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 0.0
-offset_top = 0.0
-offset_right = 0.0
-offset_bottom = 0.0
+offset_left = 20.0
+offset_top = 20.0
+offset_right = -20.0
+offset_bottom = -80.0
 grow_horizontal = 2
 grow_vertical = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 6
+
+[node name="PortraitLetter" type="Label" parent="DialogueUI/PortraitOverlay/PortraitRect" unique_id=435022229]
+modulate = Color(0.95, 0.85, 0.7, 1)
+layout_mode = 0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 108
 text = "?"
 horizontal_alignment = 1
 vertical_alignment = 1
-modulate = Color(0.95, 0.85, 0.7, 1)
-theme_override_font_sizes/font_size = 108
-mouse_filter = 2
 
-[node name="MoodBadge" type="Label" parent="DialogueUI/PortraitOverlay/PortraitRect"]
-anchor_left = 0.0
-anchor_top = 0.0
+[node name="MoodBadge" type="Label" parent="DialogueUI/PortraitOverlay/PortraitRect" unique_id=245666391]
+visible = false
+layout_mode = 0
 anchor_right = 1.0
-anchor_bottom = 0.0
 offset_left = 8.0
 offset_top = 8.0
 offset_right = -8.0
 offset_bottom = 40.0
-text = "开心"
-horizontal_alignment = 1
-vertical_alignment = 1
-theme_override_font_sizes/font_size = 20
 theme_override_colors/font_color = Color(0.1, 0.08, 0.05, 1)
 theme_override_colors/font_outline_color = Color(1, 1, 1, 0.7)
 theme_override_constants/outline_size = 4
-mouse_filter = 2
+theme_override_font_sizes/font_size = 20
+text = "开心"
+horizontal_alignment = 1
+vertical_alignment = 1
 
-[node name="NameLabel" type="Label" parent="DialogueUI/PortraitOverlay"]
+[node name="NameLabel" type="Label" parent="DialogueUI/PortraitOverlay/PortraitRect" unique_id=299937712]
+layout_mode = 0
 anchor_left = 0.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 0.0
-offset_top = -28.0
-offset_right = 0.0
-offset_bottom = 0.0
+offset_top = -84.0
+offset_bottom = -20.0
+theme_override_colors/font_color = Color(0.2, 0.1, 0.05, 1)
+theme_override_fonts/font = ExtResource("20_font_heavy")
+theme_override_font_sizes/font_size = 26
 text = "???"
 horizontal_alignment = 1
-theme_override_font_sizes/font_size = 18
+vertical_alignment = 1
+vertical_alignment = 1
+
+[node name="ItemBagPopup" parent="." unique_id=708243795 instance=ExtResource("5_bag")]

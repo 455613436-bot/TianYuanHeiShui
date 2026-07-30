@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/locations/LocationBase.tscn" id="1_base"]
+
+[node name="CarpenterWorkshop" instance=ExtResource("1_base")]
+location_number = "5"
+location_name = "木匠工坊"
+location_description = "穆江的樟谊轩，空气中弥漫着木香与艾草的苦味。十年没合上的鲁班锁还在工作台上等着，墙角的木匣里压着一些不愿示人的往事。"
+accent_color = Color(0.55, 0.36, 0.2, 1)

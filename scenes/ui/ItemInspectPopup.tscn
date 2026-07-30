@@ -1,0 +1,72 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/ItemInspectPopup.gd" id="1_inspect"]
+
+; ─── 物品检视大图弹窗 ─────────────────────────────────────────
+; 由 ItemBagPopup 触发；关闭后回到背包（背包实例不销毁，仍在下层）。
+[node name="ItemInspectPopup" type="CanvasLayer"]
+script = ExtResource("1_inspect")
+layer = 30
+visible = false
+
+[node name="Backdrop" type="ColorRect" parent="."]
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0, 0, 0, 0.7)
+
+[node name="Center" type="CenterContainer" parent="."]
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="Panel" type="PanelContainer" parent="Center"]
+custom_minimum_size = Vector2(820, 620)
+
+[node name="VBox" type="VBoxContainer" parent="Center/Panel"]
+theme_override_constants/separation = 10
+
+; ── 顶部：标题 + 右上关闭 ──
+[node name="Header" type="HBoxContainer" parent="Center/Panel/VBox"]
+theme_override_constants/separation = 8
+
+[node name="Title" type="Label" parent="Center/Panel/VBox/Header"]
+size_flags_horizontal = 3
+text = "物品名"
+theme_override_font_sizes/font_size = 22
+horizontal_alignment = 0
+vertical_alignment = 1
+
+[node name="CloseBtn" type="Button" parent="Center/Panel/VBox/Header"]
+custom_minimum_size = Vector2(40, 40)
+text = "✕"
+tooltip_text = "关闭 (Esc)"
+theme_override_font_sizes/font_size = 20
+
+; ── 主体：左侧大图 + 右侧描述 ──
+[node name="Body" type="HBoxContainer" parent="Center/Panel/VBox"]
+size_flags_vertical = 3
+theme_override_constants/separation = 16
+
+[node name="ImageBox" type="PanelContainer" parent="Center/Panel/VBox/Body"]
+custom_minimum_size = Vector2(400, 480)
+size_flags_vertical = 3
+
+[node name="Placeholder" type="Label" parent="Center/Panel/VBox/Body/ImageBox"]
+text = "（暂无图像）"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 16
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+
+[node name="Image" type="TextureRect" parent="Center/Panel/VBox/Body/ImageBox"]
+visible = false
+expand_mode = 1
+stretch_mode = 6
+
+[node name="Description" type="RichTextLabel" parent="Center/Panel/VBox/Body"]
+size_flags_horizontal = 3
+size_flags_vertical = 3
+custom_minimum_size = Vector2(360, 480)
+bbcode_enabled = true
+scroll_active = true
+theme_override_font_sizes/normal_font_size = 16
+theme_override_constants/line_separation = 4

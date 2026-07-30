@@ -1,0 +1,15 @@
+{
+	"id": "camera",
+	"display_name": "随身相机",
+	"short_desc": "圆鸮出门总带着的一台便携数码相机，机身有些磨损，快门声很轻。",
+	"tags": ["工具", "初始物品"],
+	"usable_in_dialogue": true,
+	"consumable": false,
+	"inspectable": false,
+	"icon_path": "",
+	"inspect_image_path": "",
+	"usage_hints": [
+		"可以对着物证 / 现场 / 人物拍照留证，作为之后交涉时的凭据。",
+		"举起相机对准 NPC 会让对方产生警惕；用于强硬取证或社工时可能加成/减成。"
+	]
+}

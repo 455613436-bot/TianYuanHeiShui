@@ -119,6 +119,21 @@ static func parse(raw_content: String, prior_context: String, current_user_text:
 	if not check_request.is_empty():
 		reply_text = _sanitize_hesitation_text(reply_text, profile)
 
+	# 道具工具：item_used（玩家使用/出示了物品）+ item_request（NPC 要求玩家出示）
+	# 通用意图工具：offer_request（NPC 主动送物 / 请求玩家做某事 → 玩家点接受/拒绝）
+	# 它们都可能占用 choice_row，优先级：check_request > offer_request > item_request > 普通 choices
+	var item_used := _parse_item_used(parsed.get("item_used", null))
+	var item_request := _parse_item_request(parsed.get("item_request", null))
+	var offer_request := _parse_offer_request(parsed.get("offer_request", null))
+	if not check_request.is_empty():
+		# 有检定则丢掉 item_request / offer_request（避免 UI 冲突），
+		# 但保留 item_used（玩家可能在检定同轮出示了道具作为筹码）
+		item_request = {}
+		offer_request = {}
+	elif not offer_request.is_empty():
+		# offer_request 已经占用了选项区，不再叠加 item_request
+		item_request = {}
+
 	# 透传 mood 字段（值由 DialogueUI/MoodPortrait 侧再做归一化和白名单校验，
 	# 这里只保留原始字符串，避免耦合 UI 层的常量）
 	var mood_raw: String = ""
@@ -134,6 +149,9 @@ static func parse(raw_content: String, prior_context: String, current_user_text:
 		"mentions": new_mentions,
 		"format_valid": valid_model_choices >= 2,
 		"check_request": check_request,
+		"item_used": item_used,
+		"item_request": item_request,
+		"offer_request": offer_request,
 		"mood": mood_raw,
 	}
 
@@ -277,6 +295,10 @@ const _META_KEYS: Array[String] = [
 	"mentions", "choices", "options", "suggestions",
 	"check_request", "meta", "npc_id", "streaming",
 	"pollution_delta", "affinity_delta", "clue_id", "give_item",
+	"item_used", "item_request", "item_id", "action", "target",
+	"consumed", "candidates",
+	"offer_request", "kind", "action_id", "prompt",
+	"accept_label", "decline_label", "accept_text", "decline_text",
 ]
 
 static func _salvage_text_from_parsed(parsed: Dictionary) -> String:
@@ -335,6 +357,165 @@ static func _parse_check_request(value: Variant) -> Dictionary:
 	}
 
 
+## 解析 LLM 承认玩家在本轮使用/出示了某件道具。
+## 结构：{"item_id":"<id 或 display_name>", "action":"show|give|use_on_self|use_on_target",
+##       "target":"<npc_id>可空", "consumed":<bool>}
+## 只做「字段级」浅校验：id 非空、字符串长度合理；
+## 「玩家是否真的持有」交给 DialogueUI._handle_item_used 做运行时复核（那里能访问 GameState）。
+static func _parse_item_used(value: Variant) -> Dictionary:
+	if value is not Dictionary:
+		return {}
+	var raw: Dictionary = value
+	var item_id: String = String(raw.get("item_id", "")).strip_edges()
+	if item_id.is_empty() or item_id.length() > 40:
+		return {}
+	var action: String = String(raw.get("action", "show")).strip_edges().to_lower()
+	if not ["show", "give", "use_on_self", "use_on_target"].has(action):
+		action = "show"
+	var target: String = String(raw.get("target", "")).strip_edges()
+	if target.length() > 40:
+		target = target.substr(0, 40)
+	var consumed: bool = false
+	if raw.has("consumed"):
+		consumed = bool(raw.get("consumed", false))
+	return {
+		"item_id": item_id,
+		"action": action,
+		"target": target,
+		"consumed": consumed,
+	}
+
+
+## 解析 LLM 请求玩家出示物品的 item_request。
+## 结构：{"candidates":["<item_id>",...], "reason":"<为什么想看>"}
+## 校验后 candidates 至少 1 条、每项字符串长度合理、去重。
+static func _parse_item_request(value: Variant) -> Dictionary:
+	if value is not Dictionary:
+		return {}
+	var raw: Dictionary = value
+	var raw_candidates: Variant = raw.get("candidates", [])
+	if not (raw_candidates is Array):
+		return {}
+	var candidates: Array = []
+	for c in raw_candidates:
+		var id_str: String = String(c).strip_edges()
+		if id_str.is_empty() or id_str.length() > 40:
+			continue
+		if not candidates.has(id_str):
+			candidates.append(id_str)
+		if candidates.size() >= 6:
+			break
+	if candidates.is_empty():
+		return {}
+	var reason: String = String(raw.get("reason", "")).strip_edges()
+	if reason.length() > 160:
+		reason = reason.substr(0, 160)
+	return {
+		"candidates": candidates,
+		"reason": reason,
+	}
+
+
+## 解析 LLM 主动向玩家提出的"提议 / 请求"，玩家将用"接受/拒绝"两个按钮回应。
+## 目前支持的 kind：
+##   - "give_item"      NPC 想送玩家一件物品；需要 item_id
+##   - "request_item"   NPC 想向玩家索要/借用一件物品；需要 item_id
+##   - "request_action" NPC 请求玩家做某事（跟我走、等等我、帮我看着……）；建议给 action_id
+##   - "custom"         其他自定义 yes/no 决策；仅依赖 prompt + accept/decline_text
+static func _parse_offer_request(value: Variant) -> Dictionary:
+	if value is not Dictionary:
+		return {}
+	var raw: Dictionary = value
+	var kind: String = String(raw.get("kind", "")).strip_edges().to_lower()
+	var allowed_kinds := ["give_item", "request_item", "request_action", "custom"]
+	if not allowed_kinds.has(kind):
+		return {}
+
+	var item_id: String = String(raw.get("item_id", "")).strip_edges()
+	if item_id.length() > 40:
+		item_id = ""
+	if (kind == "give_item" or kind == "request_item") and item_id.is_empty():
+		return {}
+
+	var action_id: String = String(raw.get("action_id", "")).strip_edges()
+	if action_id.length() > 40:
+		action_id = action_id.substr(0, 40)
+
+	var prompt_text: String = String(raw.get("prompt", "")).strip_edges()
+	if prompt_text.is_empty() or prompt_text.length() > 160:
+		# prompt 是给玩家看的一句话总结，缺失或过长都视为无效
+		if prompt_text.length() > 160:
+			prompt_text = prompt_text.substr(0, 160)
+		else:
+			return {}
+
+	var accept_label: String = _clip_label(raw.get("accept_label", ""), _default_accept_label(kind))
+	var decline_label: String = _clip_label(raw.get("decline_label", ""), _default_decline_label(kind))
+	var accept_text: String = _clip_reply(raw.get("accept_text", ""), _default_accept_text(kind))
+	var decline_text: String = _clip_reply(raw.get("decline_text", ""), _default_decline_text(kind))
+
+	return {
+		"kind": kind,
+		"item_id": item_id,
+		"action_id": action_id,
+		"prompt": prompt_text,
+		"accept_label": accept_label,
+		"decline_label": decline_label,
+		"accept_text": accept_text,
+		"decline_text": decline_text,
+	}
+
+
+static func _clip_label(value: Variant, fallback: String) -> String:
+	var s: String = String(value).strip_edges()
+	if s.is_empty():
+		return fallback
+	if s.length() > 12:
+		s = s.substr(0, 12)
+	return s
+
+
+static func _clip_reply(value: Variant, fallback: String) -> String:
+	var s: String = String(value).strip_edges()
+	if s.is_empty():
+		return fallback
+	if s.length() > 60:
+		s = s.substr(0, 60)
+	return s
+
+
+static func _default_accept_label(kind: String) -> String:
+	match kind:
+		"give_item": return "收下"
+		"request_item": return "给他"
+		"request_action": return "答应"
+		_: return "好"
+
+
+static func _default_decline_label(kind: String) -> String:
+	match kind:
+		"give_item": return "婉拒"
+		"request_item": return "不给"
+		"request_action": return "拒绝"
+		_: return "不"
+
+
+static func _default_accept_text(kind: String) -> String:
+	match kind:
+		"give_item": return "那我收下了，谢谢。"
+		"request_item": return "拿去吧。"
+		"request_action": return "好，我答应你。"
+		_: return "好。"
+
+
+static func _default_decline_text(kind: String) -> String:
+	match kind:
+		"give_item": return "不必了，谢谢你的好意。"
+		"request_item": return "这个恐怕不方便给你。"
+		"request_action": return "抱歉，做不到。"
+		_: return "还是算了吧。"
+
+
 static func history_text(history: Array) -> String:
 	var parts := PackedStringArray()
 	for entry in history:
@@ -373,7 +554,7 @@ static func _fallback_reply(reply_text: String, prior_context: String, current_u
 		display_text = "……"
 	var choices: Array[String] = []
 	_fill_safe_choices(choices, display_text, prior_context + "\n" + current_user_text, profile)
-	return {"text": display_text, "choices": choices, "mentions": [], "format_valid": false, "check_request": {}, "mood": ""}
+	return {"text": display_text, "choices": choices, "mentions": [], "format_valid": false, "check_request": {}, "item_used": {}, "item_request": {}, "offer_request": {}, "mood": ""}
 
 
 static func _parse_new_mentions(raw_mentions: Variant, reply_text: String, knowledge_context: String, profile: Dictionary) -> Array[Dictionary]:

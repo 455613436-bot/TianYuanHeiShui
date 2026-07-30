@@ -20,6 +20,7 @@ config/features=PackedStringArray("4.7", "GL Compatibility")
 GameState="*res://scripts/autoload/GameState.gd"
 MemoryStore="*res://scripts/autoload/MemoryStore.gd"
 CheckSystem="*res://scripts/autoload/CheckSystem.gd"
+ItemDB="*res://scripts/autoload/ItemDB.gd"
 LLMService="*res://scripts/autoload/LLMService.gd"
 LLMConfig="*res://scripts/autoload/LLMConfig.gd"
 InputManager="*res://scripts/autoload/InputManager.gd"
@@ -88,3 +89,4 @@ move_right={
 
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
+textures/vram_compression/import_etc2_astc=true

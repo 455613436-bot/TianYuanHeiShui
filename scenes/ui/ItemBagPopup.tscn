@@ -1,0 +1,61 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/ItemBagPopup.gd" id="1_bag"]
+
+; ─── 对话内打开的物品背包弹窗 ────────────────────────────────────
+; 使用方式：DialogueUI 在需要时实例化本场景，调用 open_ui(inventory, disabled_ids)。
+[node name="ItemBagPopup" type="CanvasLayer"]
+script = ExtResource("1_bag")
+layer = 20
+visible = false
+
+; 半透明遮罩，阻挡下层点击
+[node name="Backdrop" type="ColorRect" parent="."]
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0, 0, 0, 0.55)
+
+; 居中容器
+[node name="Center" type="CenterContainer" parent="."]
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="Panel" type="PanelContainer" parent="Center"]
+custom_minimum_size = Vector2(760, 520)
+
+[node name="VBox" type="VBoxContainer" parent="Center/Panel"]
+theme_override_constants/separation = 10
+
+[node name="Title" type="Label" parent="Center/Panel/VBox"]
+text = "  打开背包 · 「使用」把道具塞进对话输入区，「检视」查看物品大图"
+theme_override_font_sizes/font_size = 20
+horizontal_alignment = 0
+
+[node name="Empty" type="Label" parent="Center/Panel/VBox"]
+visible = false
+text = "  背包里没有可以在对话中使用的物品。"
+theme_override_font_sizes/font_size = 16
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(0.8, 0.8, 0.8, 1)
+
+[node name="Scroll" type="ScrollContainer" parent="Center/Panel/VBox"]
+custom_minimum_size = Vector2(740, 420)
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="List" type="VBoxContainer" parent="Center/Panel/VBox/Scroll"]
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="Footer" type="HBoxContainer" parent="Center/Panel/VBox"]
+theme_override_constants/separation = 8
+
+[node name="Hint" type="Label" parent="Center/Panel/VBox/Footer"]
+size_flags_horizontal = 3
+text = "  提示：「使用」可选多件，再点输入区上方的道具标签可移除。"
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.75, 0.75, 0.75, 1)
+
+[node name="CloseBtn" type="Button" parent="Center/Panel/VBox/Footer"]
+custom_minimum_size = Vector2(88, 34)
+text = "关闭 (Esc)"

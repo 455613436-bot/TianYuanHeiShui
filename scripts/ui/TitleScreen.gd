@@ -78,10 +78,10 @@ func _setup_bgm() -> void:
 func _on_new_game() -> void:
 	if _leaving:
 		return
-	# 清掉自动存档和内存里的旧属性/记忆，保证进入属性分配 UI 而不是被"已分配"跳过
+	# 清掉自动存档并把所有玩家进度归零，同时发放初始物品（相机等）；
+	# 保证进入属性分配 UI 而不是被"已分配"跳过。
 	GameState.clear_save(GameState.AUTO_SAVE_PATH)
-	GameState.attributes = {}
-	GameState.attributes_locked_in = false
+	GameState.reset_for_new_game()
 	MemoryStore.reset()
 	await _fade_out_bgm()
 	get_tree().change_scene_to_file(NEW_GAME_SCENE)

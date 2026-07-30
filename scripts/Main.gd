@@ -2,8 +2,9 @@ extends Node2D
 ## Main
 ## 村长家场景（第 0 号"村口广场"）。
 ##
-## 设计：固定背景，不可移动。进入场景后自动打开与村长的对话，
-## 把跑团叙事的第一幕完全交给 DialogueUI 承担。
+## 设计：固定背景 + 场景立绘。进入场景后**不自动开对话**，
+## 玩家需要点击场景中的村长立绘才会打开 DialogueUI。
+## 对话框打开后场景立绘的悬停高亮不再触发。
 ## 提供 M / Esc / 按钮三种方式返回世界地图。
 
 const MAP_SCENE := "res://scenes/map/WorldMap.tscn"
@@ -13,28 +14,59 @@ const NPC_ID := "wu_zhiyuan"
 const NPC_MD_PATH := "res://data/npcs/wu_zhiyuan.md"
 const NPC_JSON_PATH := "res://data/npcs/wu_zhiyuan.json"
 
-@onready var npc_node: Node = $NpcWuZhiyuan
-@onready var return_map_button: Button = $HUD/ReturnMapButton
+## 立绘常态（稍暗）与悬停态（提亮）的 modulate
+const PORTRAIT_NORMAL_MODULATE := Color(0.85, 0.85, 0.85, 1)
+const PORTRAIT_HOVER_MODULATE := Color(1.0, 1.0, 1.0, 1.0)
 
-## 进入场景后延迟一帧自动开启对话，避免 DialogueUI._ready() 还没跑完
-var _auto_open_pending: bool = true
+@onready var npc_node: Node = $NpcWuZhiyuan
+@onready var return_map_button: BaseButton = $HUD/ReturnMapButton
+@onready var portrait_button: BaseButton = $PortraitLayer/VillageChiefPortrait
 
 
 func _ready() -> void:
 	GameState.restore_current_scene()
-	# HUD 上原来的污染/线索显示对玩家不友好（场景里没移动），直接隐藏避免误读
 	return_map_button.pressed.connect(_open_map)
-	print("[Main] 村长家场景就绪，进入自动开对话。")
-	call_deferred("_auto_open_dialogue")
+	portrait_button.pressed.connect(_on_portrait_clicked)
+	portrait_button.mouse_entered.connect(_on_portrait_hover.bind(true))
+	portrait_button.mouse_exited.connect(_on_portrait_hover.bind(false))
+	portrait_button.modulate = PORTRAIT_NORMAL_MODULATE
+	print("[Main] 村长家场景就绪，点击立绘开始对话。")
 
 
-func _auto_open_dialogue() -> void:
-	if not _auto_open_pending:
-		return
-	_auto_open_pending = false
+## 对话框打开时禁用立绘的悬停高亮，避免视觉干扰
+func _process(_delta: float) -> void:
+	var dialogue_open := _is_dialogue_open()
+	# 对话进行中 → 立绘不响应悬停，并恢复常态
+	if dialogue_open:
+		if portrait_button.modulate != PORTRAIT_NORMAL_MODULATE:
+			portrait_button.modulate = PORTRAIT_NORMAL_MODULATE
+		portrait_button.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	else:
+		portrait_button.mouse_filter = Control.MOUSE_FILTER_STOP
+
+
+func _is_dialogue_open() -> bool:
 	var ui := get_tree().get_first_node_in_group("dialogue_ui")
 	if ui == null:
-		push_error("[Main] 场景中没有 dialogue_ui 组的节点，无法自动开对话")
+		return false
+	if ui.has_method("is_open"):
+		return ui.is_open()
+	return false
+
+
+func _on_portrait_hover(is_hover: bool) -> void:
+	if _is_dialogue_open():
+		portrait_button.modulate = PORTRAIT_NORMAL_MODULATE
+		return
+	portrait_button.modulate = PORTRAIT_HOVER_MODULATE if is_hover else PORTRAIT_NORMAL_MODULATE
+
+
+func _on_portrait_clicked() -> void:
+	if _is_dialogue_open():
+		return
+	var ui := get_tree().get_first_node_in_group("dialogue_ui")
+	if ui == null:
+		push_error("[Main] 场景中没有 dialogue_ui 组的节点，无法开对话")
 		return
 	if ui.has_method("is_open") and ui.is_open():
 		return

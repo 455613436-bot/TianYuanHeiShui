@@ -1,0 +1,15 @@
+{
+	"id": "village_map",
+	"display_name": "村庄手绘地图",
+	"short_desc": "村长给的手绘地图，标着村里的老井、村委会、码头、村长家和几处山道，纸角被雨水泡过。",
+	"tags": ["线索物", "地理"],
+	"usable_in_dialogue": true,
+	"consumable": false,
+	"inspectable": true,
+	"icon_path": "",
+	"inspect_image_path": "",
+	"usage_hints": [
+		"想辨认方位、找路、指出村里某处的相对位置时，可以摊开地图给对方看。",
+		"用于说服 NPC 相信你熟悉村子、或印证你已经去过某地。"
+	]
+}
