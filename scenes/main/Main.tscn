@@ -17,8 +17,8 @@
 [ext_resource type="Texture2D" uid="uid://c85nasqe8ppka" path="res://assets/ui/btn_retry.png" id="15_btn_retry"]
 [ext_resource type="Texture2D" uid="uid://xnpnkc8tnxlb" path="res://assets/ui/choice_bg.png" id="16_choice_bg"]
 [ext_resource type="Texture2D" uid="uid://jqexew1m5bk6" path="res://assets/ui/choice_bg_hover.png" id="17_choice_hover"]
-[ext_resource type="FontFile" path="res://assets/fonts/SourceHanSerifSC-Bold.tres" id="19_font_bold"]
-[ext_resource type="FontFile" path="res://assets/fonts/SourceHanSerifSC-Heavy.tres" id="20_font_heavy"]
+[ext_resource type="FontFile" uid="uid://cn3n7glq50pbs" path="res://assets/fonts/SourceHanSerifSC-Bold.otf" id="19_font_bold"]
+[ext_resource type="FontFile" path="res://assets/fonts/SourceHanSerifSC-Heavy.otf" id="20_font_heavy"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_dlg"]
 bg_color = Color(0, 0, 0, 0)
@@ -199,7 +199,8 @@ layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_colors/default_color = Color(0.2, 0.15, 0.1, 1)
-theme_override_constants/line_separation = 4
+theme_override_constants/line_separation = 2
+theme_override_constants/paragraph_separation = 2
 theme_override_fonts/normal_font = ExtResource("19_font_bold")
 theme_override_fonts/bold_font = ExtResource("19_font_bold")
 theme_override_fonts/bold_italics_font = ExtResource("19_font_bold")
@@ -269,7 +270,11 @@ custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 4
-theme_override_colors/font_color = Color(0.2, 0.15, 0.1, 1)
+theme_override_colors/font_color = Color(0.92, 0.9, 0.86, 1)
+theme_override_colors/font_placeholder_color = Color(0.92, 0.9, 0.86, 0.6)
+theme_override_colors/font_selected_color = Color(0.15, 0.1, 0.06, 1)
+theme_override_colors/caret_color = Color(0.95, 0.93, 0.88, 1)
+theme_override_colors/selection_color = Color(0.85, 0.75, 0.45, 0.55)
 theme_override_fonts/font = ExtResource("19_font_bold")
 theme_override_font_sizes/font_size = 20
 placeholder_text = "对 NPC 说点什么... (Enter 发送)"

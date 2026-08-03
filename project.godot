@@ -37,6 +37,10 @@ window/stretch/aspect="expand"
 
 enabled=PackedStringArray("res://addons/godot_mcp/plugin.cfg")
 
+[gui]
+
+theme/custom="res://assets/theme/default_theme.tres"
+
 [input]
 
 open_map={

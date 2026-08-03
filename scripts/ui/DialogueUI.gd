@@ -648,7 +648,7 @@ func _redraw_history() -> void:
 				_redraw_check_entry(entry)
 			_:
 				history_label.add_text(text)
-		history_label.add_text("\n\n")
+		history_label.add_text("\n")
 	history_label.scroll_to_line(max(0, history_label.get_line_count() - 1))
 
 
