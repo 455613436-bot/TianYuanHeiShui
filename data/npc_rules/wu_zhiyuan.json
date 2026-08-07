@@ -1,0 +1,16 @@
+[
+  {
+    "id": "wu_flee_when_bribe_ledger_shown",
+    "trigger": { "type": "clue_triggered", "clue_id": "bribe_ledger" },
+    "condition": { "affinity_lt": 30 },
+    "once": true,
+    "priority": 10,
+    "action": {
+      "type": "temp_move",
+      "location": "back_mountain",
+      "duration_minutes": 240,
+      "reason": "心虚躲避",
+      "log_global_memory": "外来者出示了受贿账本，村长匆忙离开躲进了后山。"
+    }
+  }
+]

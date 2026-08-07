@@ -5,6 +5,8 @@ const MAP_SCENE := "res://scenes/map/WorldMap.tscn"
 
 @export var location_number: String = "?"
 @export var location_name: String = "未命名地点"
+## 该地点在 locations.json 里的 id；留空则由 NpcSpawner 按 scene path 反查
+@export var location_id: String = ""
 @export_multiline var location_description: String = "该地点仍在建设中。"
 @export var background_texture: Texture2D
 @export var accent_color: Color = Color(0.45, 0.58, 0.36)
@@ -13,9 +15,12 @@ const MAP_SCENE := "res://scenes/map/WorldMap.tscn"
 @onready var number_label: Label = $Content/NumberLabel
 @onready var title_label: Label = $Content/TitleLabel
 @onready var description_label: Label = $Content/DescriptionLabel
+@onready var status_label: Label = $Content/StatusLabel if has_node("Content/StatusLabel") else null
 @onready var return_button: Button = $ReturnMapButton
 @onready var accent: ColorRect = $Accent
 @onready var background: TextureRect = $BackgroundTexture
+@onready var npc_spawner: Node2D = $NpcSpawner if has_node("NpcSpawner") else null
+@onready var presence_bar: CanvasLayer = $NpcPresenceBar if has_node("NpcPresenceBar") else null
 
 
 func _ready() -> void:
@@ -27,9 +32,62 @@ func _ready() -> void:
 	title_label.text = location_name
 	description_label.text = location_description
 	accent.color = accent_color
+	# 有背景图时隐藏占位 Content 面板（场景已接入真背景，不再显示"待开发"）
+	if background_texture != null:
+		content_panel.visible = false
 	return_button.pressed.connect(_open_map)
 	return_button.grab_focus()
+	# 把 location_id 传给 spawner（若已指定）
+	if npc_spawner != null and location_id != "":
+		npc_spawner.location_id = location_id
+	if presence_bar != null:
+		presence_bar.location_id = location_id
+		# M4：点击 NPC 头像 → 切换私聊
+		if presence_bar.has_signal("npc_selected"):
+			presence_bar.npc_selected.connect(_on_presence_npc_selected)
+		# M6：召集公聊
+		if presence_bar.has_signal("group_chat_requested"):
+			presence_bar.group_chat_requested.connect(_on_group_chat_requested)
 	call_deferred("_apply_responsive_layout")
+
+
+## M6：NpcPresenceBar 上的"召集所有人谈话"按钮触发 → 打开 GroupChatUI
+func _on_group_chat_requested() -> void:
+	var gc_ui := get_node_or_null("GroupChatUI")
+	if gc_ui == null:
+		return
+	var loc_id := location_id
+	if loc_id == "":
+		var scene := get_tree().current_scene
+		loc_id = NpcRegistry.location_id_for_scene(String(scene.scene_file_path)) if scene != null else ""
+	if loc_id == "":
+		return
+	var npc_ids := NpcRegistry.get_npcs_at(loc_id)
+	if npc_ids.size() < 2:
+		return
+	# 获取内嵌的 GroupChatCoordinator 节点
+	var coord := gc_ui.get_node_or_null("GroupChatCoordinator")
+	if coord == null:
+		return
+	if not gc_ui.has_method("set_coordinator"):
+		return
+	gc_ui.set_coordinator(coord)
+	gc_ui.open(loc_id, npc_ids)
+
+
+## NpcPresenceBar 上选中某 NPC → 走 NpcInteractable 路径打开私聊
+func _on_presence_npc_selected(npc_id: String) -> void:
+	var ui := get_tree().get_first_node_in_group("dialogue_ui")
+	if ui == null or (ui.has_method("is_open") and ui.is_open()):
+		return
+	# 在 spawner 里找到该 NPC 节点
+	if npc_spawner == null:
+		return
+	for child in npc_spawner.get_children():
+		if child is Node2D and child.has_method("on_player_interact"):
+			if String(child.get("npc_id")) == npc_id:
+				child.on_player_interact(self)
+				return
 
 
 func _apply_responsive_layout() -> void:

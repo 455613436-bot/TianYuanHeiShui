@@ -1,0 +1,345 @@
+[gd_scene format=3 uid="uid://cf63kethtvs7x"]
+
+[ext_resource type="Script" uid="uid://dbg5575j2sryd" path="res://scripts/ui/DialogueUI.gd" id="4_dialogue"]
+[ext_resource type="Texture2D" uid="uid://cavvkhorkrxaf" path="res://assets/ui/dialogue_panel.png" id="8_dlg_bg"]
+[ext_resource type="Texture2D" uid="uid://xj864tyi4l7r" path="res://assets/ui/portrait_frame.png" id="9_frame"]
+[ext_resource type="Texture2D" uid="uid://14ut325b2rgb" path="res://assets/ui/btn_investigate.png" id="10_btn_inv"]
+[ext_resource type="Texture2D" uid="uid://dbg20vmpv2c3k" path="res://assets/ui/btn_give_item.png" id="11_btn_give"]
+[ext_resource type="Texture2D" uid="uid://c4sftn3j0nx52" path="res://assets/ui/btn_skill.png" id="12_btn_skill"]
+[ext_resource type="Texture2D" uid="uid://b5ej2s0hk2516" path="res://assets/ui/btn_leave.png" id="13_btn_leave"]
+[ext_resource type="Texture2D" uid="uid://bqq7tlwdsa56k" path="res://assets/ui/btn_send.png" id="14_btn_send"]
+[ext_resource type="Texture2D" uid="uid://c85nasqe8ppka" path="res://assets/ui/btn_retry.png" id="15_btn_retry"]
+[ext_resource type="Texture2D" uid="uid://jqexew1m5bk6" path="res://assets/ui/choice_bg.png" id="16_choice_bg"]
+[ext_resource type="Texture2D" uid="uid://xnpnkc8tnxlb" path="res://assets/ui/choice_bg_hover.png" id="17_choice_hover"]
+[ext_resource type="FontFile" uid="uid://cn3n7glq50pbs" path="res://assets/fonts/SourceHanSerifSC-Bold.otf" id="19_font_bold"]
+[ext_resource type="FontFile" path="res://assets/fonts/SourceHanSerifSC-Heavy.otf" id="20_font_heavy"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_dlg"]
+bg_color = Color(0, 0, 0, 0)
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_choice_normal"]
+content_margin_left = 12.0
+content_margin_top = 6.0
+content_margin_right = 12.0
+content_margin_bottom = 6.0
+texture = ExtResource("16_choice_bg")
+axis_stretch_horizontal = 1
+axis_stretch_vertical = 1
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_choice_hover"]
+content_margin_left = 12.0
+content_margin_top = 6.0
+content_margin_right = 12.0
+content_margin_bottom = 6.0
+texture = ExtResource("17_choice_hover")
+axis_stretch_horizontal = 1
+axis_stretch_vertical = 1
+
+[node name="DialogueUI" type="CanvasLayer"]
+layer = 10
+script = ExtResource("4_dialogue")
+
+[node name="DialogueBg" type="TextureRect" parent="."]
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 256.0
+offset_top = -260.0
+offset_right = -216.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+texture = ExtResource("8_dlg_bg")
+
+[node name="RootPanel" type="Panel" parent="."]
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 256.0
+offset_top = -260.0
+offset_right = -216.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_dlg")
+
+[node name="HBox" type="HBoxContainer" parent="RootPanel"]
+layout_mode = 0
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 40.0
+offset_top = 50.0
+offset_right = -40.0
+offset_bottom = -30.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 14
+
+[node name="Portrait" type="VBoxContainer" parent="RootPanel/HBox"]
+custom_minimum_size = Vector2(220, 0)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Spacer" type="Control" parent="RootPanel/HBox/Portrait"]
+custom_minimum_size = Vector2(220, 0)
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 2
+
+[node name="Center" type="VBoxContainer" parent="RootPanel/HBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+
+[node name="History" type="RichTextLabel" parent="RootPanel/HBox/Center"]
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_colors/default_color = Color(0.2, 0.15, 0.1, 1)
+theme_override_constants/line_separation = 2
+theme_override_constants/paragraph_separation = 2
+theme_override_fonts/normal_font = ExtResource("19_font_bold")
+theme_override_fonts/bold_font = ExtResource("19_font_bold")
+theme_override_fonts/bold_italics_font = ExtResource("19_font_bold")
+theme_override_fonts/italics_font = ExtResource("19_font_bold")
+theme_override_font_sizes/normal_font_size = 20
+theme_override_font_sizes/bold_font_size = 20
+theme_override_font_sizes/italics_font_size = 20
+bbcode_enabled = true
+scroll_following = true
+
+[node name="ChoiceRow" type="HFlowContainer" parent="RootPanel/HBox/Center"]
+custom_minimum_size = Vector2(0, 42)
+layout_mode = 2
+size_flags_horizontal = 3
+modulate = Color(1, 1, 1, 0)
+
+[node name="Choice1" type="Button" parent="RootPanel/HBox/Center/ChoiceRow"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.2, 0.15, 0.1, 1)
+theme_override_fonts/font = ExtResource("19_font_bold")
+theme_override_font_sizes/font_size = 20
+theme_override_styles/normal = SubResource("StyleBoxTexture_choice_normal")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_choice_normal")
+theme_override_styles/hover = SubResource("StyleBoxTexture_choice_hover")
+theme_override_styles/focus = SubResource("StyleBoxTexture_choice_hover")
+
+[node name="Choice2" type="Button" parent="RootPanel/HBox/Center/ChoiceRow"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.2, 0.15, 0.1, 1)
+theme_override_fonts/font = ExtResource("19_font_bold")
+theme_override_font_sizes/font_size = 20
+theme_override_styles/normal = SubResource("StyleBoxTexture_choice_normal")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_choice_normal")
+theme_override_styles/hover = SubResource("StyleBoxTexture_choice_hover")
+theme_override_styles/focus = SubResource("StyleBoxTexture_choice_hover")
+
+[node name="RegenerateChoices" type="Button" parent="RootPanel/HBox/Center/ChoiceRow"]
+custom_minimum_size = Vector2(112, 40)
+layout_mode = 2
+tooltip_text = "只重新生成对话选项，不追加 NPC 正文"
+theme_override_colors/font_color = Color(0.2, 0.15, 0.1, 1)
+theme_override_fonts/font = ExtResource("19_font_bold")
+theme_override_font_sizes/font_size = 20
+text = "⟳"
+
+[node name="TokenRow" type="HFlowContainer" parent="RootPanel/HBox/Center"]
+visible = false
+custom_minimum_size = Vector2(0, 32)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/h_separation = 6
+theme_override_constants/v_separation = 4
+
+[node name="InputRow" type="HBoxContainer" parent="RootPanel/HBox/Center"]
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 0
+theme_override_constants/separation = 8
+
+[node name="InputEdit" type="LineEdit" parent="RootPanel/HBox/Center/InputRow"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+theme_override_colors/font_color = Color(0.92, 0.9, 0.86, 1)
+theme_override_colors/font_placeholder_color = Color(0.92, 0.9, 0.86, 0.6)
+theme_override_colors/font_selected_color = Color(0.15, 0.1, 0.06, 1)
+theme_override_colors/caret_color = Color(0.95, 0.93, 0.88, 1)
+theme_override_colors/selection_color = Color(0.85, 0.75, 0.45, 0.55)
+theme_override_fonts/font = ExtResource("19_font_bold")
+theme_override_font_sizes/font_size = 20
+placeholder_text = "对 NPC 说点什么... (Enter 发送)"
+
+[node name="SendBtn" type="TextureButton" parent="RootPanel/HBox/Center/InputRow"]
+custom_minimum_size = Vector2(64, 44)
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "发送"
+texture_normal = ExtResource("14_btn_send")
+texture_hover = ExtResource("14_btn_send")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="RetryBtn" type="TextureButton" parent="RootPanel/HBox/Center/InputRow"]
+visible = false
+custom_minimum_size = Vector2(64, 44)
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "重试"
+texture_normal = ExtResource("15_btn_retry")
+texture_hover = ExtResource("15_btn_retry")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="Actions" type="VBoxContainer" parent="."]
+visible = false
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -216.0
+offset_top = -260.0
+offset_right = -8.0
+offset_bottom = -12.0
+grow_horizontal = 0
+grow_vertical = 0
+size_flags_vertical = 3
+theme_override_constants/separation = 16
+
+[node name="Investigate" type="TextureButton" parent="Actions"]
+custom_minimum_size = Vector2(160, 48)
+layout_mode = 2
+tooltip_text = "调查环境"
+texture_normal = ExtResource("10_btn_inv")
+texture_hover = ExtResource("10_btn_inv")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="OpenBag" type="TextureButton" parent="Actions"]
+custom_minimum_size = Vector2(160, 48)
+layout_mode = 2
+tooltip_text = "选择要在本轮对话里使用的道具（可选多个）"
+texture_normal = ExtResource("11_btn_give")
+texture_hover = ExtResource("11_btn_give")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="Skill" type="TextureButton" parent="Actions"]
+custom_minimum_size = Vector2(160, 48)
+layout_mode = 2
+tooltip_text = "使用技能"
+texture_normal = ExtResource("12_btn_skill")
+texture_hover = ExtResource("12_btn_skill")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="Leave" type="TextureButton" parent="Actions"]
+custom_minimum_size = Vector2(160, 48)
+layout_mode = 2
+tooltip_text = "离开"
+texture_normal = ExtResource("13_btn_leave")
+texture_hover = ExtResource("13_btn_leave")
+ignore_texture_size = true
+stretch_mode = 5
+
+[node name="PortraitOverlay" type="Control" parent="."]
+visible = false
+layout_mode = 3
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 8.0
+offset_top = -362.0
+offset_right = 248.0
+offset_bottom = -12.0
+mouse_filter = 2
+
+[node name="PortraitRect" type="ColorRect" parent="PortraitOverlay"]
+layout_mode = 0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+color = Color(0.15, 0.13, 0.12, 1)
+
+[node name="PortraitFrame" type="TextureRect" parent="PortraitOverlay/PortraitRect"]
+layout_mode = 0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("9_frame")
+expand_mode = 1
+stretch_mode = 6
+
+[node name="PortraitImage" type="TextureRect" parent="PortraitOverlay/PortraitRect"]
+layout_mode = 0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = 20.0
+offset_right = -20.0
+offset_bottom = -80.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 6
+
+[node name="PortraitLetter" type="Label" parent="PortraitOverlay/PortraitRect"]
+modulate = Color(0.95, 0.85, 0.7, 1)
+layout_mode = 0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 108
+text = "?"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="MoodBadge" type="Label" parent="PortraitOverlay/PortraitRect"]
+visible = false
+layout_mode = 0
+anchor_right = 1.0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = -8.0
+offset_bottom = 40.0
+theme_override_colors/font_color = Color(0.1, 0.08, 0.05, 1)
+theme_override_colors/font_outline_color = Color(1, 1, 1, 0.7)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 20
+text = "开心"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="NameLabel" type="Label" parent="PortraitOverlay/PortraitRect"]
+layout_mode = 0
+anchor_left = 0.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -84.0
+offset_bottom = -20.0
+theme_override_colors/font_color = Color(0.2, 0.1, 0.05, 1)
+theme_override_fonts/font = ExtResource("20_font_heavy")
+theme_override_font_sizes/font_size = 26
+text = "???"
+horizontal_alignment = 1
+vertical_alignment = 1

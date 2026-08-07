@@ -40,8 +40,13 @@ func set_provider(provider: Node) -> void:
 		_provider.queue_free()
 	_provider = provider
 	add_child(provider)
+	# OpenAI Provider 通过 tracer 记录实际请求与原始响应；日志器从不接收请求头或 API Key。
+	var logger := get_node_or_null("/root/LLMDebugLogger")
+	if logger != null and "tracer" in provider:
+		provider.set("tracer", logger)
 	# Provider 通过 service.reply_received.emit(...) 回调；不直接连信号
 	print("[LLMService] 切换 Provider -> %s" % provider.name)
+
 
 
 ## 由 DialogueUI 调用
@@ -92,7 +97,11 @@ func deliver_reply(request_id: int, npc_id: String, reply: Dictionary) -> void:
 		if not final_meta.has(k) or final_meta[k] == "" or final_meta[k] == 0:
 			final_meta[k] = provider_meta[k]
 	reply["meta"] = final_meta
+	var logger := get_node_or_null("/root/LLMDebugLogger")
+	if logger != null and logger.has_method("log_chat_final_reply"):
+		logger.call("log_chat_final_reply", request_id, ctx, reply)
 	reply_received.emit(request_id, int(ctx.get("session_id", 0)), npc_id, reply)
+
 
 
 func deliver_chunk(request_id: int, npc_id: String, accumulated_text: String) -> void:
@@ -111,7 +120,11 @@ func deliver_failure(request_id: int, npc_id: String, error: String) -> void:
 	if String(ctx.get("npc_id", "")) != npc_id:
 		return
 	_inflight.erase(request_id)
+	var logger := get_node_or_null("/root/LLMDebugLogger")
+	if logger != null and logger.has_method("log_chat_failure"):
+		logger.call("log_chat_failure", request_id, ctx, error)
 	reply_failed.emit(request_id, int(ctx.get("session_id", 0)), npc_id, error)
+
 
 
 func cancel_request(request_id: int) -> void:
@@ -121,7 +134,11 @@ func cancel_request(request_id: int) -> void:
 	_inflight.erase(request_id)
 	if _provider != null and _provider.has_method("cancel_request"):
 		_provider.cancel_request(request_id)
+	var logger := get_node_or_null("/root/LLMDebugLogger")
+	if logger != null and logger.has_method("log_event"):
+		logger.call("log_event", "chat_cancelled", {"request_id": request_id, "context": ctx})
 	request_cancelled.emit(request_id, int(ctx.get("session_id", 0)), String(ctx.get("npc_id", "")))
+
 
 
 func cancel_all_requests() -> void:
@@ -152,11 +169,18 @@ func summarize(npc_profile: Dictionary, previous_summary: String, recent_turns: 
 
 
 func deliver_summary(npc_id: String, summary: String) -> void:
+	var logger := get_node_or_null("/root/LLMDebugLogger")
+	if logger != null and logger.has_method("log_summary_result"):
+		logger.call("log_summary_result", npc_id, true, summary)
 	summary_ready.emit(npc_id, summary)
 
 
 func deliver_summary_failure(npc_id: String, error: String) -> void:
+	var logger := get_node_or_null("/root/LLMDebugLogger")
+	if logger != null and logger.has_method("log_summary_result"):
+		logger.call("log_summary_result", npc_id, false, error)
 	summary_failed.emit(npc_id, error)
+
 
 
 func _local_fallback_summary(previous_summary: String, recent_turns: Array) -> String:

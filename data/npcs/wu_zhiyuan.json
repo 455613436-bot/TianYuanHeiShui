@@ -122,5 +122,17 @@
         "我是田原村的村长，姓吴，本名志源，村里人都叫我老吴。一辈子守着这村子，没什么本事，就盼着大伙儿好好过日子。你们有什么事可以问我，不过我劝你们……问完就早点走。"
       ]
     }
+  ],
+  "home_location": "village_chief_house",
+  "current_location": "village_chief_house",
+  "portrait_small": "",
+  "importance": "main",
+  "sort_priority": 10,
+  "schedule": [
+    { "period": "morning",   "location": "village_chief_house", "reason": "在家接待访客" },
+    { "period": "noon",      "location": "village_chief_house", "reason": "回家吃饭" },
+    { "period": "afternoon", "location": "village_chief_house", "reason": "在家处理村务" },
+    { "period": "evening",   "location": "village_chief_house", "reason": "回家用晚饭" },
+    { "period": "night",     "location": "village_chief_house", "reason": "睡觉" }
   ]
 }

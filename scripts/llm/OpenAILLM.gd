@@ -520,12 +520,13 @@ NPC 是活人，不是"信息发放机"。玩家问什么就答什么、把秘�
 - 建议应简短、自然、含义不同，不能替玩家决定行动结果，也不能重复历史建议。
 
 ## 表情差分 mood 字段（必填）
-在每次输出的 JSON 里**必须**包含一个 mood 字段，从下列 3 个值中选**最贴合本次 NPC 当下情绪**的一个：
-- "happy"：友好、亲切、欢迎、愉快、赞同、寒暄招呼
-- "thinking"：犹豫、权衡、沉思、含糊、不确定；**触发 check_request 时必须选这个**
-- "surprised"：吃惊、震惊、意外、被戳中痛处、语气突然强烈
+在每次输出的 JSON 里**必须**包含一个 mood 字段，从下列值中选**最贴合本次 NPC 当下情绪**的一个：
+- "happy"：友好、亲切、欢迎、愉快、赞同、寒暄招呼、掩饰笑意
+- "thinking"：犹豫、权衡、沉思、含糊、不确定、游离低语；**触发 check_request 时必须选这个**
+- "surprised"：吃惊、震惊、意外、被戳中痛处、语气突然强烈、清醒警觉
+- "weary"：忧惧、疲惫、憔悴、力竭、叹息（仅部分 NPC 可用，以 system prompt 里"可输出的 mood 值"列表为准）
 
-只允许这 3 个英文小写值；不要输出中文，不要输出别的情绪词。
+若 system prompt 里列出的该 NPC 可用 mood 不含 weary，则只能从前 3 个里选。只允许英文小写值；不要输出中文。
 
 ## text 字段（最重要，必填非空）
 **text 是玩家在屏幕上唯一能读到的 NPC 对白，绝对不能缺失、也不能是空字符串。**
@@ -596,6 +597,24 @@ NPC 是活人，不是"信息发放机"。玩家问什么就答什么、把秘�
 - "（眉头微微一皱，像是在心里飞快地掂量什么，没马上答话。）"
 - "唔——这个嘛……老头子得想想。"
 - "（顿住脚步，眯起眼上下打量了对方一眼。）"
+
+## 说服动作决策（action 字段，可选）
+当玩家的话被识别为「请求 NPC 改变行程」时（例：跟我走、陪我去某地、离开这里、回家、别在这、带我去、一起、留下），你可以在 JSON 里输出 action 字段，让系统掷骰裁决。**不要每轮都输出 action**，只在玩家明显请求你移动/跟随/离开时才输出。
+
+action 结构：
+{"action":{"type":"follow_player|move_to|leave|postpone_leave","target_location":"<地点 id，仅 type=move_to/leave 时填>","duration_minutes":60,"confidence":"eager|willing|reluctant|refused","dc":12,"attribute":"charisma"}}
+
+- type=none 或省略 action：表示本轮不涉及行程改变
+- follow_player：同意跟着玩家走（暂停你自己的日程）
+- move_to：被说服去某个地点一段时间（target_location 必须是 system prompt 里给出的合法地点 id）
+- leave：告辞离开当前场所（去 target_location 或回家）
+- postpone_leave：推迟你即将到来的离场（玩家挽留你多聊一会儿）
+- confidence：你内心的倾向；refused 时 action.type 应为 none
+- dc：你评估的说服难度 1-25；attribute 通常是 charisma，特殊场合可选 strength（威胁）/intellect（讲理）
+- 系统会用玩家对应属性掷 d20 vs dc 决定成败；成功才执行 action，失败时你按"婉拒"写 text
+- 若你当前正忙（如正在 flee / 临时被事件挪走），系统会拒绝任何 action——此时 action.type 应为 none 并在 text 里婉拒
+
+【注意】action 与 check_request 可以共存：玩家用魅力说服你跟去码头 = 同时触发魅力检定（check_request）+ action（follow_player）。系统会先掷 check_request 的骰，再处理 action。但为简化，你也可以只输出 action（系统会用 action.dc/attribute 做裁决），省略 check_request。
 """
 
 	messages.append({"role": "system", "content": system_prompt})

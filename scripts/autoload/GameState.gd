@@ -11,7 +11,9 @@ signal load_failed(path: String, reason: String)
 signal attributes_changed()
 
 const MAX_POLLUTION := 6
-const SAVE_VERSION := 1
+const SAVE_VERSION := 2
+## 可读取的历史存档版本（v1 没有 TimeSystem/NpcRegistry/visited_locations，加载时用默认值补齐）
+const READABLE_SAVE_VERSIONS := [1, 2]
 const MANUAL_SAVE_SLOT_COUNT := 5
 const SAVE_PATH := "user://save_01.json"
 const AUTO_SAVE_PATH := "user://save_auto.json"
@@ -48,6 +50,8 @@ var map_return_scene_path: String = DEFAULT_MAP_RETURN_SCENE
 var current_scene_path: String = MAP_SCENE
 var scene_states: Dictionary = {}
 var unlocked_locations: Dictionary = {DEFAULT_MAP_RETURN_SCENE: true}
+## F5：玩家到过的地点（key = 地点 id，不是 scene 路径），地图上未探索地点的 NPC 显示为"？？？"
+var visited_locations: Dictionary = {}
 var quest_stages: Dictionary = {}
 var investigation_states: Dictionary = {}
 var npc_dialogue_stages: Dictionary = {}
@@ -77,6 +81,7 @@ func reset_for_new_game() -> void:
 	attributes = {}
 	attributes_locked_in = false
 	unlocked_locations = {DEFAULT_MAP_RETURN_SCENE: true}
+	visited_locations = {}
 	quest_stages = {}
 	investigation_states = {}
 	npc_dialogue_stages = {}
@@ -85,6 +90,9 @@ func reset_for_new_game() -> void:
 	scene_states = {}
 	map_return_scene_path = DEFAULT_MAP_RETURN_SCENE
 	current_scene_path = MAP_SCENE
+	# 时钟与 NPC 调度一并归零（NpcRegistry 按 schedule 重算位置）
+	TimeSystem.reset_to_start()
+	NpcRegistry.reset_runtime()
 	# 发放初始物品；不 emit item_added 以免弹出"获得道具"toast（这时候还没进入任何场景）
 	for item_id in INITIAL_INVENTORY:
 		if not item_id.is_empty() and not inventory.has(item_id):
@@ -205,6 +213,31 @@ func is_location_unlocked(location_id: String) -> bool:
 	return bool(unlocked_locations.get(location_id, false))
 
 
+## F5：进入过一次地点即视为"探索过"，地图徽章才会显示那里的 NPC
+func mark_visited(loc_id: String) -> void:
+	if not loc_id.is_empty():
+		visited_locations[loc_id] = true
+
+
+func has_visited(loc_id: String) -> bool:
+	return bool(visited_locations.get(loc_id, false))
+
+
+## 通用剧情事件入口：剧情脚本可触发自定义事件，NpcRegistry 事件规则层会消费
+func emit_event(event_name: String, payload: Dictionary = {}) -> void:
+	if event_name.is_empty():
+		return
+	NpcRegistry.on_event(event_name, payload)
+
+
+## 触发"event_triggered"类规则的便捷入口
+func emit_story_event(event_id: String) -> void:
+	if event_id.is_empty():
+		return
+	trigger_event(event_id)
+	emit_event("event_triggered", {"event_id": event_id})
+
+
 func set_quest_stage(quest_id: String, stage: int) -> void:
 	if not quest_id.is_empty():
 		quest_stages[quest_id] = maxi(stage, 0)
@@ -311,9 +344,19 @@ func change_scene(scene_path: String, remember_return: bool = false, autosave: b
 		if scene != null:
 			remember_map_return_scene(String(scene.scene_file_path))
 	current_scene_path = scene_path
+	_notify_scene_arrival(scene_path)
 	if autosave:
 		save_game(AUTO_SAVE_PATH, false)
 	return get_tree().change_scene_to_file(scene_path)
+
+
+## 玩家到达新场景的钩子：标记地点已探索 + 跟随中的 NPC 一起挪动
+func _notify_scene_arrival(scene_path: String) -> void:
+	var loc_id := NpcRegistry.location_id_for_scene(scene_path)
+	if loc_id.is_empty():
+		return
+	mark_visited(loc_id)
+	NpcRegistry.on_player_enter_location(loc_id)
 
 
 func open_world_map() -> Error:
@@ -355,6 +398,7 @@ func save_game(path: String = SAVE_PATH, capture_scene: bool = true) -> Error:
 		"inventory": inventory,
 		"clues": clues,
 		"unlocked_locations": unlocked_locations,
+		"visited_locations": visited_locations,
 		"quest_stages": quest_stages,
 		"investigation_states": investigation_states,
 		"npc_dialogue_stages": npc_dialogue_stages,
@@ -362,6 +406,8 @@ func save_game(path: String = SAVE_PATH, capture_scene: bool = true) -> Error:
 		"one_shot_items": one_shot_items,
 		"scene_states": scene_states,
 		"memory": MemoryStore.to_dict(),
+		"time_system": TimeSystem.to_dict(),
+		"npc_registry": NpcRegistry.to_dict(),
 		"attributes": attributes.duplicate(true),
 		"attributes_locked_in": attributes_locked_in,
 	}
@@ -388,9 +434,10 @@ func load_game(path: String = SAVE_PATH, switch_scene: bool = true) -> Error:
 		return ERR_PARSE_ERROR
 	var data: Dictionary = json.data
 	var version_value: Variant = data.get("save_version", 0)
-	if not (version_value is int or version_value is float) or int(version_value) != SAVE_VERSION:
+	if not (version_value is int or version_value is float) or not READABLE_SAVE_VERSIONS.has(int(version_value)):
 		load_failed.emit(path, "不支持的存档版本")
 		return ERR_FILE_UNRECOGNIZED
+	var save_version := int(version_value)
 
 	var loaded_scene := _safe_scene_path(data.get("current_scene", MAP_SCENE), MAP_SCENE)
 	var loaded_return := _safe_scene_path(data.get("map_return_scene", DEFAULT_MAP_RETURN_SCENE), DEFAULT_MAP_RETURN_SCENE)
@@ -401,6 +448,7 @@ func load_game(path: String = SAVE_PATH, switch_scene: bool = true) -> Error:
 	inventory = _string_array(data.get("inventory", []))
 	clues = _bool_dictionary(data.get("clues", {}))
 	unlocked_locations = _bool_dictionary(data.get("unlocked_locations", {}))
+	visited_locations = _bool_dictionary(data.get("visited_locations", {}))
 	quest_stages = _int_dictionary(data.get("quest_stages", {}))
 	investigation_states = _dictionary_copy(data.get("investigation_states", {}))
 	npc_dialogue_stages = _int_dictionary(data.get("npc_dialogue_stages", {}))
@@ -409,6 +457,13 @@ func load_game(path: String = SAVE_PATH, switch_scene: bool = true) -> Error:
 	scene_states = _sanitize_scene_states(data.get("scene_states", {}))
 	MemoryStore.load_from_dict(data.get("memory", {}))
 	_load_attributes(data.get("attributes", {}), data.get("attributes_locked_in", false))
+	# v1 → v2 迁移：旧存档没有 TimeSystem/NpcRegistry 状态，按 schedule 默认计算
+	if save_version == 1:
+		TimeSystem.reset_to_start()
+		NpcRegistry.reset_runtime()
+	else:
+		TimeSystem.load_from_dict(data.get("time_system", {}))
+		NpcRegistry.load_from_dict(data.get("npc_registry", {}))
 	current_scene_path = loaded_scene
 	map_return_scene_path = loaded_return
 	if not scene_states.has(current_scene_path) and data.has("player_position"):
@@ -482,7 +537,7 @@ func get_save_metadata(path: String) -> Dictionary:
 	if parsed is not Dictionary:
 		return result
 	var version: Variant = parsed.get("save_version", 0)
-	if not (version is int or version is float) or int(version) != SAVE_VERSION:
+	if not (version is int or version is float) or not READABLE_SAVE_VERSIONS.has(int(version)):
 		return result
 	result["valid"] = true
 	result["saved_at_unix"] = _safe_int(parsed.get("saved_at_unix", 0), 0)

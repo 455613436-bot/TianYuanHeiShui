@@ -10,9 +10,13 @@ class_name MoodPortrait
 const MOOD_HAPPY := "happy"
 const MOOD_THINKING := "thinking"
 const MOOD_SURPRISED := "surprised"
+const MOOD_WEARY := "weary"
 const DEFAULT_MOOD := MOOD_HAPPY
 
-## LLM 输出 mood 的中文/英文别名
+## 全局 3 种 canonical mood（兜底用）；NPC 可通过数据文件 mood_map 扩展
+const GLOBAL_CANONICAL_MOODS: Array[String] = [MOOD_HAPPY, MOOD_THINKING, MOOD_SURPRISED]
+
+## LLM 输出 mood 的中文/英文别名（全局兜底）
 const _ALIASES := {
 	"happy": MOOD_HAPPY,
 	"joy": MOOD_HAPPY,
@@ -49,52 +53,97 @@ const _ALIASES := {
 	"吃惊": MOOD_SURPRISED,
 	"意外": MOOD_SURPRISED,
 	"愕然": MOOD_SURPRISED,
+
+	"weary": MOOD_WEARY,
+	"exhausted": MOOD_WEARY,
+	"tired": MOOD_WEARY,
+	"忧惧": MOOD_WEARY,
+	"疲惫": MOOD_WEARY,
+	"忧虑": MOOD_WEARY,
+	"憔悴": MOOD_WEARY,
 }
 
 ## 关键词到 mood 的映射，用于本地兜底判定
 const _KEYWORD_HINTS := {
 	MOOD_SURPRISED: [
 		"！", "?！", "！？", "咦", "哎呀", "天哪", "老天", "什么？", "什么?！",
-		"竟然", "居然", "怎么会", "不会吧", "真的假的", "真的吗",
+		"竟然", "居然", "怎么会", "不会吧", "真的假的", "真的吗", "警觉",
 	],
 	MOOD_THINKING: [
 		"……", "唔", "嗯——", "让我想想", "这个嘛", "或许", "也许", "似乎",
 		"我想想", "得想想", "怎么说", "不好说", "难说", "让我看看", "掂量",
-		"(", "（", "沉思", "犹豫",
+		"(", "（", "沉思", "犹豫", "游离", "低语",
 	],
 	MOOD_HAPPY: [
 		"哈哈", "呵呵", "嘿嘿", "哟", "欢迎", "好啊", "太好了", "真好",
-		"客气", "请坐", "自便", "尽管",
+		"客气", "请坐", "自便", "尽管", "掩饰", "笑意",
+	],
+	MOOD_WEARY: [
+		"叹", "累", "疲惫", "忧惧", "憔悴", "力竭", "撑不住", "苍老",
+		"叹息", "唉", "罢了",
 	],
 }
 
+## 每个 NPC 自定义的 mood 映射缓存：npc_id -> {alias: mood_file_name}
+static var _npc_mood_maps: Dictionary = {}
+## 每个 NPC 可用的 canonical mood 列表缓存：npc_id -> Array[String]
+static var _npc_mood_lists: Dictionary = {}
+
 
 static func canonical_moods() -> Array[String]:
-	return [MOOD_HAPPY, MOOD_THINKING, MOOD_SURPRISED]
+	return [MOOD_HAPPY, MOOD_THINKING, MOOD_SURPRISED, MOOD_WEARY]
 
 
-## 把任意字符串规范化为 canonical mood；无法识别返回空串
-static func normalize_mood(raw: String) -> String:
+## 返回某 NPC 可用的 mood 列表：优先 NPC 数据里的 mood_map 的 values，
+## 没有则返回全局 3 种。
+static func moods_for_npc(npc_id: String) -> Array[String]:
+	if npc_id == "":
+		return GLOBAL_CANONICAL_MOODS.duplicate()
+	_ensure_npc_mood_map_loaded(npc_id)
+	if _npc_mood_lists.has(npc_id):
+		return (_npc_mood_lists[npc_id] as Array[String]).duplicate()
+	return GLOBAL_CANONICAL_MOODS.duplicate()
+
+
+## 把任意字符串规范化为 canonical mood；无法识别返回空串。
+## 优先查 NPC 自己的 mood_map，没有再走全局别名表。
+static func normalize_mood(raw: String, npc_id: String = "") -> String:
 	if raw == null:
 		return ""
 	var key := raw.strip_edges().to_lower()
 	if key == "":
 		return ""
+	# 1. NPC 自定义 mood_map（含该 NPC 特有的 mood，如 weary）
+	if npc_id != "":
+		_ensure_npc_mood_map_loaded(npc_id)
+		var npc_map: Dictionary = _npc_mood_maps.get(npc_id, {})
+		if not npc_map.is_empty():
+			# 先精确匹配原始 key（保留中文）
+			var raw_trim := raw.strip_edges()
+			if npc_map.has(raw_trim):
+				return String(npc_map[raw_trim])
+			if npc_map.has(key):
+				return String(npc_map[key])
+	# 2. 全局别名表
 	if _ALIASES.has(key):
 		return _ALIASES[key]
-	# 也允许直接传中文（未 lower 影响不大）
 	var raw_trim := raw.strip_edges()
 	if _ALIASES.has(raw_trim):
 		return _ALIASES[raw_trim]
 	return ""
 
 
-## 根据 NPC 正文做启发式匹配；若都不命中，返回 DEFAULT_MOOD
-static func detect_mood_from_text(text: String) -> String:
+## 根据 NPC 正文做启发式匹配；若都不命中，返回 DEFAULT_MOOD。
+## npc_id 用于决定该 NPC 可用的 mood 集合（如林德山有 weary）
+static func detect_mood_from_text(text: String, npc_id: String = "") -> String:
 	if text == null or text.strip_edges() == "":
 		return DEFAULT_MOOD
-	# 优先级：surprised > thinking > happy（惊讶更强烈，先判）
-	for mood in [MOOD_SURPRISED, MOOD_THINKING, MOOD_HAPPY]:
+	# 优先级：surprised > weary > thinking > happy（强烈情绪先判）
+	var ordered: Array[String] = [MOOD_SURPRISED, MOOD_WEARY, MOOD_THINKING, MOOD_HAPPY]
+	# 若该 NPC 不支持 weary，跳过
+	if npc_id != "" and not moods_for_npc(npc_id).has(MOOD_WEARY):
+		ordered.erase(MOOD_WEARY)
+	for mood in ordered:
 		var keywords: Array = _KEYWORD_HINTS.get(mood, [])
 		for kw in keywords:
 			if text.contains(String(kw)):
@@ -103,11 +152,11 @@ static func detect_mood_from_text(text: String) -> String:
 
 
 ## 决定最终 mood：LLM 输出优先，其次关键词兜底
-static func resolve_mood(llm_mood_raw: String, npc_text: String) -> String:
-	var normalized := normalize_mood(llm_mood_raw)
+static func resolve_mood(llm_mood_raw: String, npc_text: String, npc_id: String = "") -> String:
+	var normalized := normalize_mood(llm_mood_raw, npc_id)
 	if normalized != "":
 		return normalized
-	return detect_mood_from_text(npc_text)
+	return detect_mood_from_text(npc_text, npc_id)
 
 
 ## 占位贴图缓存：cache_key(mood + size + npc_hue_index) -> ImageTexture
@@ -121,17 +170,52 @@ const _PLACEHOLDER_STYLE := {
 	MOOD_HAPPY:     {"bg": Color(0.98, 0.76, 0.35), "fg": Color(0.15, 0.08, 0.02), "label": "开心"},
 	MOOD_THINKING:  {"bg": Color(0.42, 0.55, 0.72), "fg": Color(0.95, 0.95, 0.98), "label": "思考"},
 	MOOD_SURPRISED: {"bg": Color(0.88, 0.42, 0.55), "fg": Color(0.98, 0.96, 0.90), "label": "惊讶"},
+	MOOD_WEARY:     {"bg": Color(0.45, 0.40, 0.35), "fg": Color(0.92, 0.88, 0.80), "label": "疲惫"},
 }
+
+
+## 从 NpcRegistry 加载某 NPC 的 mood_map（数据文件里的 mood_map 字段）。
+## mood_map 是 {alias: mood_file_name}，alias 可以是任意字符串（中文/英文），
+## mood_file_name 对应 res://assets/portraits/<npc_id>_<mood_file_name>.png。
+## 同时缓存该 NPC 可用的 canonical mood 列表（mood_map 的 values 去重）。
+static func _ensure_npc_mood_map_loaded(npc_id: String) -> void:
+	if npc_id == "" or _npc_mood_maps.has(npc_id):
+		return
+	var registry: Node = Engine.get_main_loop().root.get_node_or_null("/root/NpcRegistry")
+	if registry == null or not registry.has_method("get_npc"):
+		# NpcRegistry 还没就绪：先空着，下次再加载
+		return
+	var npc_data: Dictionary = registry.call("get_npc", npc_id)
+	if npc_data.is_empty():
+		_npc_mood_maps[npc_id] = {}
+		_npc_mood_lists[npc_id] = GLOBAL_CANONICAL_MOODS.duplicate()
+		return
+	var mood_map_raw: Variant = npc_data.get("mood_map", {})
+	var mood_map: Dictionary = {}
+	var mood_list: Array[String] = []
+	if mood_map_raw is Dictionary:
+		for alias in mood_map_raw:
+			var target := String(mood_map_raw[alias]).strip_edges()
+			if target == "":
+				continue
+			mood_map[String(alias)] = target
+			if not mood_list.has(target):
+				mood_list.append(target)
+	_npc_mood_maps[npc_id] = mood_map
+	# 若 NPC 没声明 mood_map，回退到全局 3 种。
+	if mood_list.is_empty():
+		mood_list = GLOBAL_CANONICAL_MOODS.duplicate()
+	_npc_mood_lists[npc_id] = mood_list
 
 
 ## 对外的统一入口：**优先加载真图，找不到再生成占位**
 ## 查找顺序：
-##   1. res://assets/portraits/<npc_id>_<mood>.png   ← NPC 差分图
+##   1. res://assets/portraits/<npc_id>_<mood>.png   ← NPC 差分图（mood 已按 NPC mood_map 映射）
 ##   2. res://assets/portraits/<npc_id>.png          ← NPC 通用底图（配合动态 mood_badge 也能用）
 ##   3. res://assets/portraits/default_<mood>.png    ← 全局差分
 ##   4. 动态生成的占位（按 npc_id hash 分色调）
 static func load_or_generate(npc_id: String, mood: String, size: Vector2i = Vector2i(200, 240)) -> Texture2D:
-	var canonical := normalize_mood(mood)
+	var canonical := normalize_mood(mood, npc_id)
 	if canonical == "":
 		canonical = DEFAULT_MOOD
 
@@ -142,7 +226,10 @@ static func load_or_generate(npc_id: String, mood: String, size: Vector2i = Vect
 		tex = _try_load_disk("res://assets/portraits/%s.png" % npc_id)
 		if tex != null:
 			return tex
+
 	var tex2 := _try_load_disk("res://assets/portraits/default_%s.png" % canonical)
+
+
 	if tex2 != null:
 		return tex2
 	return get_texture_for(npc_id, canonical, size)
@@ -162,7 +249,7 @@ static func _try_load_disk(path: String) -> Texture2D:
 
 ## 生成一张按 (npc_id, mood, size) 唯一的占位贴图，可缓存。
 static func get_texture_for(npc_id: String, mood: String, size: Vector2i = Vector2i(200, 240)) -> Texture2D:
-	var canonical := normalize_mood(mood)
+	var canonical := normalize_mood(mood, npc_id)
 	if canonical == "":
 		canonical = DEFAULT_MOOD
 	var hue_index := _hue_index_for_npc(npc_id)

@@ -235,8 +235,10 @@ func _set_portrait_letter(value: String) -> void:
 
 
 ## 切换立绘表情差分。传入的 mood 会先经 MoodPortraitUtil.normalize_mood 规范化，非法值回退到 DEFAULT_MOOD。
+## 传入 npc_id 以支持每 NPC 自定义 mood 集合（如林德山有 weary）。
 func _apply_mood(mood_raw: String) -> void:
-	var mood := MoodPortraitUtil.normalize_mood(mood_raw)
+	var npc_id_for_mood: String = String(current_npc.get("id", ""))
+	var mood := MoodPortraitUtil.normalize_mood(mood_raw, npc_id_for_mood)
 	if mood == "":
 		mood = MoodPortraitUtil.DEFAULT_MOOD
 	current_mood = mood
@@ -263,6 +265,7 @@ func _mood_badge_text(mood: String) -> String:
 		MoodPortraitUtil.MOOD_HAPPY: return "开心"
 		MoodPortraitUtil.MOOD_THINKING: return "思考"
 		MoodPortraitUtil.MOOD_SURPRISED: return "惊讶"
+		MoodPortraitUtil.MOOD_WEARY: return "疲惫"
 	return ""
 
 
@@ -359,6 +362,15 @@ func _request_llm(user_text: String, purpose: String = "dialogue", opening: bool
 	var inventory_block: String = ItemDB.build_inventory_prompt_block(GameState.inventory)
 	if inventory_block != "":
 		request_profile["system_prompt"] = String(request_profile.get("system_prompt", "")) + "\n\n" + inventory_block
+	# M3：注入"当前场景状态"上下文（时间/地点/同地点其他人 + 日程预告）
+	var scene_block: String = NpcRegistry.build_scene_prompt_block(npc_id_for_mem)
+	if scene_block != "":
+		request_profile["system_prompt"] = String(request_profile.get("system_prompt", "")) + "\n\n" + scene_block
+	# F7：若本轮推进后会跨时段边界，注入软指令让 NPC 自然预告离场
+	if TimeSystem.will_cross_period_boundary(TimeSystem.minutes_per_dialogue_turn):
+		var soft_leave: String = NpcRegistry.build_soft_leave_instruction(npc_id_for_mem)
+		if soft_leave != "":
+			request_profile["system_prompt"] = String(request_profile.get("system_prompt", "")) + soft_leave
 
 	# 记住本轮玩家输入，等 NPC 回复回来时一并写入长期历史（非 opening / 非 choices_only 才算一轮）
 	if purpose == "dialogue" and not opening:
@@ -457,6 +469,8 @@ func _on_llm_reply(request_id: int, session_id: int, npc_id: String, reply: Dict
 	var text := String(reply.get("text", "……")).strip_edges()
 	if text == "":
 		text = "……"
+	# 剥离 [END_DIALOGUE] 等控制标签（玩家不应看到），但保留"是否离场"的判定（_advance_dialogue_clock 里用）
+	text = _strip_dialogue_tags(text)
 	if not history.is_empty() and history[-1].get("role", "") == "npc" and history[-1].get("streaming", false):
 		history[-1]["text"] = text
 		history[-1]["streaming"] = false
@@ -468,7 +482,7 @@ func _on_llm_reply(request_id: int, session_id: int, npc_id: String, reply: Dict
 		_redraw_history()
 
 	# 根据 LLM 输出的 mood（若有）+ 正文关键词兜底切换立绘表情
-	var resolved_mood := MoodPortraitUtil.resolve_mood(String(reply.get("mood", "")), text)
+	var resolved_mood := MoodPortraitUtil.resolve_mood(String(reply.get("mood", "")), text, npc_id)
 	_apply_mood(resolved_mood)
 
 	# 检定分支：仅在非检定回填的普通对话轮次里检查 check_request；避免死循环。
@@ -493,11 +507,19 @@ func _on_llm_reply(request_id: int, session_id: int, npc_id: String, reply: Dict
 	current_npc["dialogue_stage"] = GameState.get_npc_dialogue_stage(npc_id)
 
 	# 将本轮 user+npc 写入 MemoryStore 长期历史，并按 5 轮阈值触发总结
-	_persist_turn_to_memory(npc_id, text, reply_choices)
+	# 注意：text 已剥离控制标签；_persist_turn_to_memory 内部会把"是否触发离场"判定
+	# 交给 _advance_dialogue_clock，那里需要原始（含 tag）的 text，故单独传 raw。
+	_persist_turn_to_memory(npc_id, text, reply_choices, String(reply.get("text", "")))
 
 	if run_check:
 		_run_check_flow(check_request)
 		return
+
+	# M5：LLM 说服裁决器（action 字段）。仅当 check_request 未触发时处理，
+	# 避免与检定流程争抢；action 自带 dc/attribute 时走一次轻量检定。
+	var llm_action: Dictionary = reply.get("action", {}) if reply.get("action", null) is Dictionary else {}
+	if not llm_action.is_empty():
+		_handle_llm_action(llm_action, npc_id)
 
 	# offer_request：LLM 直接给出的"提议/请求"字段优先于 meta 合成的（若两者都有）
 	var llm_offer: Dictionary = reply.get("offer_request", {}) if reply.get("offer_request", null) is Dictionary else {}
@@ -609,6 +631,14 @@ func _handle_item_used(used: Dictionary) -> void:
 		_append_history("system", "[你出示了道具：%s]" % display_name)
 
 
+## 剥离 LLM 输出里的控制标签（如 [END_DIALOGUE]），不展示给玩家
+func _strip_dialogue_tags(text: String) -> String:
+	var result := text
+	for tag in ["[END_DIALOGUE]", "[end_dialogue]", "[END DIALOGUE]"]:
+		result = result.replace(tag, "")
+	return result.strip_edges()
+
+
 func _append_history(role: String, text: String) -> void:
 	history.append({"role": role, "text": text})
 	if history.size() > HISTORY_LIMIT:
@@ -692,7 +722,7 @@ func _hide_choices() -> void:
 
 # ─── 记忆持久化 & 总结 ────────────────────────────────────────────────
 
-func _persist_turn_to_memory(npc_id: String, npc_text: String, choices: Variant) -> void:
+func _persist_turn_to_memory(npc_id: String, npc_text: String, choices: Variant, raw_npc_text: String = "") -> void:
 	if npc_id == "":
 		return
 	var choice_list: Array = []
@@ -709,12 +739,30 @@ func _persist_turn_to_memory(npc_id: String, npc_text: String, choices: Variant)
 		if _current_is_check_followup and npc_text.strip_edges() != "":
 			MemoryStore.append_turn(npc_id, "", npc_text, choice_list)
 			_maybe_trigger_summary(npc_id)
+			# check_followup 也算一轮对话推进时间
+			_advance_dialogue_clock(npc_id, raw_npc_text if raw_npc_text != "" else npc_text)
 		_pending_user_text_for_memory = ""
 		return
 
 	MemoryStore.append_turn(npc_id, _pending_user_text_for_memory, npc_text, choice_list)
 	_pending_user_text_for_memory = ""
 	_maybe_trigger_summary(npc_id)
+	# M3：一轮对话结束推进游戏时间 + 处理 [END_DIALOGUE] / 时段边界离场
+	_advance_dialogue_clock(npc_id, raw_npc_text if raw_npc_text != "" else npc_text)
+
+
+## M3：对话每轮推进 5 分钟；若 NPC 输出含 [END_DIALOGUE] 或已跨时段，触发离场结算
+func _advance_dialogue_clock(npc_id: String, raw_npc_text: String) -> void:
+	var prev_period := TimeSystem.current_period()
+	TimeSystem.on_dialogue_turn_completed()
+	var new_period := TimeSystem.current_period()
+	var npc_replied_end := raw_npc_text.contains("[END_DIALOGUE]") or raw_npc_text.contains("[end_dialogue]")
+	if npc_replied_end or (new_period != prev_period):
+		# NPC 主动告辞或时段已切换 → 按 schedule 把 NPC 挪到新位置
+		NpcRegistry.apply_schedule_for(npc_id)
+		if npc_replied_end and is_open():
+			_append_history("system", "（%s 起身告辞离开了。）" % current_npc.get("short_name", "对方"))
+			call_deferred("close_dialogue")
 
 
 func _maybe_trigger_summary(npc_id: String) -> void:
@@ -741,6 +789,48 @@ func _on_summary_ready(npc_id: String, summary: String) -> void:
 func _on_summary_failed(npc_id: String, error: String) -> void:
 	push_warning("[DialogueUI] NPC %s 记忆总结失败: %s" % [npc_id, error])
 	MemoryStore.mark_summarize_finished(npc_id, false)
+
+
+## M5：处理 LLM 说服裁决器的 action 字段（§8）。
+## 用 action.dc/attribute 掷一次骰；成功才执行 action，失败则不变更位置。
+func _handle_llm_action(action: Dictionary, npc_id: String) -> void:
+	var dc := int(action.get("dc", 0))
+	var attribute := String(action.get("attribute", "charisma"))
+	var confidence := String(action.get("confidence", ""))
+	if confidence == "refused":
+		# NPC 明确拒绝
+		return
+	# 有 dc 就掷骰裁决
+	if dc > 0:
+		var result := CheckSystem.perform_check(attribute, dc, 0, "玩家说服 %s 改变行程" % npc_id)
+		var passed := bool(result.get("passed", false))
+		MemoryStore.add_global_memory(
+			"外来者试图让%s%s（DC %d），%s（掷 %d）。" % [
+				current_npc.get("short_name", "对方"),
+				_describe_action(action),
+				dc,
+				"成功了" if passed else "失败了",
+				int(result.get("roll", 0)),
+			],
+			["persuade", npc_id])
+		if not passed:
+			_append_history("system", "[说服失败] %s 不太情愿地摇了摇头。" % current_npc.get("short_name", "对方"))
+			return
+	# 裁决通过 → 走 NpcRegistry.apply_llm_action
+	var outcome := NpcRegistry.apply_llm_action(npc_id, action)
+	if bool(outcome.get("applied", false)):
+		var desc := String(outcome.get("description", ""))
+		if desc != "":
+			_append_history("system", "[%s]" % desc)
+
+
+func _describe_action(action: Dictionary) -> String:
+	match String(action.get("type", "")):
+		"follow_player": return "陪同一起走"
+		"move_to": return "前往%s" % String(action.get("target_location", ""))
+		"leave": return "告辞离开"
+		"postpone_leave": return "推迟离场"
+		_: return "改变行程"
 
 
 # ─── 检定流程 ────────────────────────────────────────────────────────

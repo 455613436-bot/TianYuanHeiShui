@@ -25,6 +25,19 @@ func _ready() -> void:
 		area.body_exited.connect(_on_body_exited)
 
 func _load_profile() -> void:
+	# M2 优先：从 NpcRegistry 取合并后的 profile（md 人设 + json 位置字段）
+	# NpcRegistry 是 autoload，直接按名访问
+	var registry := get_tree().root.get_node_or_null("/root/NpcRegistry") if is_inside_tree() else null
+	if registry != null and registry.has_method("get_dialogue_profile"):
+		var p: Dictionary = registry.get_dialogue_profile(npc_id)
+		if not p.is_empty():
+			profile = p
+			if profile.get("id", "") == "":
+				profile["id"] = npc_id
+			print("[NPC %s] 从 NpcRegistry 加载 profile" % npc_id)
+			return
+
+	# 兼容回退：直接读文件（registry 未就绪或 NPC 不在数据表里时）
 	# 1. 优先 .md
 	if npc_md_path != "" and FileAccess.file_exists(npc_md_path):
 		profile = NpcPersona.load_from_file(npc_md_path)

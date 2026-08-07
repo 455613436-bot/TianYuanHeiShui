@@ -1,0 +1,74 @@
+[
+  {
+    "id": "village_square",
+    "number": "0",
+    "name": "村口广场",
+    "description": "外乡人进入田原村的第一站，可以遇见村长与湖边老人。",
+    "map_position": [0.137, 0.468],
+    "scene": "res://scenes/main/Main.tscn",
+    "tags": ["outdoor", "public"]
+  },
+  {
+    "id": "village_committee",
+    "number": "2",
+    "name": "村委会",
+    "description": "蓝瓦白墙的村务中心，保管着村庄档案与重要物品。",
+    "map_position": [0.296, 0.431],
+    "scene": "res://scenes/locations/VillageCommittee.tscn",
+    "tags": ["indoor", "public"]
+  },
+  {
+    "id": "village_chief_house",
+    "number": "3",
+    "name": "村长家",
+    "description": "村长吴志源的住处，也许藏着不愿示人的秘密。",
+    "map_position": [0.303, 0.263],
+    "scene": "res://scenes/locations/VillageChiefHouse.tscn",
+    "tags": ["indoor", "private"]
+  },
+  {
+    "id": "construction_site",
+    "number": "4",
+    "name": "旧工地",
+    "description": "停工多年的施工区域，事故留下的痕迹仍未消失。",
+    "map_position": [0.495, 0.306],
+    "scene": "res://scenes/locations/ConstructionSite.tscn",
+    "tags": ["outdoor", "ruins"]
+  },
+  {
+    "id": "farmland",
+    "number": "5",
+    "name": "北侧农田",
+    "description": "受到村民精心照料的田地，作物生长得异常旺盛。",
+    "map_position": [0.752, 0.094],
+    "scene": "res://scenes/locations/Farmland.tscn",
+    "tags": ["outdoor", "public"]
+  },
+  {
+    "id": "carpenter_workshop",
+    "number": "5b",
+    "name": "木匠工坊",
+    "description": "穆江的樟谊轩，空气中弥漫着木香与艾草的苦味。",
+    "map_position": [0.68, 0.18],
+    "scene": "res://scenes/locations/CarpenterWorkshop.tscn",
+    "tags": ["indoor", "private"]
+  },
+  {
+    "id": "lakeside_dock",
+    "number": "6",
+    "name": "湖边码头",
+    "description": "小船停靠在思源湖边，湖水深处似乎隐藏着什么。",
+    "map_position": [0.677, 0.473],
+    "scene": "res://scenes/locations/LakesideDock.tscn",
+    "tags": ["outdoor", "public"]
+  },
+  {
+    "id": "back_mountain",
+    "number": "7",
+    "name": "后山入口",
+    "description": "通往密林与山洞的小路，越往里走越令人不安。",
+    "map_position": [0.178, 0.694],
+    "scene": "res://scenes/locations/BackMountain.tscn",
+    "tags": ["outdoor", "dangerous"]
+  }
+]

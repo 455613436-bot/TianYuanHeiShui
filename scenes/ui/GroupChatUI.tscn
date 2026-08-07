@@ -1,0 +1,80 @@
+[gd_scene format=3 uid="uid://brmvcd15sjf8r"]
+
+[ext_resource type="Script" uid="uid://dgroupchatui0000" path="res://scripts/ui/GroupChatUI.gd" id="1_ui"]
+[ext_resource type="Script" uid="uid://dgroupchatorigin0" path="res://scripts/ui/GroupChatCoordinator.gd" id="2_coord"]
+
+[node name="GroupChatUI" type="CanvasLayer"]
+layer = 12
+script = ExtResource("1_ui")
+
+[node name="GroupChatCoordinator" type="Node" parent="."]
+script = ExtResource("2_coord")
+
+[node name="RootPanel" type="Panel" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 80.0
+offset_top = 80.0
+offset_right = -80.0
+offset_bottom = -80.0
+
+[node name="TitleRow" type="HBoxContainer" parent="RootPanel"]
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 16.0
+offset_top = 8.0
+offset_right = -16.0
+offset_bottom = 44.0
+theme_override_constants/separation = 12
+
+[node name="TitleLabel" type="Label" parent="RootPanel/TitleRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(1, 0.88, 0.55, 1)
+theme_override_font_sizes/font_size = 22
+text = "公聊"
+
+[node name="RoundLabel" type="Label" parent="RootPanel/TitleRow"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.88, 0.88, 0.8, 1)
+theme_override_font_sizes/font_size = 18
+text = "第 0/6 轮"
+
+[node name="EndBtn" type="Button" parent="RootPanel/TitleRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(96, 0)
+theme_override_font_sizes/font_size = 18
+text = "结束谈话"
+
+[node name="Center" type="VBoxContainer" parent="RootPanel"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = 52.0
+offset_right = -16.0
+offset_bottom = -16.0
+
+[node name="History" type="RichTextLabel" parent="RootPanel/Center"]
+layout_mode = 2
+size_flags_vertical = 3
+bbcode_enabled = true
+scroll_following = true
+
+[node name="InputRow" type="HBoxContainer" parent="RootPanel/Center"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 44)
+theme_override_constants/separation = 8
+
+[node name="InputEdit" type="LineEdit" parent="RootPanel/Center/InputRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 20
+placeholder_text = "对所有在场的人说... (Enter 发送)"
+
+[node name="SendBtn" type="Button" parent="RootPanel/Center/InputRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(96, 44)
+theme_override_font_sizes/font_size = 20
+text = "发送"

@@ -153,6 +153,7 @@ static func parse(raw_content: String, prior_context: String, current_user_text:
 		"item_request": item_request,
 		"offer_request": offer_request,
 		"mood": mood_raw,
+		"action": _parse_action(parsed.get("action", null)),
 	}
 
 
@@ -413,6 +414,44 @@ static func _parse_item_request(value: Variant) -> Dictionary:
 	return {
 		"candidates": candidates,
 		"reason": reason,
+	}
+
+
+## 解析 LLM 输出的 action（说服裁决器，§8）。非法则返回空 dict。
+## type 白名单：none / follow_player / move_to / leave / postpone_leave
+static func _parse_action(value: Variant) -> Dictionary:
+	if value is not Dictionary:
+		return {}
+	var raw: Dictionary = value
+	var action_type := String(raw.get("type", "")).strip_edges().to_lower()
+	if action_type == "" or action_type == "none":
+		return {}
+	var allowed := ["follow_player", "move_to", "leave", "postpone_leave"]
+	if not allowed.has(action_type):
+		return {}
+	var target := String(raw.get("target_location", "")).strip_edges()
+	if target.length() > 40:
+		target = target.substr(0, 40)
+	var duration := int(raw.get("duration_minutes", 60))
+	if duration < 1 or duration > 480:
+		duration = 60
+	var confidence := String(raw.get("confidence", "")).strip_edges().to_lower()
+	if not ["eager", "willing", "reluctant", "refused"].has(confidence):
+		confidence = ""
+	var dc_raw: Variant = raw.get("dc", 0)
+	var dc := 0
+	if dc_raw is int or dc_raw is float:
+		dc = clampi(int(dc_raw), 1, 25)
+	var attribute := String(raw.get("attribute", "charisma")).strip_edges()
+	if attribute == "":
+		attribute = "charisma"
+	return {
+		"type": action_type,
+		"target_location": target,
+		"duration_minutes": duration,
+		"confidence": confidence,
+		"dc": dc,
+		"attribute": attribute,
 	}
 
 

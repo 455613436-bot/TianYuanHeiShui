@@ -1,7 +1,12 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/locations/LocationBase.gd" id="1_location"]
 [ext_resource type="Texture2D" path="res://assets/maps/test.png" id="2_background"]
+[ext_resource type="Script" uid="uid://dnpcspawner0000" path="res://scripts/entities/NpcSpawner.gd" id="3_spawner"]
+[ext_resource type="PackedScene" uid="uid://bnpcpresencebar0" path="res://scenes/ui/NpcPresenceBar.tscn" id="4_presence_bar"]
+[ext_resource type="PackedScene" uid="uid://bgroupchatui000" path="res://scenes/ui/GroupChatUI.tscn" id="5_group_chat"]
+[ext_resource type="PackedScene" uid="uid://bdialogueui0000" path="res://scenes/ui/DialogueUI.tscn" id="6_dialogue"]
+[ext_resource type="PackedScene" path="res://scenes/ui/ItemBagPopup.tscn" id="7_bag"]
 
 [node name="LocationBase" type="Control"]
 layout_mode = 3
@@ -127,3 +132,16 @@ offset_bottom = 76.0
 grow_horizontal = 0
 text = "打开地图  M / Esc"
 theme_override_font_sizes/font_size = 19
+
+[node name="NpcSpawner" type="Node2D" parent="."]
+script = ExtResource("3_spawner")
+portrait_start_x = 300.0
+portrait_spacing = 320.0
+
+[node name="NpcPresenceBar" parent="." instance=ExtResource("4_presence_bar")]
+
+[node name="GroupChatUI" parent="." instance=ExtResource("5_group_chat")]
+
+[node name="DialogueUI" parent="." instance=ExtResource("6_dialogue")]
+
+[node name="ItemBagPopup" parent="." instance=ExtResource("7_bag")]

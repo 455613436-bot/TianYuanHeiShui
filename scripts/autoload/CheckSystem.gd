@@ -125,7 +125,12 @@ func result_to_display_text(result: Dictionary) -> String:
 	breakdown += " = %d" % final_dc
 
 	var arrow := " ≥ " if passed else " < "
-	return "🎲 %s 检定  掷出 %d %s 难度 %d  ·  %s  （%s）" % [label, roll, arrow, final_dc, severity_label, breakdown]
+	var trigger := ""
+	var reason := String(result.get("reason", "")).strip_edges()
+	if reason != "":
+		trigger = "\n触发原因：%s" % reason
+	return "🎲 %s 检定  掷出 %d %s 难度 %d  ·  %s  （%s）%s" % [label, roll, arrow, final_dc, severity_label, breakdown, trigger]
+
 
 
 func result_to_llm_feedback(result: Dictionary, npc_display_name: String = "") -> String:

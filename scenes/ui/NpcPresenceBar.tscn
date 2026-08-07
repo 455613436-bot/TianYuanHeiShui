@@ -1,0 +1,60 @@
+[gd_scene format=3 uid="uid://7xx6fksavrst"]
+
+[ext_resource type="Script" uid="uid://dnpcpresencebar0" path="res://scripts/ui/NpcPresenceBar.gd" id="1_bar"]
+
+[node name="NpcPresenceBar" type="CanvasLayer"]
+layer = 8
+script = ExtResource("1_bar")
+
+[node name="ClockLabel" type="Label" parent="."]
+anchors_preset = 10
+anchor_right = 0.0
+offset_left = 16.0
+offset_top = 16.0
+offset_right = 260.0
+offset_bottom = 44.0
+grow_horizontal = 2
+theme_override_colors/font_color = Color(1, 0.92, 0.6, 1)
+theme_override_font_sizes/font_size = 18
+text = "第 1 天 · 上午 09:00"
+horizontal_alignment = 0
+
+[node name="BarPanel" type="Panel" parent="."]
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 16.0
+offset_top = 52.0
+offset_right = -220.0
+offset_bottom = 96.0
+grow_horizontal = 2
+
+[node name="Scroll" type="ScrollContainer" parent="BarPanel"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 8.0
+offset_top = 4.0
+offset_right = -96.0
+offset_bottom = -4.0
+grow_horizontal = 2
+grow_vertical = 2
+horizontal_scroll_mode = 1
+vertical_scroll_mode = 0
+
+[node name="PresenceRow" type="HBoxContainer" parent="BarPanel/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="GroupChatBtn" type="Button" parent="BarPanel"]
+anchors_preset = 5
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -88.0
+offset_top = 8.0
+offset_right = -8.0
+offset_bottom = 36.0
+grow_horizontal = 0
+theme_override_font_sizes/font_size = 13
+text = "召集谈话"
+tooltip_text = "召集此地所有 NPC 一起谈话（公聊模式）"

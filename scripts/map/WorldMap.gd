@@ -1,93 +1,68 @@
 extends Control
 ## 田原村地图选择界面。
 ## 热点位置使用相对于原始地图的归一化坐标，因此窗口缩放后仍能对齐。
+## M3：地点表改为从 NpcRegistry（data/locations.json）读取，不再硬编码。
+## M4：每个热点下方叠加 NPC 徽章（未探索地点显示"？？？"）。
 
 const MAP_PIXEL_SIZE := Vector2(1518.0, 969.0)
 const HOTSPOT_SIZE := Vector2(82.0, 82.0)
 const DEFAULT_RETURN_SCENE := "res://scenes/main/Main.tscn"
-
-const LOCATIONS := [
-	{
-		"number": "0",
-		"name": "村口广场",
-		"description": "外乡人进入田原村的第一站，可以遇见村长与湖边老人。",
-		"position": Vector2(0.137, 0.468),
-		"scene": "res://scenes/main/Main.tscn",
-	},
-	{
-		"number": "2",
-		"name": "村委会",
-		"description": "蓝瓦白墙的村务中心，保管着村庄档案与重要物品。",
-		"position": Vector2(0.296, 0.431),
-		"scene": "res://scenes/locations/VillageCommittee.tscn",
-	},
-	{
-		"number": "3",
-		"name": "村长家",
-		"description": "村长吴志源的住处，也许藏着不愿示人的秘密。",
-		"position": Vector2(0.303, 0.263),
-		"scene": "res://scenes/locations/VillageChiefHouse.tscn",
-	},
-	{
-		"number": "4",
-		"name": "旧工地",
-		"description": "停工多年的施工区域，事故留下的痕迹仍未消失。",
-		"position": Vector2(0.495, 0.306),
-		"scene": "res://scenes/locations/ConstructionSite.tscn",
-	},
-	{
-		"number": "5",
-		"name": "北侧农田",
-		"description": "受到村民精心照料的田地，作物生长得异常旺盛。",
-		"position": Vector2(0.752, 0.094),
-		"scene": "res://scenes/locations/Farmland.tscn",
-	},
-	{
-		"number": "6",
-		"name": "湖边码头",
-		"description": "小船停靠在思源湖边，湖水深处似乎隐藏着什么。",
-		"position": Vector2(0.677, 0.473),
-		"scene": "res://scenes/locations/LakesideDock.tscn",
-	},
-	{
-		"number": "7",
-		"name": "后山入口",
-		"description": "通往密林与山洞的小路，越往里走越令人不安。",
-		"position": Vector2(0.178, 0.694),
-		"scene": "res://scenes/locations/BackMountain.tscn",
-	},
-]
 
 @onready var bottom_panel: Panel = $BottomPanel
 @onready var top_shade: ColorRect = $TopShade
 @onready var location_label: Label = $BottomPanel/LocationLabel
 @onready var hint_label: Label = $BottomPanel/HintLabel
 
+## 当前地点表（运行时从 NpcRegistry 取，按 number 顺序排序）
+var _locations: Array = []
+## 每个热点按钮下方的 NPC 徽章容器：loc_id -> HBoxContainer
+var _badge_containers: Dictionary = {}
 var _hotspots: Array[Button] = []
 
 
 func _ready() -> void:
 	add_to_group("world_map")
 	GameState.restore_current_scene()
-	for location in LOCATIONS:
+	_load_locations()
+	for location in _locations:
 		_create_hotspot(location)
 	resized.connect(_on_resized)
 	call_deferred("_on_resized")
+	# M4：NPC 位置变化时刷新徽章
+	NpcRegistry.npc_moved.connect(func(_id, _from, _to, _r): call_deferred("_refresh_all_badges"))
+	call_deferred("_refresh_all_badges")
 	location_label.text = "选择一个地点"
 	hint_label.text = "移动鼠标查看地点 · 点击进入"
 
+
+func _load_locations() -> void:
+	_locations = NpcRegistry.all_locations()
+	# 按 number 字段排序（数字小的在前）
+	_locations.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var na := int(a.get("number", "99"))
+		var nb := int(b.get("number", "99"))
+		if na != nb:
+			return na < nb
+		return String(a.get("id", "")) < String(b.get("id", "")))
+
+
 func _create_hotspot(location: Dictionary) -> void:
 	var button := Button.new()
-	button.name = "Location%s" % location["number"]
-	button.text = String(location["number"])
-	button.tooltip_text = "%s\n%s" % [location["name"], location["description"]]
+	button.name = "Location%s" % location.get("number", "?")
+	button.text = String(location.get("number", "?"))
+	button.tooltip_text = "%s\n%s" % [location.get("name", ""), location.get("description", "")]
 	button.custom_minimum_size = HOTSPOT_SIZE
 	button.size = HOTSPOT_SIZE
 	button.pivot_offset = HOTSPOT_SIZE * 0.5
 	button.focus_mode = Control.FOCUS_ALL
 	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	button.z_index = 5
-	button.set_meta("map_position", location["position"])
+	var pos_arr: Variant = location.get("map_position", [0.5, 0.5])
+	var norm_pos := Vector2(0.5, 0.5)
+	if pos_arr is Array and (pos_arr as Array).size() >= 2:
+		norm_pos = Vector2(float(pos_arr[0]), float(pos_arr[1]))
+	button.set_meta("map_position", norm_pos)
+	button.set_meta("location_id", String(location.get("id", "")))
 	button.add_theme_font_size_override("font_size", 28)
 	button.add_theme_color_override("font_color", Color(1.0, 0.95, 0.72))
 	button.add_theme_color_override("font_hover_color", Color(0.12, 0.08, 0.02))
@@ -100,6 +75,13 @@ func _create_hotspot(location: Dictionary) -> void:
 	button.mouse_exited.connect(_on_hotspot_exited.bind(button))
 	add_child(button)
 	_hotspots.append(button)
+	# 在按钮下方放一个 NPC 徽章容器（M4）
+	var badge_box := HBoxContainer.new()
+	badge_box.name = "NpcBadges"
+	badge_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge_box.add_theme_constant_override("separation", 4)
+	add_child(badge_box)
+	_badge_containers[String(location.get("id", ""))] = badge_box
 
 
 func _make_hotspot_style(background: Color, border: Color, width: int = 3) -> StyleBoxFlat:
@@ -145,18 +127,65 @@ func _layout_hotspots() -> void:
 	for button in _hotspots:
 		var normalized_position: Vector2 = button.get_meta("map_position")
 		button.position = map_origin + normalized_position * displayed_size - button.size * 0.5
+	# 徽章容器跟随热点下方
+	for button in _hotspots:
+		var loc_id: String = button.get_meta("location_id")
+		var box = _badge_containers.get(loc_id)
+		if box is Control:
+			(box as Control).position = button.position + Vector2(0, button.size.y + 4)
+			(box as Control).size = Vector2(button.size.x * 1.6, 22)
 
 
 func _on_hotspot_entered(button: Button, location: Dictionary) -> void:
 	button.scale = Vector2(1.12, 1.12)
-	location_label.text = "%s  ·  %s" % [location["number"], location["name"]]
-	hint_label.text = String(location["description"])
+	location_label.text = "%s  ·  %s" % [location.get("number", "?"), location.get("name", "")]
+	hint_label.text = String(location.get("description", ""))
 
 
 func _on_hotspot_exited(button: Button) -> void:
 	button.scale = Vector2.ONE
 	location_label.text = "选择一个地点"
 	hint_label.text = "移动鼠标查看地点 · 点击进入"
+
+
+# ─── M4：NPC 徽章 ──────────────────────────────────────────────────────────
+
+## 刷新所有地点的徽章；未探索地点显示"？？？"，已探索显示该地点 NPC 名字条
+func _refresh_all_badges() -> void:
+	for loc_id in _badge_containers:
+		_refresh_badge_for(loc_id)
+
+
+func _refresh_badge_for(loc_id: String) -> void:
+	var box = _badge_containers.get(loc_id)
+	if not (box is HBoxContainer):
+		return
+	var container := box as HBoxContainer
+	for child in container.get_children():
+		child.queue_free()
+	# 未探索地点 → 显示"？？？"
+	if not GameState.has_visited(loc_id):
+		var label := Label.new()
+		label.text = "？？？"
+		label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7, 0.9))
+		label.add_theme_font_size_override("font_size", 14)
+		container.add_child(label)
+		return
+	# 已探索 → 显示该地点 NPC 名字条
+	var npc_ids := NpcRegistry.get_npcs_at(loc_id)
+	if npc_ids.is_empty():
+		var empty := Label.new()
+		empty.text = "（无人）"
+		empty.add_theme_color_override("font_color", Color(0.6, 0.6, 0.55, 0.7))
+		empty.add_theme_font_size_override("font_size", 12)
+		container.add_child(empty)
+		return
+	for npc_id in npc_ids:
+		var badge := Label.new()
+		badge.text = NpcRegistry.get_short_name(npc_id)
+		badge.add_theme_color_override("font_color", Color(1.0, 0.92, 0.6, 1.0))
+		badge.add_theme_font_size_override("font_size", 13)
+		container.add_child(badge)
 
 
 func is_ui_open() -> bool:
@@ -174,8 +203,8 @@ func _close_map() -> void:
 		hint_label.text = "返回场景加载失败：%s" % error_string(error)
 
 func _enter_location(location: Dictionary) -> void:
-	var scene_path := String(location["scene"])
+	var scene_path := String(location.get("scene", ""))
 	var error := GameState.enter_location(scene_path)
 	if error != OK:
-		location_label.text = "无法进入 %s" % location["name"]
+		location_label.text = "无法进入 %s" % location.get("name", "")
 		hint_label.text = "场景加载失败：%s" % error_string(error)
