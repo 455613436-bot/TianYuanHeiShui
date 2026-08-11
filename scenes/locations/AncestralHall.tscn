@@ -1,0 +1,11 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/locations/LocationBase.tscn" id="1_base"]
+
+[node name="AncestralHall" instance=ExtResource("1_base")]
+location_number = "9"
+location_name = "祠堂"
+location_id = "ancestral_hall"
+location_description = "祠堂尚待布置，目前仅保留空白占位。"
+accent_color = Color(0.38, 0.25, 0.18, 1)
+background_texture = null

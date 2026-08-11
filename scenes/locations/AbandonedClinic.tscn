@@ -1,0 +1,12 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/locations/LocationBase.tscn" id="1_base"]
+[ext_resource type="Texture2D" path="res://assets/scenes/abandoned_clinic.png" id="2_bg"]
+
+[node name="AbandonedClinic" instance=ExtResource("1_base")]
+location_number = "4"
+location_name = "废弃诊所"
+location_id = "abandoned_clinic"
+location_description = "荒废多年的乡间诊所，门窗紧闭，仍残留着消毒水气味。"
+accent_color = Color(0.40, 0.48, 0.46, 1)
+background_texture = ExtResource("2_bg")

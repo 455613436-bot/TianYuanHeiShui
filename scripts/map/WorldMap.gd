@@ -6,10 +6,11 @@ extends Control
 
 const MAP_PIXEL_SIZE := Vector2(1518.0, 969.0)
 const HOTSPOT_SIZE := Vector2(82.0, 82.0)
-const DEFAULT_RETURN_SCENE := "res://scenes/main/Main.tscn"
+const DEFAULT_RETURN_SCENE := "res://scenes/locations/VillageChiefHouse.tscn"
 
 @onready var bottom_panel: Panel = $BottomPanel
 @onready var top_shade: ColorRect = $TopShade
+@onready var subtitle_label: Label = $TopShade/Subtitle
 @onready var location_label: Label = $BottomPanel/LocationLabel
 @onready var hint_label: Label = $BottomPanel/HintLabel
 
@@ -31,8 +32,13 @@ func _ready() -> void:
 	# M4：NPC 位置变化时刷新徽章
 	NpcRegistry.npc_moved.connect(func(_id, _from, _to, _r): call_deferred("_refresh_all_badges"))
 	call_deferred("_refresh_all_badges")
-	location_label.text = "选择一个地点"
-	hint_label.text = "移动鼠标查看地点 · 点击进入"
+	if GameState.night_rest_required:
+		subtitle_label.text = "夜深了，只能回临时宿舍休息"
+		location_label.text = "请前往临时宿舍"
+		hint_label.text = "完成休息后，明天才能继续调查。"
+	else:
+		location_label.text = "选择一个地点"
+		hint_label.text = "移动鼠标查看地点 · 点击进入"
 
 
 func _load_locations() -> void:
@@ -70,6 +76,12 @@ func _create_hotspot(location: Dictionary) -> void:
 	button.add_theme_stylebox_override("hover", _make_hotspot_style(Color(1.0, 0.78, 0.18, 0.82), Color(1.0, 0.94, 0.55, 1.0), 5))
 	button.add_theme_stylebox_override("pressed", _make_hotspot_style(Color(0.95, 0.45, 0.08, 0.9), Color.WHITE, 5))
 	button.add_theme_stylebox_override("focus", _make_hotspot_style(Color(1.0, 0.78, 0.18, 0.45), Color.WHITE, 5))
+	var location_id := String(location.get("id", ""))
+	if not GameState.can_enter_location(location_id):
+		button.disabled = true
+		button.modulate.a = 0.35
+		button.mouse_default_cursor_shape = Control.CURSOR_ARROW
+		button.tooltip_text = "%s\n天色已晚，请先回临时宿舍休息。" % location.get("name", "")
 	button.pressed.connect(_enter_location.bind(location))
 	button.mouse_entered.connect(_on_hotspot_entered.bind(button, location))
 	button.mouse_exited.connect(_on_hotspot_exited.bind(button))
@@ -139,6 +151,9 @@ func _layout_hotspots() -> void:
 func _on_hotspot_entered(button: Button, location: Dictionary) -> void:
 	button.scale = Vector2(1.12, 1.12)
 	location_label.text = "%s  ·  %s" % [location.get("number", "?"), location.get("name", "")]
+	if not GameState.can_enter_location(String(location.get("id", ""))):
+		hint_label.text = "天色已晚，请先回临时宿舍休息。"
+		return
 	hint_label.text = String(location.get("description", ""))
 
 
@@ -203,6 +218,11 @@ func _close_map() -> void:
 		hint_label.text = "返回场景加载失败：%s" % error_string(error)
 
 func _enter_location(location: Dictionary) -> void:
+	var location_id := String(location.get("id", ""))
+	if not GameState.can_enter_location(location_id):
+		location_label.text = "今晚不能前往这里"
+		hint_label.text = "请先回临时宿舍休息。"
+		return
 	var scene_path := String(location.get("scene", ""))
 	var error := GameState.enter_location(scene_path)
 	if error != OK:

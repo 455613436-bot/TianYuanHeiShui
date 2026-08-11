@@ -127,12 +127,5 @@
   "current_location": "village_chief_house",
   "portrait_small": "",
   "importance": "main",
-  "sort_priority": 10,
-  "schedule": [
-    { "period": "morning",   "location": "village_chief_house", "reason": "在家接待访客" },
-    { "period": "noon",      "location": "village_chief_house", "reason": "回家吃饭" },
-    { "period": "afternoon", "location": "village_chief_house", "reason": "在家处理村务" },
-    { "period": "evening",   "location": "village_chief_house", "reason": "回家用晚饭" },
-    { "period": "night",     "location": "village_chief_house", "reason": "睡觉" }
-  ]
+  "sort_priority": 10
 }

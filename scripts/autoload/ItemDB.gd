@@ -5,11 +5,11 @@ extends Node
 ## 数据字段（每个 item 一份 JSON）：
 ##   id              String     必填，与 GameState.inventory 里存的字符串对齐
 ##   display_name    String     必填，玩家/LLM 看到的名字
-##   short_desc      String     可选，一句话说明
+##   short_desc      String     可选，玩家在背包与检视界面看到的一句话说明
 ##   tags            Array[String]  可选，用于分类展示
 ##   usable_in_dialogue  bool   可选，默认 true；决定"打开背包 → 使用"按钮是否可点
 ##   consumable      bool       可选，默认 false；如果 LLM 判定被消耗且服务端复核通过则移除
-##   usage_hints     Array[String]  可选，给 LLM 看的自然语言说明"这东西什么场景可以用"
+##   usage_hints     Array[String]  可选，仅给 LLM 看的自然语言使用提示
 ##
 ## 未在 DB 里注册的 inventory id 也不会崩，但显示为 id 本身、hint 为空。
 
@@ -144,16 +144,16 @@ func build_inventory_prompt_block(inventory: Array) -> String:
 			continue
 		var item: Dictionary = get_item(id)
 		var name: String = String(item.get("display_name", id))
-		var desc: String = String(item.get("short_desc", ""))
 		var hints: Variant = item.get("usage_hints", [])
-		var hint_text := ""
-		if hints is Array and not (hints as Array).is_empty():
-			hint_text = String((hints as Array)[0])
-		var extra: String = ""
-		if desc != "":
-			extra = "——" + desc
-		if hint_text != "":
-			extra += "（%s）" % hint_text
+		var hint_parts: PackedStringArray = []
+		if hints is Array:
+			for hint in hints:
+				var hint_text := String(hint).strip_edges()
+				if hint_text != "":
+					hint_parts.append(hint_text)
+		var extra := ""
+		if not hint_parts.is_empty():
+			extra = "（使用提示：%s）" % "；".join(hint_parts)
 		lines.append("- %s（id: %s）%s" % [name, id, extra])
 	lines.append("注意：只有这份清单里的东西玩家才拥有；不得在正文里让玩家凭空拿出清单以外的物品。")
 	return "\n".join(lines)

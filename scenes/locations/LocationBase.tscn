@@ -39,7 +39,7 @@ mouse_filter = 2
 texture = ExtResource("2_background")
 expand_mode = 1
 stretch_mode = 6
-modulate = Color(0.72, 0.72, 0.72, 1)
+modulate = Color(1, 1, 1, 1)
 
 [node name="Accent" type="ColorRect" parent="."]
 layout_mode = 1

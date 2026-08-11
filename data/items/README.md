@@ -9,14 +9,14 @@
 |-----|------|-----|-----|
 | `id` | string | ✓ | 与 `GameState.inventory` 里保存的字符串对齐，也是 NPC `triggers.give_item` 里写的值 |
 | `display_name` | string | ✓ | 玩家 UI、LLM prompt 里出现的可读名字 |
-| `short_desc` | string |  | 一句话说明；会喂给 LLM，也会显示在背包弹窗的道具行里 |
+| `short_desc` | string |  | 玩家可见的一句话说明；显示在背包道具行与检视弹窗，不注入 LLM prompt |
 | `tags` | string[] |  | 分类标签，仅供检索/展示，逻辑上不用 |
 | `usable_in_dialogue` | bool |  | 默认 `true`。为 `false` 时"打开背包"里不显示；LLM 也不能声明 `item_used` |
 | `consumable` | bool |  | 默认 `false`。仅当为 `true`，LLM 声明 `consumed: true` 时才会真的从背包移除 |
 | `inspectable` | bool |  | 默认 `false`。为 `true` 时物品栏行右侧多出「检视」按钮，点击弹出大图窗；用于藏有文字/图像细节的证物、字条、照片、地图之类 |
 | `icon_path` | string |  | 缩略图资源路径（如 `res://assets/items/village_map_icon.png`）；空则显示占位符 `?` |
 | `inspect_image_path` | string |  | 检视大图路径；空时回退到 `icon_path`；两者都空则显示"暂无图像"占位 |
-| `usage_hints` | string[] |  | 给 LLM 看的自然语言说明，「这东西在什么场景下适合用」；每条建议 30~80 字。检视窗也会把这些作为详情列出。 |
+| `usage_hints` | string[] |  | 仅注入 LLM prompt 的自然语言使用提示，说明物品适用场景；每条建议 30~80 字，不在玩家 UI 展示。 |
 
 ## LLM 侧感知机制
 
@@ -24,7 +24,7 @@ DialogueUI 会在每次请求前把玩家当前持有的物品拼成一段 syste
 
 ```
 【玩家当前持有】
-- 村庄手绘地图（id: village_map）——村长给的手绘地图（想辨认方位……）
+- 村庄手绘地图（id: village_map）（使用提示：想辨认方位、找路、指出村里某处的相对位置时，可以摊开地图给对方看。）
 注意：只有这份清单里的东西玩家才拥有；不得在正文里让玩家凭空拿出清单以外的物品。
 ```
 

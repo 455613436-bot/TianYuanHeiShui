@@ -4,9 +4,9 @@
 [ext_resource type="Texture2D" path="res://assets/scenes/bg_farmland.png" id="2_bg"]
 
 [node name="Farmland" instance=ExtResource("1_base")]
-location_number = "5"
-location_name = "北侧农田"
+location_number = "11"
+location_name = "农田"
 location_id = "farmland"
-location_description = "受到村民精心照料的田地，作物生长得异常旺盛。"
+location_description = "村北的农田仍使用占位背景，等待补充正式场景 CG。"
 accent_color = Color(0.34, 0.56, 0.22, 1)
 background_texture = ExtResource("2_bg")

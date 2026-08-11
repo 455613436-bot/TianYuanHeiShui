@@ -4,6 +4,10 @@ extends CanvasLayer
 const MoodPortraitUtil := preload("res://scripts/ui/MoodPortrait.gd")
 
 signal closed
+## 公聊模式下由当前 DialogueUI 输入框提交给 GroupChatUI 的玩家文本。
+signal group_message_submitted(text: String)
+## 公聊模式下玩家点击离开，供 GroupChatUI 结束仍在进行的会话。
+signal group_close_requested
 
 enum DialogueState {
 	CLOSED,
@@ -12,6 +16,7 @@ enum DialogueState {
 	WAITING_LLM,
 	STREAMING,
 	ERROR,
+	REST_LOCKED,
 }
 
 const HISTORY_LIMIT := 20
@@ -65,6 +70,9 @@ var _timeout_timer: SceneTreeTimer = null
 var _pending_user_text_for_memory := ""
 ## 本轮请求是否属于「检定结果回填」，用于避免二次检定与选项覆盖
 var _current_is_check_followup := false
+## 公聊复用同一 DialogUI 历史、输入框和立绘区域，不走私聊请求链。
+var _group_mode := false
+var _group_finished := false
 
 ## ─── 物品/道具相关 ────────────────────────────────────────────────
 ## 本次组合尚未提交时，玩家已经在输入区插入的道具 id 列表（有序）
@@ -148,7 +156,7 @@ func close_top_ui() -> void:
 	close_dialogue()
 
 func open_dialogue(profile: Dictionary) -> void:
-	if is_open():
+	if is_open() or GameState.night_rest_required:
 		return
 	_session_id += 1
 	current_npc = profile
@@ -185,11 +193,149 @@ func open_dialogue(profile: Dictionary) -> void:
 	_request_llm(OPENING_REQUEST, "dialogue", true)
 
 
+## 公聊入口：复用当前 DialogUI 的历史区、输入区和头像区域。
+func open_group_chat(participant_ids: Array[String]) -> bool:
+	if is_open() or participant_ids.size() < 2:
+		return false
+	var first_id := participant_ids[0]
+	var first_profile := NpcRegistry.get_dialogue_profile(first_id)
+	if first_profile.is_empty():
+		return false
+	_session_id += 1
+	_group_mode = true
+	_group_finished = false
+	current_npc = first_profile
+	history.clear()
+	_pending_item_request = {}
+	_pending_offer = {}
+	_clear_all_item_tokens()
+	name_label.text = String(first_profile.get("display_name", "???"))
+	portrait_rect.color = Color(0.2, 0.18, 0.16)
+	_set_portrait_letter(String(first_profile.get("display_name", "?")).substr(0, 1))
+	_apply_mood(MoodPortraitUtil.DEFAULT_MOOD)
+	history_label.clear()
+	_append_history("system", "（%s围在一起，开始谈话……）" % _group_participant_names(participant_ids))
+	input_edit.placeholder_text = "对所有在场的人说点什么... (Enter 发送)"
+	_hide_choices()
+	_change_state(DialogueState.WAITING_PLAYER)
+	input_edit.grab_focus()
+	return true
+
+
+func begin_group_npc_turn(npc_id: String) -> void:
+	if not _group_mode:
+		return
+	_set_group_speaker(npc_id, MoodPortraitUtil.MOOD_THINKING)
+
+
+func update_group_npc_speech(npc_id: String, accumulated_text: String) -> void:
+	if not _group_mode:
+		return
+	_set_group_speaker(npc_id, MoodPortraitUtil.MOOD_THINKING)
+	var stream_index := _find_group_stream_index(npc_id)
+	if stream_index >= 0:
+		history[stream_index]["text"] = accumulated_text
+	else:
+		history.append({
+			"role": "group_npc",
+			"text": accumulated_text,
+			"speaker_id": npc_id,
+			"speaker_name": NpcRegistry.get_short_name(npc_id),
+			"streaming": true,
+		})
+	_redraw_history()
+
+
+func append_group_npc_speech(npc_id: String, text: String, mood_raw: String = "") -> void:
+	if not _group_mode:
+		return
+	_set_group_speaker(npc_id, mood_raw)
+	var stream_index := _find_group_stream_index(npc_id)
+	if stream_index >= 0:
+		history[stream_index]["text"] = text
+		history[stream_index]["streaming"] = false
+	else:
+		history.append({
+			"role": "group_npc",
+			"text": text,
+			"speaker_id": npc_id,
+			"speaker_name": NpcRegistry.get_short_name(npc_id),
+			"streaming": false,
+		})
+	_redraw_history()
+
+
+func _set_group_speaker(npc_id: String, mood_raw: String) -> void:
+	var profile := NpcRegistry.get_dialogue_profile(npc_id)
+	if profile.is_empty():
+		return
+	current_npc = profile
+	name_label.text = String(profile.get("display_name", "???"))
+	_set_portrait_letter(String(profile.get("display_name", "?")).substr(0, 1))
+	_apply_mood(mood_raw)
+
+
+func _find_group_stream_index(npc_id: String) -> int:
+	for index in range(history.size() - 1, -1, -1):
+		var entry: Dictionary = history[index]
+		if String(entry.get("role", "")) == "group_npc" and String(entry.get("speaker_id", "")) == npc_id and bool(entry.get("streaming", false)):
+			return index
+	return -1
+
+
+func discard_group_npc_stream(npc_id: String) -> void:
+	var stream_index := _find_group_stream_index(npc_id)
+	if stream_index >= 0:
+		history.remove_at(stream_index)
+		_redraw_history()
+
+
+func set_group_waiting() -> void:
+	if not _group_mode:
+		return
+	_append_history("system", "（众人正在回应……）")
+	_change_state(DialogueState.WAITING_LLM)
+
+
+func complete_group_round() -> void:
+	if not _group_mode or _group_finished:
+		return
+	_remove_thinking_message()
+	_change_state(DialogueState.WAITING_PLAYER)
+	input_edit.grab_focus()
+
+
+func finish_group_chat(reason: String) -> void:
+	if not _group_mode:
+		return
+	_remove_thinking_message()
+	_group_finished = true
+	var reason_text := "已结束" if reason == "player_ended" else "已达到本次谈话上限"
+	if reason == "night_rest":
+		reason_text = "已经到了晚上，请先回临时宿舍休息"
+	_append_history("system", "（本次公聊%s；可点击“离开”关闭记录。）" % reason_text)
+	_change_state(DialogueState.WAITING_PLAYER)
+	input_edit.editable = false
+	send_btn.disabled = true
+	input_edit.placeholder_text = "本次公聊已结束"
+
+
+func _group_participant_names(participant_ids: Array[String]) -> String:
+	var names: PackedStringArray = []
+	for raw_npc_id in participant_ids:
+		names.append(NpcRegistry.get_short_name(String(raw_npc_id)))
+	return "、".join(names)
+
+
 func close_dialogue() -> void:
 	if state == DialogueState.CLOSED:
 		return
+	if _group_mode and not _group_finished:
+		group_close_requested.emit()
 	_cancel_current_request()
 	_session_id += 1
+	_group_mode = false
+	_group_finished = false
 	current_npc = {}
 	_clear_all_item_tokens()
 	_pending_item_request = {}
@@ -210,7 +356,19 @@ func _change_state(next_state: DialogueState) -> void:
 		portrait_overlay.visible = open
 	if is_instance_valid(actions_box):
 		actions_box.visible = open
-	var can_interact := state in [DialogueState.WAITING_PLAYER, DialogueState.ERROR]
+	if _group_mode:
+		btn_investigate.visible = false
+		btn_bag.visible = false
+		btn_skill.visible = false
+		btn_leave.visible = true
+		btn_leave.tooltip_text = "结束并关闭公聊"
+	else:
+		btn_investigate.visible = true
+		btn_bag.visible = true
+		btn_skill.visible = true
+		btn_leave.visible = true
+		btn_leave.tooltip_text = "离开"
+	var can_interact := state in [DialogueState.WAITING_PLAYER, DialogueState.ERROR] and not _group_finished
 	input_row.visible = open
 	input_edit.visible = open
 	send_btn.visible = open
@@ -270,7 +428,22 @@ func _mood_badge_text(mood: String) -> String:
 
 
 func _on_send() -> void:
+	if _group_mode:
+		_submit_group_message(input_edit.text)
+		return
 	_submit_player_text(input_edit.text)
+
+
+func _submit_group_message(raw_text: String) -> void:
+	if state != DialogueState.WAITING_PLAYER or _group_finished:
+		return
+	var text := raw_text.strip_edges()
+	if text == "":
+		return
+	input_edit.text = ""
+	_append_history("user", text)
+	set_group_waiting()
+	group_message_submitted.emit(text)
 
 
 func _on_choice_pressed(button: Button) -> void:
@@ -362,15 +535,10 @@ func _request_llm(user_text: String, purpose: String = "dialogue", opening: bool
 	var inventory_block: String = ItemDB.build_inventory_prompt_block(GameState.inventory)
 	if inventory_block != "":
 		request_profile["system_prompt"] = String(request_profile.get("system_prompt", "")) + "\n\n" + inventory_block
-	# M3：注入"当前场景状态"上下文（时间/地点/同地点其他人 + 日程预告）
+	# 注入当前时间、地点与同地点人物；NPC 位置固定，不再附带日程或离场预告。
 	var scene_block: String = NpcRegistry.build_scene_prompt_block(npc_id_for_mem)
 	if scene_block != "":
 		request_profile["system_prompt"] = String(request_profile.get("system_prompt", "")) + "\n\n" + scene_block
-	# F7：若本轮推进后会跨时段边界，注入软指令让 NPC 自然预告离场
-	if TimeSystem.will_cross_period_boundary(TimeSystem.minutes_per_dialogue_turn):
-		var soft_leave: String = NpcRegistry.build_soft_leave_instruction(npc_id_for_mem)
-		if soft_leave != "":
-			request_profile["system_prompt"] = String(request_profile.get("system_prompt", "")) + soft_leave
 
 	# 记住本轮玩家输入，等 NPC 回复回来时一并写入长期历史（非 opening / 非 choices_only 才算一轮）
 	if purpose == "dialogue" and not opening:
@@ -510,6 +678,9 @@ func _on_llm_reply(request_id: int, session_id: int, npc_id: String, reply: Dict
 	# 注意：text 已剥离控制标签；_persist_turn_to_memory 内部会把"是否触发离场"判定
 	# 交给 _advance_dialogue_clock，那里需要原始（含 tag）的 text，故单独传 raw。
 	_persist_turn_to_memory(npc_id, text, reply_choices, String(reply.get("text", "")))
+	# 19:00 后完成本轮已进入休息锁定，不再启动检定、提议或下一轮输入流程。
+	if GameState.night_rest_required:
+		return
 
 	if run_check:
 		_run_check_flow(check_request)
@@ -668,6 +839,10 @@ func _redraw_history() -> void:
 				history_label.push_color(Color(0.45, 0.25, 0.1))
 				history_label.add_text("[%s] %s" % [current_npc.get("short_name", "对方"), text])
 				history_label.pop()
+			"group_npc":
+				history_label.push_color(Color(0.45, 0.25, 0.1))
+				history_label.add_text("[%s] %s" % [entry.get("speaker_name", "对方"), text])
+				history_label.pop()
 			"system":
 				history_label.push_color(Color(0.35, 0.35, 0.35))
 				history_label.push_italics()
@@ -740,29 +915,39 @@ func _persist_turn_to_memory(npc_id: String, npc_text: String, choices: Variant,
 			MemoryStore.append_turn(npc_id, "", npc_text, choice_list)
 			_maybe_trigger_summary(npc_id)
 			# check_followup 也算一轮对话推进时间
-			_advance_dialogue_clock(npc_id, raw_npc_text if raw_npc_text != "" else npc_text)
+			_advance_dialogue_clock(npc_id, raw_npc_text if raw_npc_text != "" else npc_text, false)
 		_pending_user_text_for_memory = ""
 		return
 
 	MemoryStore.append_turn(npc_id, _pending_user_text_for_memory, npc_text, choice_list)
 	_pending_user_text_for_memory = ""
 	_maybe_trigger_summary(npc_id)
-	# M3：一轮对话结束推进游戏时间 + 处理 [END_DIALOGUE] / 时段边界离场
-	_advance_dialogue_clock(npc_id, raw_npc_text if raw_npc_text != "" else npc_text)
+	# 一轮玩家提问与 NPC 完整回复结束后推进时间，并在 19:00 后锁定至回宿舍休息。
+	_advance_dialogue_clock(npc_id, raw_npc_text if raw_npc_text != "" else npc_text, true)
 
 
-## M3：对话每轮推进 5 分钟；若 NPC 输出含 [END_DIALOGUE] 或已跨时段，触发离场结算
-func _advance_dialogue_clock(npc_id: String, raw_npc_text: String) -> void:
-	var prev_period := TimeSystem.current_period()
-	TimeSystem.on_dialogue_turn_completed()
-	var new_period := TimeSystem.current_period()
+## 每轮对话推进十分钟；时间变化不会再改变 NPC 的固定地点。
+func _advance_dialogue_clock(_npc_id: String, raw_npc_text: String, allow_rest_lock: bool) -> void:
+	var rest_required: bool = false
+	if allow_rest_lock:
+		rest_required = GameState.complete_player_dialogue_round()
+	else:
+		TimeSystem.on_dialogue_turn_completed()
+	if rest_required and is_open():
+		_lock_for_night_rest()
+		return
 	var npc_replied_end := raw_npc_text.contains("[END_DIALOGUE]") or raw_npc_text.contains("[end_dialogue]")
-	if npc_replied_end or (new_period != prev_period):
-		# NPC 主动告辞或时段已切换 → 按 schedule 把 NPC 挪到新位置
-		NpcRegistry.apply_schedule_for(npc_id)
-		if npc_replied_end and is_open():
-			_append_history("system", "（%s 起身告辞离开了。）" % current_npc.get("short_name", "对方"))
-			call_deferred("close_dialogue")
+	if npc_replied_end and is_open():
+		_append_history("system", "（%s 结束了这段谈话。）" % current_npc.get("short_name", "对方"))
+		call_deferred("close_dialogue")
+
+
+func _lock_for_night_rest() -> void:
+	_hide_choices()
+	_clear_all_item_tokens()
+	_append_history("system", "（已经到了晚上，请先回临时宿舍休息。今晚不能再继续交谈或调查。）")
+	input_edit.placeholder_text = "请先回临时宿舍休息"
+	_change_state(DialogueState.REST_LOCKED)
 
 
 func _maybe_trigger_summary(npc_id: String) -> void:

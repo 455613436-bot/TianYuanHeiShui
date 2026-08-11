@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://4gun5xd3rf5p"
-path="res://.godot/imported/lakeside_pavillion.png-0b286c1e145780c543c903271d40a8dd.ctex"
+uid="uid://bo5ge2bpn0hqk"
+path="res://.godot/imported/carpenter_workshop.png-677b83a0df05f7ace1598e925ba1f845.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/lakeside_pavillion.png"
-dest_files=["res://.godot/imported/lakeside_pavillion.png-0b286c1e145780c543c903271d40a8dd.ctex"]
+source_file="res://assets/scenes/carpenter_workshop.png"
+dest_files=["res://.godot/imported/carpenter_workshop.png-677b83a0df05f7ace1598e925ba1f845.ctex"]
 
 [params]
 

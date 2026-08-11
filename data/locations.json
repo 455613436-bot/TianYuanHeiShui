@@ -1,25 +1,7 @@
 [
   {
-    "id": "village_square",
-    "number": "0",
-    "name": "村口广场",
-    "description": "外乡人进入田原村的第一站，可以遇见村长与湖边老人。",
-    "map_position": [0.137, 0.468],
-    "scene": "res://scenes/main/Main.tscn",
-    "tags": ["outdoor", "public"]
-  },
-  {
-    "id": "village_committee",
-    "number": "2",
-    "name": "村委会",
-    "description": "蓝瓦白墙的村务中心，保管着村庄档案与重要物品。",
-    "map_position": [0.296, 0.431],
-    "scene": "res://scenes/locations/VillageCommittee.tscn",
-    "tags": ["indoor", "public"]
-  },
-  {
     "id": "village_chief_house",
-    "number": "3",
+    "number": "1",
     "name": "村长家",
     "description": "村长吴志源的住处，也许藏着不愿示人的秘密。",
     "map_position": [0.303, 0.263],
@@ -27,48 +9,102 @@
     "tags": ["indoor", "private"]
   },
   {
-    "id": "construction_site",
-    "number": "4",
-    "name": "旧工地",
-    "description": "停工多年的施工区域，事故留下的痕迹仍未消失。",
-    "map_position": [0.495, 0.306],
-    "scene": "res://scenes/locations/ConstructionSite.tscn",
-    "tags": ["outdoor", "ruins"]
-  },
-  {
-    "id": "farmland",
-    "number": "5",
-    "name": "北侧农田",
-    "description": "受到村民精心照料的田地，作物生长得异常旺盛。",
-    "map_position": [0.752, 0.094],
-    "scene": "res://scenes/locations/Farmland.tscn",
+    "id": "lakeside_pavilion",
+    "number": "2",
+    "name": "湖边亭子",
+    "description": "临湖而建的旧亭子，水面平静得有些反常。",
+    "map_position": [0.677, 0.473],
+    "scene": "res://scenes/locations/LakesidePavilion.tscn",
     "tags": ["outdoor", "public"]
   },
   {
-    "id": "carpenter_workshop",
-    "number": "5b",
-    "name": "木匠工坊",
-    "description": "穆江的樟谊轩，空气中弥漫着木香与艾草的苦味。",
-    "map_position": [0.68, 0.18],
-    "scene": "res://scenes/locations/CarpenterWorkshop.tscn",
-    "tags": ["indoor", "private"]
-  },
-  {
     "id": "lakeside_dock",
-    "number": "6",
+    "number": "3",
     "name": "湖边码头",
-    "description": "小船停靠在思源湖边，湖水深处似乎隐藏着什么。",
-    "map_position": [0.677, 0.473],
+    "description": "阴云下的旧码头，系泊的船只随着水声轻轻摇晃。",
+    "map_position": [0.742, 0.552],
     "scene": "res://scenes/locations/LakesideDock.tscn",
     "tags": ["outdoor", "public"]
   },
   {
-    "id": "back_mountain",
+    "id": "abandoned_clinic",
+    "number": "4",
+    "name": "废弃诊所",
+    "description": "荒废多年的乡间诊所，门窗紧闭，仍残留着消毒水气味。",
+    "map_position": [0.495, 0.306],
+    "scene": "res://scenes/locations/AbandonedClinic.tscn",
+    "tags": ["indoor", "ruins"]
+  },
+  {
+    "id": "village_committee",
+    "number": "5",
+    "name": "村委会",
+    "description": "蓝瓦白墙的村务中心，保管着村庄档案与重要物品。",
+    "map_position": [0.296, 0.431],
+    "scene": "res://scenes/locations/VillageCommittee.tscn",
+    "tags": ["indoor", "public"]
+  },
+  {
+    "id": "carpenter_workshop",
+    "number": "6",
+    "name": "木匠工坊",
+    "description": "穆江的樟谊轩，空气中弥漫着木香与艾草的苦味。",
+    "map_position": [0.680, 0.180],
+    "scene": "res://scenes/locations/CarpenterWorkshop.tscn",
+    "tags": ["indoor", "private"]
+  },
+  {
+    "id": "taoist_temple",
     "number": "7",
-    "name": "后山入口",
-    "description": "通往密林与山洞的小路，越往里走越令人不安。",
+    "name": "道观",
+    "description": "利水君观香火未绝，前殿与后室藏着截然不同的气息。",
     "map_position": [0.178, 0.694],
+    "scene": "res://scenes/locations/TaoistTemple.tscn",
+    "tags": ["outdoor", "religious"]
+  },
+  {
+    "id": "back_mountain",
+    "number": "8",
+    "name": "后山",
+    "description": "通往山洞深处的山路，两端都透着令人不安的静谧。",
+    "map_position": [0.285, 0.752],
     "scene": "res://scenes/locations/BackMountain.tscn",
     "tags": ["outdoor", "dangerous"]
+  },
+  {
+    "id": "ancestral_hall",
+    "number": "9",
+    "name": "祠堂",
+    "description": "祠堂尚待布置，目前仅保留空白占位。",
+    "map_position": [0.420, 0.585],
+    "scene": "res://scenes/locations/AncestralHall.tscn",
+    "tags": ["indoor", "religious"]
+  },
+  {
+    "id": "field_path",
+    "number": "10",
+    "name": "田间小路",
+    "description": "穿过村落与坡地的石板小路，通向更深的山间。",
+    "map_position": [0.752, 0.094],
+    "scene": "res://scenes/locations/FieldPath.tscn",
+    "tags": ["outdoor", "public"]
+  },
+  {
+    "id": "farmland",
+    "number": "11",
+    "name": "农田",
+    "description": "村北的农田仍使用占位背景，等待补充正式场景 CG。",
+    "map_position": [0.840, 0.180],
+    "scene": "res://scenes/locations/Farmland.tscn",
+    "tags": ["outdoor", "public", "placeholder"]
+  },
+  {
+    "id": "temporary_dorm",
+    "number": "12",
+    "name": "临时宿舍",
+    "description": "夜色已深，先回这里休息，明天再继续调查。",
+    "map_position": [0.115, 0.487],
+    "scene": "res://scenes/locations/TemporaryDorm.tscn",
+    "tags": ["indoor", "temporary", "rest", "placeholder"]
   }
 ]

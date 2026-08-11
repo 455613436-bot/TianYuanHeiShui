@@ -11,15 +11,17 @@ signal load_failed(path: String, reason: String)
 signal attributes_changed()
 
 const MAX_POLLUTION := 6
-const SAVE_VERSION := 2
-## 可读取的历史存档版本（v1 没有 TimeSystem/NpcRegistry/visited_locations，加载时用默认值补齐）
-const READABLE_SAVE_VERSIONS := [1, 2]
+const SAVE_VERSION := 3
+## 可读取的历史存档版本；v3 新增夜间回临时宿舍锁定状态。
+const READABLE_SAVE_VERSIONS := [1, 2, 3]
 const MANUAL_SAVE_SLOT_COUNT := 5
 const SAVE_PATH := "user://save_01.json"
 const AUTO_SAVE_PATH := "user://save_auto.json"
 const AUTO_SAVE_INTERVAL_SECONDS := 300.0
 const MAP_SCENE := "res://scenes/map/WorldMap.tscn"
-const DEFAULT_MAP_RETURN_SCENE := "res://scenes/main/Main.tscn"
+const DEFAULT_MAP_RETURN_SCENE := "res://scenes/locations/VillageChiefHouse.tscn"
+const TEMP_DORM_LOCATION_ID := "temporary_dorm"
+const TEMP_DORM_SCENE := "res://scenes/locations/TemporaryDorm.tscn"
 
 ## 新游戏开始时默认发放的初始物品（id 需要在 data/items/ 里有对应定义）
 const INITIAL_INVENTORY: Array[String] = ["camera"]
@@ -57,6 +59,8 @@ var investigation_states: Dictionary = {}
 var npc_dialogue_stages: Dictionary = {}
 var triggered_events: Dictionary = {}
 var one_shot_items: Dictionary = {}
+## 19:00 后完成一整轮对话时置为 true；仅在临时宿舍休息到次日九点后解除。
+var night_rest_required: bool = false
 
 var _autosave_timer: Timer
 
@@ -87,10 +91,11 @@ func reset_for_new_game() -> void:
 	npc_dialogue_stages = {}
 	triggered_events = {}
 	one_shot_items = {}
+	night_rest_required = false
 	scene_states = {}
 	map_return_scene_path = DEFAULT_MAP_RETURN_SCENE
 	current_scene_path = MAP_SCENE
-	# 时钟与 NPC 调度一并归零（NpcRegistry 按 schedule 重算位置）
+	# 时钟归零，并按 NPC JSON 的固定 current_location 重新初始化人物位置。
 	TimeSystem.reset_to_start()
 	NpcRegistry.reset_runtime()
 	# 发放初始物品；不 emit item_added 以免弹出"获得道具"toast（这时候还没进入任何场景）
@@ -335,9 +340,39 @@ func restore_current_scene() -> void:
 			node.restore_scene_state(node_states[persistent_id])
 
 
+func can_enter_location(location_id: String) -> bool:
+	return not night_rest_required or location_id == TEMP_DORM_LOCATION_ID
+
+
+func can_enter_scene(scene_path: String) -> bool:
+	return not night_rest_required or scene_path == MAP_SCENE or scene_path == TEMP_DORM_SCENE
+
+
+## 完成玩家提出问题并收到 NPC 回复的一整轮后调用；达到 19:00 时锁定至回宿舍休息。
+func complete_player_dialogue_round() -> bool:
+	TimeSystem.on_dialogue_turn_completed()
+	if not night_rest_required and TimeSystem.is_rest_lock_time():
+		night_rest_required = true
+		save_game(AUTO_SAVE_PATH, false)
+	return night_rest_required
+
+
+## 只有位于临时宿舍时才能休息到次日九点并解除夜间锁定。
+func rest_at_location(location_id: String) -> bool:
+	if night_rest_required and location_id != TEMP_DORM_LOCATION_ID:
+		return false
+	TimeSystem.rest_until_next_day(9, 0)
+	if night_rest_required:
+		night_rest_required = false
+	save_game(AUTO_SAVE_PATH, false)
+	return true
+
+
 func change_scene(scene_path: String, remember_return: bool = false, autosave: bool = true) -> Error:
 	if scene_path.is_empty() or not ResourceLoader.exists(scene_path):
 		return ERR_FILE_NOT_FOUND
+	if not can_enter_scene(scene_path):
+		return ERR_UNAUTHORIZED
 	capture_current_scene()
 	if remember_return:
 		var scene := get_tree().current_scene
@@ -350,13 +385,12 @@ func change_scene(scene_path: String, remember_return: bool = false, autosave: b
 	return get_tree().change_scene_to_file(scene_path)
 
 
-## 玩家到达新场景的钩子：标记地点已探索 + 跟随中的 NPC 一起挪动
+## 玩家到达新场景的钩子：仅标记地点已探索；NPC 固定在各自配置地点。
 func _notify_scene_arrival(scene_path: String) -> void:
 	var loc_id := NpcRegistry.location_id_for_scene(scene_path)
 	if loc_id.is_empty():
 		return
 	mark_visited(loc_id)
-	NpcRegistry.on_player_enter_location(loc_id)
 
 
 func open_world_map() -> Error:
@@ -364,6 +398,8 @@ func open_world_map() -> Error:
 
 
 func close_world_map() -> Error:
+	if night_rest_required:
+		return change_scene(TEMP_DORM_SCENE)
 	var target := map_return_scene_path
 	if target.is_empty() or target == MAP_SCENE or not ResourceLoader.exists(target):
 		target = DEFAULT_MAP_RETURN_SCENE
@@ -371,6 +407,9 @@ func close_world_map() -> Error:
 
 
 func enter_location(scene_path: String) -> Error:
+	var location_id := NpcRegistry.location_id_for_scene(scene_path)
+	if location_id == "" or not can_enter_location(location_id):
+		return ERR_UNAUTHORIZED
 	unlock_location(scene_path)
 	return change_scene(scene_path)
 
@@ -404,6 +443,7 @@ func save_game(path: String = SAVE_PATH, capture_scene: bool = true) -> Error:
 		"npc_dialogue_stages": npc_dialogue_stages,
 		"triggered_events": triggered_events,
 		"one_shot_items": one_shot_items,
+		"night_rest_required": night_rest_required,
 		"scene_states": scene_states,
 		"memory": MemoryStore.to_dict(),
 		"time_system": TimeSystem.to_dict(),
@@ -454,16 +494,20 @@ func load_game(path: String = SAVE_PATH, switch_scene: bool = true) -> Error:
 	npc_dialogue_stages = _int_dictionary(data.get("npc_dialogue_stages", {}))
 	triggered_events = _bool_dictionary(data.get("triggered_events", {}))
 	one_shot_items = _bool_dictionary(data.get("one_shot_items", {}))
+	var rest_lock_raw: Variant = data.get("night_rest_required", false)
+	night_rest_required = bool(rest_lock_raw) if rest_lock_raw is bool else false
 	scene_states = _sanitize_scene_states(data.get("scene_states", {}))
 	MemoryStore.load_from_dict(data.get("memory", {}))
 	_load_attributes(data.get("attributes", {}), data.get("attributes_locked_in", false))
-	# v1 → v2 迁移：旧存档没有 TimeSystem/NpcRegistry 状态，按 schedule 默认计算
+	# 旧存档没有时间与 NPC 状态时，仍按 JSON 固定地点初始化。
 	if save_version == 1:
 		TimeSystem.reset_to_start()
 		NpcRegistry.reset_runtime()
 	else:
 		TimeSystem.load_from_dict(data.get("time_system", {}))
 		NpcRegistry.load_from_dict(data.get("npc_registry", {}))
+	if night_rest_required and loaded_scene != MAP_SCENE and loaded_scene != TEMP_DORM_SCENE:
+		loaded_scene = TEMP_DORM_SCENE
 	current_scene_path = loaded_scene
 	map_return_scene_path = loaded_return
 	if not scene_states.has(current_scene_path) and data.has("player_position"):

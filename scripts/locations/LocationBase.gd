@@ -9,7 +9,13 @@ const MAP_SCENE := "res://scenes/map/WorldMap.tscn"
 @export var location_id: String = ""
 @export_multiline var location_description: String = "该地点仍在建设中。"
 @export var background_texture: Texture2D
+## 同一地点的第二个视角；设置后会自动生成场景切换按键。
+@export var alternate_background_texture: Texture2D
+@export var alternate_view_label: String = "切换至后方"
 @export var accent_color: Color = Color(0.45, 0.58, 0.36)
+
+var _showing_alternate_view := false
+var _view_toggle_button: Button
 
 @onready var content_panel: Panel = $Content
 @onready var number_label: Label = $Content/NumberLabel
@@ -28,13 +34,15 @@ func _ready() -> void:
 	GameState.restore_current_scene()
 	background.texture = background_texture
 	background.visible = background_texture != null
+	background.modulate = Color.WHITE
 	number_label.text = location_number
 	title_label.text = location_name
 	description_label.text = location_description
 	accent.color = accent_color
 	# 有背景图时隐藏占位 Content 面板（场景已接入真背景，不再显示"待开发"）
-	if background_texture != null:
-		content_panel.visible = false
+	content_panel.visible = background_texture == null and alternate_background_texture == null
+	if alternate_background_texture != null:
+		_create_view_toggle_button()
 	return_button.pressed.connect(_open_map)
 	return_button.grab_focus()
 	# 把 location_id 传给 spawner（若已指定）
@@ -104,6 +112,31 @@ func _apply_responsive_layout() -> void:
 	return_button.offset_right = -safe_margin
 	return_button.offset_top = safe_margin
 	return_button.offset_bottom = safe_margin + 52.0
+	if is_instance_valid(_view_toggle_button):
+		_view_toggle_button.offset_left = safe_margin
+		_view_toggle_button.offset_right = safe_margin + minf(188.0, size.x * 0.36)
+		_view_toggle_button.offset_top = safe_margin
+		_view_toggle_button.offset_bottom = safe_margin + 52.0
+
+
+func _create_view_toggle_button() -> void:
+	if is_instance_valid(_view_toggle_button):
+		return
+	_view_toggle_button = Button.new()
+	_view_toggle_button.name = "ViewToggleButton"
+	_view_toggle_button.text = alternate_view_label
+	_view_toggle_button.tooltip_text = "切换同一地点的前后视角"
+	_view_toggle_button.add_theme_font_size_override("font_size", 18)
+	_view_toggle_button.pressed.connect(_toggle_background_view)
+	add_child(_view_toggle_button)
+
+
+func _toggle_background_view() -> void:
+	_showing_alternate_view = not _showing_alternate_view
+	background.texture = alternate_background_texture if _showing_alternate_view else background_texture
+	if is_instance_valid(_view_toggle_button):
+		_view_toggle_button.text = "切换至前方" if _showing_alternate_view else alternate_view_label
+
 
 func _open_map() -> void:
 	InputManager.request_open_map()

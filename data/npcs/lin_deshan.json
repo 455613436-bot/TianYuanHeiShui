@@ -107,8 +107,8 @@
       "clue_id": "lin_claims_prophecy"
     }
   ],
-  "home_location": "village_chief_house",
-  "current_location": "village_chief_house",
+  "home_location": "lakeside_dock",
+  "current_location": "lakeside_dock",
   "portrait_small": "",
   "importance": "main",
   "sort_priority": 20,
@@ -124,12 +124,5 @@
     "疲惫": "weary",
     "掩饰": "happy",
     "笑意": "happy"
-  },
-  "schedule": [
-    { "period": "morning",   "location": "village_chief_house", "reason": "在村长家与吴志源议事" },
-    { "period": "noon",      "location": "village_chief_house", "reason": "在村长家暂歇" },
-    { "period": "afternoon", "location": "village_chief_house", "reason": "在村长家商议村务" },
-    { "period": "evening",   "location": "village_chief_house", "reason": "在村长家继续交谈" },
-    { "period": "night",     "location": "village_chief_house", "reason": "暂住村长家" }
-  ]
+  }
 }

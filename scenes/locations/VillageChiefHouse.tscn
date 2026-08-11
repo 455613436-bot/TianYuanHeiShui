@@ -4,7 +4,7 @@
 [ext_resource type="Texture2D" path="res://assets/scenes/village_chief_house.png" id="2_bg"]
 
 [node name="VillageChiefHouse" instance=ExtResource("1_base")]
-location_number = "3"
+location_number = "1"
 location_name = "村长家"
 location_id = "village_chief_house"
 location_description = "村长吴志源的住处，也许藏着不愿示人的秘密。"

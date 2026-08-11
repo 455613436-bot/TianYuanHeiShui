@@ -37,19 +37,10 @@ func open_ui(item_id: String) -> void:
 		image_placeholder.visible = true
 		image_placeholder.text = "（暂无图像）"
 
-	# 完整描述：short_desc + usage_hints
-	var parts: PackedStringArray = []
-	var short_desc: String = String(item.get("short_desc", ""))
-	if short_desc != "":
-		parts.append(short_desc)
-	var hints_variant: Variant = item.get("usage_hints", [])
-	if hints_variant is Array:
-		for h in (hints_variant as Array):
-			var s := String(h).strip_edges()
-			if s != "":
-				parts.append("· " + s)
+	# 玩家可见说明仅使用 short_desc；usage_hints 只注入 LLM 上下文。
+	var short_desc: String = String(item.get("short_desc", "")).strip_edges()
 	desc_label.clear()
-	desc_label.append_text("\n\n".join(parts) if not parts.is_empty() else "（这件道具还没有更多说明。）")
+	desc_label.append_text(short_desc if short_desc != "" else "（这件道具还没有更多说明。）")
 
 	visible = true
 

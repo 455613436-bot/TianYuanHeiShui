@@ -1,7 +1,7 @@
 extends Node
 ## TimeSystem
 ## 游戏时钟 autoload：分钟计数 → 时段（period）。
-## - 时间推进的唯一入口是 advance_minutes()；一次玩家发言 = 1 轮 = +5 分钟，
+## - 时间推进的唯一入口是 advance_minutes()；一次玩家发言 = 1 轮 = +10 分钟，
 ##   由 DialogueUI 在收到 LLM 回答后调用 on_dialogue_turn_completed()。
 ## - 场景切换默认不推时间（避免来回切图产生时间黑洞）。
 ## - 时段边界供 F7「NPC 主动预告离场」使用。
@@ -13,6 +13,8 @@ signal period_changed(new_period: String, day: int)
 signal day_changed(new_day: int)
 
 const MINUTES_PER_DAY := 1440
+## 19:00 后在完成当前整轮对话时触发“回宿舍休息”流程；不改变 night 的原有时段定义。
+const REST_LOCK_START_MINUTE := 19 * 60
 ## night 不在表里：>= 1320 或 < 360 都视为 night（22:00 - 次日 06:00）
 const PERIODS := [
 	{"id": "morning", "start": 360, "end": 660}, # 06:00-11:00
@@ -33,7 +35,7 @@ const NIGHT_END := 360 # 次日 06:00
 
 var current_day: int = 1
 var minute_of_day: int = 540 # 09:00 起始
-var minutes_per_dialogue_turn: int = 5
+var minutes_per_dialogue_turn: int = 10
 
 
 func _ready() -> void:
@@ -45,6 +47,7 @@ func advance_minutes(n: int) -> void:
 	if n <= 0:
 		return
 	var old_period := current_period()
+	var old_day := current_day
 	var total := minute_of_day + n
 	while total >= MINUTES_PER_DAY:
 		total -= MINUTES_PER_DAY
@@ -53,13 +56,34 @@ func advance_minutes(n: int) -> void:
 	minute_of_day = total
 	minute_changed.emit(current_day, minute_of_day)
 	var new_period := current_period()
-	if new_period != old_period:
+	if new_period != old_period or current_day != old_day:
 		period_changed.emit(new_period, current_day)
+
+
+## 仅能消磨至当天更晚的时间；成功时通过统一入口刷新时钟与 NPC 日程。
+func advance_to_today(target_minute: int) -> bool:
+	var target := clampi(target_minute, 0, MINUTES_PER_DAY - 1)
+	if target <= minute_of_day:
+		return false
+	advance_minutes(target - minute_of_day)
+	return true
+
+
+## 无论当前何时，都休息到下一天的指定时间；默认次日 09:00。
+func rest_until_next_day(hour: int = 9, minute: int = 0) -> void:
+	var target_hour := clampi(hour, 0, 23)
+	var target_minute := clampi(minute, 0, 59)
+	var next_day_target := target_hour * 60 + target_minute
+	advance_minutes((MINUTES_PER_DAY - minute_of_day) + next_day_target)
 
 
 ## DialogueUI / GroupChatCoordinator 每轮对话结束调一次
 func on_dialogue_turn_completed() -> void:
 	advance_minutes(minutes_per_dialogue_turn)
+
+
+func is_rest_lock_time() -> bool:
+	return minute_of_day >= REST_LOCK_START_MINUTE
 
 
 func current_period() -> String:

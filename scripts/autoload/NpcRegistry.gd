@@ -1,10 +1,9 @@
 extends Node
 ## NpcRegistry
-## NPC 数据仓库 + 位置调度 + 事件规则（autoload）。
+## NPC 数据仓库 + 固定地点索引 + 事件规则（autoload）。
 ##
-## 核心原则：**所有 NPC 位置的改动都只通过 move_npc() 唯一入口**，
-## schedule 层、事件规则层、LLM 说服层、跟随层最终都调它，
-## 方便调试、记忆写入、存档一致性。
+## NPC 位置由各自 JSON 的 current_location 固定配置；运行时不再根据时间、事件、
+## 对话或玩家场景变化移动人物。
 ##
 ## 数据来源：
 ## - data/locations.json       地点表（id 是稳定主键）
@@ -19,21 +18,21 @@ const NPCS_DIR := "res://data/npcs/"
 const RULES_DIR := "res://data/npc_rules/"
 
 const IMPORTANCE_RANK := {"main": 0, "normal": 1, "ambient": 2}
-## LLM 说服动作的白名单类型
-const LLM_ACTION_TYPES := ["follow_player", "move_to", "leave", "postpone_leave"]
+## 人物位置固定，不接受 LLM 生成的跟随、移动或离开动作。
+const LLM_ACTION_TYPES: Array[String] = []
 const POSTPONE_LEAVE_MINUTES := 15
 
 ## loc_id -> 地点信息 dict（来自 locations.json）
 var _locations: Dictionary = {}
 ## scene_path -> loc_id
 var _scene_to_location: Dictionary = {}
-## npc_id -> NPC 数据（json 原始字段：schedule/home_location/importance/...）
+## npc_id -> NPC 数据（json 原始字段：current_location/home_location/importance/...）
 var _npcs: Dictionary = {}
 ## npc_id -> 对话用 profile（md 人设 + json 位置字段合并，缓存）
 var _profile_cache: Dictionary = {}
 ## npc_id -> loc_id（运行时位置，存档写这里）
 var _current_locations: Dictionary = {}
-## npc_id -> true（跟随玩家中的 NPC，暂停 schedule）
+## 保留旧存档兼容字段；跟随功能已停用。
 var _following: Dictionary = {}
 ## npc_id -> {location, until_total_minutes, reason}（事件规则的临时位移）
 var _temp_overrides: Dictionary = {}
@@ -45,9 +44,6 @@ var _rules: Array = []
 
 func _ready() -> void:
 	load_all()
-	TimeSystem.period_changed.connect(_on_period_changed)
-	TimeSystem.minute_changed.connect(_on_minute_changed)
-	GameState.clue_triggered.connect(func(clue_id: String): on_event("clue_triggered", {"clue_id": clue_id}))
 
 
 # ─── 数据装载 ──────────────────────────────────────────────────────────────
@@ -55,7 +51,6 @@ func _ready() -> void:
 func load_all() -> void:
 	_load_locations()
 	_load_npcs()
-	_load_rules()
 	_init_runtime_locations()
 
 
@@ -136,18 +131,20 @@ func _load_rules() -> void:
 		print("[NpcRegistry] 已加载 %d 条事件规则" % _rules.size())
 
 
-## 启动时按当前时段 schedule 计算每个 NPC 的位置（读档时会被 load_from_dict 覆盖）
+## 启动与新游戏时从 JSON 的固定 current_location 初始化 NPC；旧存档位置不会覆盖它。
 func _init_runtime_locations() -> void:
 	_current_locations.clear()
 	_following.clear()
 	_temp_overrides.clear()
 	_postpone_leave_until.clear()
 	for npc_id in _npcs:
-		_current_locations[npc_id] = _scheduled_location_for(npc_id, TimeSystem.current_period())
+		var data: Dictionary = _npcs[npc_id]
+		var location := String(data.get("current_location", data.get("home_location", "")))
+		if _locations.has(location):
+			_current_locations[npc_id] = location
 
 
 func reset_runtime() -> void:
-	## 新游戏时调用：全部按 schedule 重算
 	_init_runtime_locations()
 
 
@@ -277,114 +274,14 @@ func has_temp_override(npc_id: String) -> bool:
 
 # ─── 位置变更（唯一入口）────────────────────────────────────────────────────
 
-func move_npc(npc_id: String, new_location_id: String, reason: String, source: String) -> void:
-	## source in {"schedule","event","llm","follow","manual"}
-	if not _npcs.has(npc_id) or not _locations.has(new_location_id):
-		return
-	var from_loc := String(_current_locations.get(npc_id, ""))
-	if from_loc == new_location_id:
-		return
-	_current_locations[npc_id] = new_location_id
-	var npc_name := get_short_name(npc_id)
-	var loc_name := get_location_name(new_location_id)
-	MemoryStore.add_global_memory(
-		"%s在%s去了%s（%s）。" % [npc_name, TimeSystem.format_clock_short(), loc_name, reason],
-		["npc_move", npc_id])
-	npc_moved.emit(npc_id, from_loc, new_location_id, reason)
+func move_npc(_npc_id: String, _new_location_id: String, _reason: String, _source: String) -> void:
+	# 人物移动功能已停用；NPC 始终使用 JSON 中的固定 current_location。
+	return
 
 
-# ─── schedule ──────────────────────────────────────────────────────────────
-
-func _scheduled_location_for(npc_id: String, period: String) -> String:
-	var data: Dictionary = _npcs.get(npc_id, {})
-	var home := String(data.get("home_location", ""))
-	var found := ""
-	var schedule: Variant = data.get("schedule", [])
-	if schedule is Array:
-		# 同一 period 出现多次时用最后一条
-		for entry in schedule:
-			if entry is Dictionary and String((entry as Dictionary).get("period", "")) == period:
-				found = String((entry as Dictionary).get("location", ""))
-	if found == "" or not _locations.has(found):
-		found = home
-	return found
+# NPC 地点固定：不再存在按时段调度、临时位移或离场延迟逻辑。
 
 
-func _schedule_reason_for(npc_id: String, period: String) -> String:
-	var data: Dictionary = _npcs.get(npc_id, {})
-	var reason := ""
-	var schedule: Variant = data.get("schedule", [])
-	if schedule is Array:
-		for entry in schedule:
-			if entry is Dictionary and String((entry as Dictionary).get("period", "")) == period:
-				reason = String((entry as Dictionary).get("reason", ""))
-	return reason
-
-
-## 按当前时段把 NPC 挪到 schedule 对应位置（跟随中 / 临时覆盖中 / 被推迟中的跳过）
-func apply_schedule_for(npc_id: String) -> void:
-	if not _npcs.has(npc_id):
-		return
-	if _following.has(npc_id):
-		return
-	if _temp_overrides.has(npc_id):
-		return
-	if int(_postpone_leave_until.get(npc_id, 0)) > TimeSystem.total_minutes():
-		return
-	var target := _scheduled_location_for(npc_id, TimeSystem.current_period())
-	if target == "":
-		return
-	var reason := _schedule_reason_for(npc_id, TimeSystem.current_period())
-	move_npc(npc_id, target, "按日程：%s" % reason if reason != "" else "按日程移动", "schedule")
-
-
-func apply_all_schedules() -> void:
-	for npc_id in _npcs:
-		apply_schedule_for(npc_id)
-
-
-## F7 提示语用：下一个时段 NPC 按日程要去哪
-func next_schedule_info(npc_id: String) -> Dictionary:
-	var next_period := TimeSystem.next_period()
-	var loc := _scheduled_location_for(npc_id, next_period)
-	return {
-		"period": next_period,
-		"location": loc,
-		"location_name": get_location_name(loc),
-		"reason": _schedule_reason_for(npc_id, next_period),
-		"minutes": TimeSystem.minutes_until_next_period(),
-	}
-
-
-## L2 事件规则用：临时改位置一段时间，到期后回落 schedule
-func set_temp_override(npc_id: String, loc: String, minutes: int, reason: String) -> void:
-	if not _npcs.has(npc_id) or not _locations.has(loc):
-		return
-	_temp_overrides[npc_id] = {
-		"location": loc,
-		"until_total_minutes": TimeSystem.total_minutes() + maxi(minutes, 1),
-		"reason": reason,
-	}
-	move_npc(npc_id, loc, reason, "event")
-
-
-func postpone_leave(npc_id: String, minutes: int = POSTPONE_LEAVE_MINUTES) -> void:
-	_postpone_leave_until[npc_id] = TimeSystem.total_minutes() + maxi(minutes, 1)
-
-
-func _on_period_changed(_new_period: String, _day: int) -> void:
-	apply_all_schedules()
-	on_event("time_period", {"period": _new_period, "day": _day})
-
-
-func _on_minute_changed(_day: int, _minute: int) -> void:
-	# 临时覆盖到期 → 清掉并回落 schedule
-	var now := TimeSystem.total_minutes()
-	for npc_id in _temp_overrides.keys().duplicate():
-		var until := int((_temp_overrides[npc_id] as Dictionary).get("until_total_minutes", 0))
-		if now >= until:
-			_temp_overrides.erase(npc_id)
-			apply_schedule_for(npc_id)
 
 
 # ─── 跟随（F10）────────────────────────────────────────────────────────────
@@ -469,39 +366,9 @@ func _match_rule(rule: Dictionary, event_name: String, payload: Dictionary) -> b
 	return true
 
 
-func _apply_rule_action(rule: Dictionary) -> void:
-	var npc_id := String(rule.get("_npc_id", ""))
-	var action: Variant = rule.get("action", {})
-	if npc_id == "" or action is not Dictionary:
-		return
-	var a: Dictionary = action
-	var action_type := String(a.get("type", ""))
-	match action_type:
-		"temp_move":
-			set_temp_override(
-				npc_id,
-				String(a.get("location", "")),
-				int(a.get("duration_minutes", 60)),
-				String(a.get("reason", "临时离开")))
-		"set_schedule":
-			var new_schedule: Variant = a.get("schedule", [])
-			if new_schedule is Array and _npcs.has(npc_id):
-				_npcs[npc_id]["schedule"] = (new_schedule as Array).duplicate(true)
-				_profile_cache.erase(npc_id)
-				apply_schedule_for(npc_id)
-		"set_home":
-			var new_home := String(a.get("location", ""))
-			if _locations.has(new_home) and _npcs.has(npc_id):
-				_npcs[npc_id]["home_location"] = new_home
-				_profile_cache.erase(npc_id)
-				move_npc(npc_id, new_home, String(a.get("reason", "搬家")), "event")
-		"follow_player":
-			start_follow(npc_id)
-		"stop_follow":
-			stop_follow(npc_id, String(a.get("location", "")))
-	var log_text := String(a.get("log_global_memory", ""))
-	if log_text != "":
-		MemoryStore.add_global_memory(log_text, ["npc_rule", String(rule.get("id", ""))])
+func _apply_rule_action(_rule: Dictionary) -> void:
+	# 事件规则不再改变 NPC 地点或日程。
+	return
 
 
 # ─── LLM 说服裁决（F9，L3-A）───────────────────────────────────────────────
@@ -517,39 +384,8 @@ func can_be_persuaded(npc_id: String) -> bool:
 	return true
 
 
-## 裁决通过后执行动作。返回 {applied: bool, description: String}；description 给 UI 做系统提示。
-func apply_llm_action(npc_id: String, action: Dictionary) -> Dictionary:
-	var action_type := String(action.get("type", ""))
-	if action_type == "" or action_type == "none":
-		return {"applied": false, "description": ""}
-	if not LLM_ACTION_TYPES.has(action_type):
-		return {"applied": false, "description": ""}
-	if not can_be_persuaded(npc_id):
-		return {"applied": false, "description": "%s此刻不打算改变行程。" % get_short_name(npc_id)}
-	var npc_name := get_short_name(npc_id)
-	match action_type:
-		"follow_player":
-			start_follow(npc_id)
-			return {"applied": true, "description": "%s开始跟着你了。" % npc_name}
-		"move_to":
-			var target := resolve_location_id(String(action.get("target_location", "")))
-			if target == "":
-				return {"applied": false, "description": ""}
-			var duration := clampi(int(action.get("duration_minutes", 60)), 5, 480)
-			set_temp_override(npc_id, target, duration, "被玩家说服")
-			return {"applied": true, "description": "%s动身去了%s。" % [npc_name, get_location_name(target)]}
-		"leave":
-			# 离开当前谈话/场所：回 home 或去 target
-			var leave_target := resolve_location_id(String(action.get("target_location", "")))
-			if leave_target == "":
-				leave_target = String(_npcs.get(npc_id, {}).get("home_location", ""))
-			if leave_target != "":
-				move_npc(npc_id, leave_target, "告辞离开", "llm")
-				return {"applied": true, "description": "%s告辞离开了。" % npc_name}
-			return {"applied": false, "description": ""}
-		"postpone_leave":
-			postpone_leave(npc_id, clampi(int(action.get("duration_minutes", POSTPONE_LEAVE_MINUTES)), 5, 120))
-			return {"applied": true, "description": "%s决定再多留一会儿。" % npc_name}
+## NPC 地点固定，忽略模型请求的跟随、移动、离开等位置动作。
+func apply_llm_action(_npc_id: String, _action: Dictionary) -> Dictionary:
 	return {"applied": false, "description": ""}
 
 
@@ -562,7 +398,7 @@ func build_scene_prompt_block(npc_id: String) -> String:
 		return ""
 	var lines: PackedStringArray = []
 	lines.append("## 当前场景状态")
-	lines.append("- 现在是：%s（%s）" % [TimeSystem.format_clock(), TimeSystem.current_period()])
+	lines.append("- 当前精确游戏时间：%s（时段：%s）" % [TimeSystem.format_clock(), TimeSystem.current_period()])
 	lines.append("- 你所在地点：%s" % get_location_name(loc_id))
 	var others := get_npcs_at(loc_id)
 	others.erase(npc_id)
@@ -573,20 +409,7 @@ func build_scene_prompt_block(npc_id: String) -> String:
 		for other_id in others:
 			names.append(get_short_name(other_id))
 		lines.append("- 同处此地的还有：%s" % "、".join(names))
-	var next_info := next_schedule_info(npc_id)
-	if String(next_info.get("location", "")) != "" and String(next_info.get("location", "")) != loc_id:
-		var reason := String(next_info.get("reason", ""))
-		var suffix := "（%s）" % reason if reason != "" else ""
-		lines.append("- 你按日程将在约 %d 分钟后前往%s%s" % [
-			int(next_info.get("minutes", 0)),
-			String(next_info.get("location_name", "")),
-			suffix,
-		])
-	# 合法地点白名单给 LLM 的 action.target_location 用
-	var loc_pairs: PackedStringArray = []
-	for loc in _locations:
-		loc_pairs.append("%s（%s）" % [String(loc), get_location_name(String(loc))])
-	lines.append("- 本村合法地点 id 列表：%s" % "、".join(loc_pairs))
+	# NPC 地点固定，不向模型提供日程、离场或地点移动指令。
 	# 该 NPC 可用的 mood 列表（供 LLM 输出 mood 字段时参考）
 	var npc_moods: Array[String] = MoodPortrait.moods_for_npc(npc_id)
 	if not npc_moods.is_empty():
@@ -594,78 +417,16 @@ func build_scene_prompt_block(npc_id: String) -> String:
 	return "\n".join(lines)
 
 
-## F7 软指令：距离日程转场很近时，让 NPC 自然地预告离场
-func build_soft_leave_instruction(npc_id: String) -> String:
-	var info := next_schedule_info(npc_id)
-	var loc_name := String(info.get("location_name", ""))
-	if loc_name == "" or String(info.get("location", "")) == get_location_of(npc_id):
-		return ""
-	var reason := String(info.get("reason", ""))
-	var minutes := int(info.get("minutes", 0))
-	return ("\n\n**行程提醒**：距离你按日程要去「%s」（%s）还有约 %d 分钟。"
-		+ "请在这次回答中自然地提醒玩家你要走了；如果玩家没有强留，"
-		+ "请在回答末尾用 [END_DIALOGUE] 标签表示你就此告辞离开。") % [loc_name, reason, minutes]
+
 
 
 # ─── 持久化 ────────────────────────────────────────────────────────────────
 
 func to_dict() -> Dictionary:
-	var overrides := {}
-	for npc_id in _temp_overrides:
-		var o: Dictionary = _temp_overrides[npc_id]
-		overrides[npc_id] = {
-			"location": String(o.get("location", "")),
-			"remaining_minutes": maxi(1, int(o.get("until_total_minutes", 0)) - TimeSystem.total_minutes()),
-			"reason": String(o.get("reason", "")),
-		}
-	var postpones := {}
-	for npc_id in _postpone_leave_until:
-		var remain := int(_postpone_leave_until[npc_id]) - TimeSystem.total_minutes()
-		if remain > 0:
-			postpones[npc_id] = remain
-	return {
-		"current_locations": _current_locations.duplicate(true),
-		"following": _following.keys(),
-		"temp_overrides": overrides,
-		"postpone_leave_until": postpones,
-	}
+	# 固定地点配置来自 NPC JSON，不再把运行时移动状态写入存档。
+	return {}
 
 
-func load_from_dict(data: Variant) -> void:
-	if data is not Dictionary:
-		return
-	var d: Dictionary = data
-	var locs: Variant = d.get("current_locations", {})
-	if locs is Dictionary:
-		for npc_id in locs:
-			var loc := String(locs[npc_id])
-			if _npcs.has(npc_id) and _locations.has(loc):
-				_current_locations[npc_id] = loc
-	var following_raw: Variant = d.get("following", [])
-	_following.clear()
-	if following_raw is Array:
-		for npc_id in following_raw:
-			var id_str := String(npc_id)
-			if _npcs.has(id_str):
-				_following[id_str] = true
-	var overrides_raw: Variant = d.get("temp_overrides", {})
-	_temp_overrides.clear()
-	if overrides_raw is Dictionary:
-		for npc_id in overrides_raw:
-			var entry: Variant = overrides_raw[npc_id]
-			if entry is not Dictionary or not _npcs.has(npc_id):
-				continue
-			var loc := String((entry as Dictionary).get("location", ""))
-			if not _locations.has(loc):
-				continue
-			_temp_overrides[npc_id] = {
-				"location": loc,
-				"until_total_minutes": TimeSystem.total_minutes() + int((entry as Dictionary).get("remaining_minutes", 60)),
-				"reason": String((entry as Dictionary).get("reason", "")),
-			}
-	var postpones_raw: Variant = d.get("postpone_leave_until", {})
-	_postpone_leave_until.clear()
-	if postpones_raw is Dictionary:
-		for npc_id in postpones_raw:
-			if _npcs.has(npc_id):
-				_postpone_leave_until[npc_id] = TimeSystem.total_minutes() + int(postpones_raw[npc_id])
+func load_from_dict(_data: Variant) -> void:
+	# 忽略旧存档中的人物位置，始终应用当前 JSON 的固定 current_location。
+	_init_runtime_locations()
