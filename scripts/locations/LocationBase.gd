@@ -56,7 +56,64 @@ func _ready() -> void:
 		# M6：召集公聊
 		if presence_bar.has_signal("group_chat_requested"):
 			presence_bar.group_chat_requested.connect(_on_group_chat_requested)
+	if location_id == "abandoned_clinic":
+		_create_clinic_door_hotspot()
 	call_deferred("_apply_responsive_layout")
+
+
+func _create_clinic_door_hotspot() -> void:
+	var mask := MaskInteractionHighlight.new()
+	mask.name = "ClinicDoorHighlight"
+	mask.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	mask.configure(
+		load("res://assets/scenes/masks/abandoned_clinic_door_mask.png"),
+		Color(0.28, 0.86, 1.0, 1.0),
+		0.24,
+		3.0
+	)
+	add_child(mask)
+
+	var hotspot := Button.new()
+	hotspot.name = "ClinicDoorHotspot"
+	hotspot.anchor_left = 0.39
+	hotspot.anchor_top = 0.39
+	hotspot.anchor_right = 0.53
+	hotspot.anchor_bottom = 0.76
+	hotspot.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	hotspot.tooltip_text = "诊所大门"
+	hotspot.flat = true
+	hotspot.mouse_entered.connect(func() -> void:
+		mask.show_highlight()
+	)
+	hotspot.mouse_exited.connect(func() -> void:
+		mask.hide_highlight()
+	)
+	add_child(hotspot)
+
+	var interaction_ui := SceneItemInteraction.new()
+	interaction_ui.name = "ClinicDoorInteraction"
+	add_child(interaction_ui)
+	hotspot.pressed.connect(func() -> void:
+		mask.hide_highlight()
+		interaction_ui.open_choice({
+			"id": "abandoned_clinic_door_lock",
+			"title": "诊所大门",
+			"description": "这是一个摇摇欲坠的锁。锈蚀的锁芯仍勉强卡住门闩。",
+			"choices": [
+				{
+					"id": "pry_lock",
+					"label": "撬锁（敏捷检定）",
+					"type": "check",
+					"attribute": "敏捷",
+					"difficulty": 12,
+					"reason": "尝试撬开废弃诊所大门的锁",
+					"success_text": "锁芯发出一声轻响，门闩松开了。",
+					"failure_text": "铁片从锁眼滑开，锈蚀的锁仍纹丝不动。",
+				},
+				{"id": "leave", "label": "离开", "close": true},
+			],
+		})
+	)
 
 
 ## M6：NpcPresenceBar 上的"召集所有人谈话"按钮触发 → 打开 GroupChatUI
