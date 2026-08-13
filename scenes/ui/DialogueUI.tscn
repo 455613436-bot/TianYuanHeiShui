@@ -213,7 +213,7 @@ anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = -216.0
-offset_top = -260.0
+offset_top = -188.0
 offset_right = -8.0
 offset_bottom = -12.0
 grow_horizontal = 0
@@ -248,9 +248,18 @@ texture_hover = ExtResource("12_btn_skill")
 ignore_texture_size = true
 stretch_mode = 5
 
-[node name="Leave" type="TextureButton" parent="Actions"]
-custom_minimum_size = Vector2(160, 48)
-layout_mode = 2
+[node name="Leave" type="TextureButton" parent="."]
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -216.0
+offset_top = -252.0
+offset_right = -8.0
+offset_bottom = -204.0
+grow_horizontal = 0
+grow_vertical = 0
 tooltip_text = "离开"
 texture_normal = ExtResource("13_btn_leave")
 texture_hover = ExtResource("13_btn_leave")

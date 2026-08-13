@@ -26,22 +26,45 @@ var _target_minute: SpinBox
 var _time_hint_label: Label
 var _advance_button: Button
 var _popup_clock_label: Label
+var _time_pass_button: Button
 
 
 func _ready() -> void:
 	layer = 8
-	# 暂时将原公聊入口替换为时间管理入口，不再发出 group_chat_requested。
-	group_chat_btn.visible = true
-	group_chat_btn.disabled = false
-	group_chat_btn.text = "消磨时间"
-	group_chat_btn.tooltip_text = "消磨至当天较晚时刻，或休息到次日 09:00"
-	group_chat_btn.offset_left = -136.0
-	presence_scroll.offset_right = -144.0
-	group_chat_btn.pressed.connect(_open_time_pass_popup)
+	# 移除顶部黑色的 NPC/消磨时间横栏；保留独立的时间按钮，与地图按钮同尺寸对齐。
+	bar_panel.hide()
+	_create_time_pass_button()
+	get_viewport().size_changed.connect(_layout_time_pass_button)
 	# 时钟刷新
 	TimeSystem.minute_changed.connect(func(_d, _m): _update_clock())
 	_update_clock()
 	call_deferred("_refresh")
+
+
+func _create_time_pass_button() -> void:
+	_time_pass_button = Button.new()
+	_time_pass_button.name = "TimePassButton"
+	_time_pass_button.text = "消磨时间"
+	_time_pass_button.tooltip_text = "推进至当天较晚时刻"
+	_time_pass_button.add_theme_font_size_override("font_size", 19)
+	_time_pass_button.pressed.connect(_open_time_pass_popup)
+	add_child(_time_pass_button)
+	_layout_time_pass_button()
+
+
+func _layout_time_pass_button() -> void:
+	if not is_instance_valid(_time_pass_button):
+		return
+	var viewport_width := get_viewport().get_visible_rect().size.x
+	var safe_margin := clampf(viewport_width * 0.06, 16.0, 64.0)
+	# 与 LocationBase 的地图按钮统一尺寸，并在其左侧保留 24 像素间距。
+	var action_button_width := minf(190.0, viewport_width * 0.38)
+	var map_left := -safe_margin - action_button_width
+	_time_pass_button.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_time_pass_button.offset_right = map_left - 24.0
+	_time_pass_button.offset_left = _time_pass_button.offset_right - action_button_width
+	_time_pass_button.offset_top = safe_margin
+	_time_pass_button.offset_bottom = safe_margin + 52.0
 
 
 func get_location_id() -> String:
@@ -135,11 +158,6 @@ func _ensure_time_pass_popup() -> void:
 	buttons.alignment = BoxContainer.ALIGNMENT_END
 	buttons.add_theme_constant_override("separation", 8)
 	content.add_child(buttons)
-	var rest_button := Button.new()
-	rest_button.text = "休息至次日 09:00"
-	rest_button.tooltip_text = "直接推进至下一天上午九点"
-	rest_button.pressed.connect(_rest_until_next_day)
-	buttons.add_child(rest_button)
 	_advance_button = Button.new()
 	_advance_button.text = "确认消磨"
 	_advance_button.pressed.connect(_confirm_advance_to_today)
@@ -193,23 +211,15 @@ func _confirm_advance_to_today() -> void:
 		_update_time_target_state()
 
 
-func _rest_until_next_day() -> void:
-	if GameState.rest_at_location(get_location_id()):
-		_time_popup.hide()
-	else:
-		_time_hint_label.text = "请先回临时宿舍休息。"
-
-
 ## 外部可主动调（场景 _ready 后、对话关闭后）
 func _refresh() -> void:
 	for child in presence_container.get_children():
 		child.queue_free()
 	_current_npc_buttons.clear()
 	var loc_id := get_location_id()
+	bar_panel.hide()
 	if loc_id == "":
-		bar_panel.visible = false
 		return
-	bar_panel.visible = true
 	var npc_ids := NpcRegistry.get_npcs_at(loc_id)
 	for npc_id in npc_ids:
 		var btn := Button.new()

@@ -2,7 +2,7 @@ extends Control
 ## 属性分配界面：把 ATTRIBUTE_TOTAL_POINTS 点分配到四维，每维 0-5。
 ## 按下"开始冒险"后写入 GameState 并切到首场景。
 
-const NEXT_SCENE_PATH := "res://scenes/map/WorldMap.tscn"
+const NEXT_SCENE_PATH := "res://scenes/locations/TemporaryDorm.tscn"
 
 @onready var remaining_label: Label = $Panel/VBox/HeaderRow/RemainingLabel
 @onready var start_btn: Button = $Panel/VBox/Footer/StartBtn

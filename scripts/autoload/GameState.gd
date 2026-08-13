@@ -5,15 +5,18 @@ signal pollution_changed(new_value: int)
 signal affinity_changed(npc_id: String, new_value: int)
 signal item_added(item_id: String)
 signal clue_triggered(clue_id: String)
+signal document_clue_added(entry: Dictionary)
 signal save_completed(path: String)
 signal load_completed(path: String)
 signal load_failed(path: String, reason: String)
 signal attributes_changed()
+signal morning_report_ready(report: Dictionary)
 
 const MAX_POLLUTION := 6
-const SAVE_VERSION := 3
-## 可读取的历史存档版本；v3 新增夜间回临时宿舍锁定状态。
-const READABLE_SAVE_VERSIONS := [1, 2, 3]
+const SAVE_VERSION := 4
+## 可读取的历史存档版本；v4 新增饮水接触与每日属性结算状态。
+const READABLE_SAVE_VERSIONS := [1, 2, 3, 4]
+const VILLAGE_MAP_ITEM_ID := "village_map"
 const MANUAL_SAVE_SLOT_COUNT := 5
 const SAVE_PATH := "user://save_01.json"
 const AUTO_SAVE_PATH := "user://save_auto.json"
@@ -44,9 +47,19 @@ var pollution: int = 0
 var affinity: Dictionary = {}
 var inventory: Array[String] = []
 var clues: Dictionary = {}
+## 场景资料线索册，元素为 {id, title, summary, image_path}，按发现顺序保存。
+var document_clues: Array[Dictionary] = []
 ## 玩家四维属性，0-5；首次启动前为空 -> attributes_allocated()==false 时应该跳转到属性分配 UI
 var attributes: Dictionary = {}
 var attributes_locked_in: bool = false
+## 持久性属性调整用于未清洁惩罚；每天增益单独结算，不污染初始属性分配。
+var attribute_adjustments: Dictionary = {}
+var daily_attribute_bonuses: Dictionary = {}
+## 水接触由场景交互调用 record_water_contact() 统一记录；按天保存以供次日九点结算。
+var water_contact_count: int = 0
+var water_contact_days: Dictionary = {}
+var showered_days: Dictionary = {}
+var _latest_morning_report: Dictionary = {}
 
 var map_return_scene_path: String = DEFAULT_MAP_RETURN_SCENE
 var current_scene_path: String = MAP_SCENE
@@ -82,8 +95,15 @@ func reset_for_new_game() -> void:
 	affinity = {}
 	inventory = []
 	clues = {}
+	document_clues = []
 	attributes = {}
 	attributes_locked_in = false
+	attribute_adjustments = {}
+	daily_attribute_bonuses = {}
+	water_contact_count = 0
+	water_contact_days = {}
+	showered_days = {}
+	_latest_morning_report = {}
 	unlocked_locations = {DEFAULT_MAP_RETURN_SCENE: true}
 	visited_locations = {}
 	quest_stages = {}
@@ -107,7 +127,10 @@ func reset_for_new_game() -> void:
 
 ## ─── 属性系统 ────────────────────────────────────────────────────────
 func get_attribute(key: String) -> int:
-	return int(attributes.get(key, 0))
+	var base := int(attributes.get(key, 0))
+	var adjustment := int(attribute_adjustments.get(key, 0))
+	var daily_bonus := int(daily_attribute_bonuses.get(key, 0))
+	return clampi(base + adjustment + daily_bonus, ATTRIBUTE_MIN, ATTRIBUTE_MAX)
 
 
 func attributes_allocated() -> bool:
@@ -136,6 +159,8 @@ func set_attributes(values: Dictionary, lock_in: bool = true) -> bool:
 		return false
 	attributes = normalized
 	attributes_locked_in = lock_in
+	attribute_adjustments = {}
+	daily_attribute_bonuses = {}
 	attributes_changed.emit()
 	return true
 
@@ -145,6 +170,45 @@ func attributes_summary_text() -> String:
 	for key in ATTRIBUTE_KEYS:
 		parts.append("%s %d" % [ATTRIBUTE_LABELS.get(key, key), get_attribute(key)])
 	return "  ".join(parts)
+
+
+## 通用水接触入口：任何涉及饮水、涉水、沐浴等内容的交互都可调用。
+func record_water_contact(source_id: String = "") -> bool:
+	var source := source_id.strip_edges()
+	if source.is_empty():
+		return false
+	water_contact_count += 1
+	water_contact_days[str(TimeSystem.current_day)] = true
+	return true
+
+
+func get_water_contact_count() -> int:
+	return water_contact_count
+
+
+func has_contacted_water_on_day(day: int) -> bool:
+	return bool(water_contact_days.get(str(maxi(day, 1)), false))
+
+
+func has_showered_on_day(day: int) -> bool:
+	return bool(showered_days.get(str(maxi(day, 1)), false))
+
+
+## 淋浴每天仅可进行一次；洗澡视为一次与水的接触，并立即恢复到初始魅力。
+func shower_today() -> bool:
+	var day_key := str(TimeSystem.current_day)
+	if bool(showered_days.get(day_key, false)):
+		return false
+	showered_days[day_key] = true
+	record_water_contact("shower")
+	attribute_adjustments["charisma"] = 0
+	attributes_changed.emit()
+	save_game(AUTO_SAVE_PATH, false)
+	return true
+
+
+func get_latest_morning_report() -> Dictionary:
+	return _latest_morning_report.duplicate(true)
 
 
 func add_pollution(amount: int = 1) -> void:
@@ -207,6 +271,41 @@ func trigger_clue(clue_id: String) -> void:
 
 func has_clue(clue_id: String) -> bool:
 	return bool(clues.get(clue_id, false))
+
+
+func add_document_clue(entry: Dictionary) -> bool:
+	var clue_id := _safe_string(entry.get("id", ""), "").strip_edges()
+	var title := _safe_string(entry.get("title", ""), "").strip_edges()
+	var summary := _safe_string(entry.get("summary", ""), "").strip_edges()
+	var image_path := _safe_string(entry.get("image_path", ""), "").strip_edges()
+	var pages := _safe_text_pages(entry.get("pages", []))
+	if clue_id.is_empty() or title.is_empty():
+		return false
+	var is_image_document := not image_path.is_empty()
+	if is_image_document:
+		# 只允许读取项目内资料资源，避免由存档数据注入任意资源路径。
+		if not image_path.begins_with("res://assets/documents/") or not ResourceLoader.exists(image_path):
+			return false
+	elif pages.is_empty():
+		return false
+	for existing in document_clues:
+		if String(existing.get("id", "")) == clue_id:
+			return false
+	var normalized := {
+		"id": clue_id,
+		"title": title,
+		"summary": summary,
+		"entry_type": "image" if is_image_document else "text_pages",
+		"image_path": image_path,
+		"pages": pages,
+	}
+	document_clues.append(normalized)
+	document_clue_added.emit(normalized.duplicate(true))
+	return true
+
+
+func get_document_clues() -> Array[Dictionary]:
+	return document_clues.duplicate(true)
 
 
 func unlock_location(location_id: String) -> void:
@@ -361,11 +460,93 @@ func complete_player_dialogue_round() -> bool:
 func rest_at_location(location_id: String) -> bool:
 	if night_rest_required and location_id != TEMP_DORM_LOCATION_ID:
 		return false
+	var completed_day := TimeSystem.current_day
 	TimeSystem.rest_until_next_day(9, 0)
 	if night_rest_required:
 		night_rest_required = false
+	_latest_morning_report = _apply_morning_status(completed_day)
 	save_game(AUTO_SAVE_PATH, false)
+	morning_report_ready.emit(_latest_morning_report.duplicate(true))
 	return true
+
+
+func _apply_morning_status(completed_day: int) -> Dictionary:
+	daily_attribute_bonuses = {}
+	# 每天早九点结算前一日清洁状态：未洗澡降低魅力，洗澡则维持初始魅力。
+	if has_showered_on_day(completed_day):
+		attribute_adjustments["charisma"] = 0
+	else:
+		var base_charisma := int(attributes.get("charisma", 0))
+		var current_adjustment := int(attribute_adjustments.get("charisma", 0))
+		attribute_adjustments["charisma"] = max(-base_charisma, current_adjustment - 1)
+
+	var report := {
+		"day": TimeSystem.current_day,
+		"show": false,
+		"title": "清晨",
+		"pages": [],
+	}
+	if not has_contacted_water_on_day(completed_day):
+		attributes_changed.emit()
+		return report
+
+	var level := _water_contact_level()
+	var text := _water_contact_text(level)
+	var gained: PackedStringArray = []
+	match level:
+		1:
+			if _grant_daily_attribute_bonus("agility"):
+				gained.append("敏捷 +1")
+		2:
+			if _grant_daily_attribute_bonus("agility"):
+				gained.append("敏捷 +1")
+			if _grant_daily_attribute_bonus("strength"):
+				gained.append("力量 +1")
+		3, 4:
+			for key in ATTRIBUTE_KEYS:
+				if _grant_daily_attribute_bonus(key):
+					gained.append("%s +1" % ATTRIBUTE_LABELS.get(key, key))
+		5:
+			pass
+	if not gained.is_empty():
+		text += "\n\n[color=sea_green]今日增益：%s[/color]" % "、".join(gained)
+	report["show"] = true
+	report["pages"] = [text]
+	attributes_changed.emit()
+	return report
+
+
+func _grant_daily_attribute_bonus(key: String) -> bool:
+	if not ATTRIBUTE_KEYS.has(key) or get_attribute(key) >= ATTRIBUTE_MAX:
+		return false
+	daily_attribute_bonuses[key] = int(daily_attribute_bonuses.get(key, 0)) + 1
+	return true
+
+
+func _water_contact_level() -> int:
+	if water_contact_count <= 2:
+		return 1
+	if water_contact_count == 3:
+		return 2
+	if water_contact_count == 4:
+		return 3
+	if water_contact_count == 5:
+		return 4
+	return 5
+
+
+func _water_contact_text(level: int) -> String:
+	match level:
+		1:
+			return "你脑海中浮现出一段模糊的儿时记忆，随之而来的是一种难以言喻的幸福感，它恰到好处地将你温柔地包裹。你手脚变得轻快，各种担忧和疲惫也一扫而空。"
+		2:
+			return "有一个瞬间，你似乎回到了温暖、黑暗、湿润的子宫，急切地想与那流动的血肉贴合。下一刻你回到了熟悉的村庄，正用力呼吸着附近潮湿的空气。你擦掉额头上的汗珠，感受着一阵令人兴奋的眩晕。"
+		3:
+			return "低头抬头间，你感到焕然一新，仿佛身体重新被注入了更有力量的血液，它们汩汩地涌向每一块肌肉。身上的衣服穿着很紧，你想挣开衣服，用皮肤感受这块你无比着迷的土地。你的耳边响起难以分辨的低语。"
+		4:
+			return "你的根在地下紧握，你的叶与白云相触。你感知着身边一切事物的力量，他们也都欣欣向荣，像你一样。你不禁迈着大步前进，脚下的频率使你难以保持平衡。你的五官变得肿胀，你的衣服也崩开了。你只想与这离不开的地方融为一体。"
+		_:
+			return "耳边的声音如此清晰、亲切：利库伊！生命之源！利库伊利库伊利库伊利库伊……海又升起，让水淹没。"
 
 
 func change_scene(scene_path: String, remember_return: bool = false, autosave: bool = true) -> Error:
@@ -393,7 +574,13 @@ func _notify_scene_arrival(scene_path: String) -> void:
 	mark_visited(loc_id)
 
 
+func can_open_world_map() -> bool:
+	return has_item(VILLAGE_MAP_ITEM_ID)
+
+
 func open_world_map() -> Error:
+	if not can_open_world_map():
+		return ERR_UNAUTHORIZED
 	return change_scene(MAP_SCENE, true)
 
 
@@ -410,7 +597,7 @@ func enter_location(scene_path: String) -> Error:
 	var location_id := NpcRegistry.location_id_for_scene(scene_path)
 	if location_id == "" or not can_enter_location(location_id):
 		return ERR_UNAUTHORIZED
-	unlock_location(scene_path)
+	unlock_location(location_id)
 	return change_scene(scene_path)
 
 
@@ -436,6 +623,7 @@ func save_game(path: String = SAVE_PATH, capture_scene: bool = true) -> Error:
 		"affinity": affinity,
 		"inventory": inventory,
 		"clues": clues,
+		"document_clues": document_clues,
 		"unlocked_locations": unlocked_locations,
 		"visited_locations": visited_locations,
 		"quest_stages": quest_stages,
@@ -450,6 +638,11 @@ func save_game(path: String = SAVE_PATH, capture_scene: bool = true) -> Error:
 		"npc_registry": NpcRegistry.to_dict(),
 		"attributes": attributes.duplicate(true),
 		"attributes_locked_in": attributes_locked_in,
+		"attribute_adjustments": attribute_adjustments.duplicate(true),
+		"daily_attribute_bonuses": daily_attribute_bonuses.duplicate(true),
+		"water_contact_count": water_contact_count,
+		"water_contact_days": water_contact_days.duplicate(true),
+		"showered_days": showered_days.duplicate(true),
 	}
 	file.store_string(JSON.stringify(_json_safe(data), "\t"))
 	file.close()
@@ -487,6 +680,7 @@ func load_game(path: String = SAVE_PATH, switch_scene: bool = true) -> Error:
 	affinity = _int_dictionary(data.get("affinity", {}))
 	inventory = _string_array(data.get("inventory", []))
 	clues = _bool_dictionary(data.get("clues", {}))
+	document_clues = _sanitize_document_clues(data.get("document_clues", []))
 	unlocked_locations = _bool_dictionary(data.get("unlocked_locations", {}))
 	visited_locations = _bool_dictionary(data.get("visited_locations", {}))
 	quest_stages = _int_dictionary(data.get("quest_stages", {}))
@@ -499,6 +693,13 @@ func load_game(path: String = SAVE_PATH, switch_scene: bool = true) -> Error:
 	scene_states = _sanitize_scene_states(data.get("scene_states", {}))
 	MemoryStore.load_from_dict(data.get("memory", {}))
 	_load_attributes(data.get("attributes", {}), data.get("attributes_locked_in", false))
+	_load_attribute_runtime_state(
+		data.get("attribute_adjustments", {}),
+		data.get("daily_attribute_bonuses", {}),
+		data.get("water_contact_count", 0),
+		data.get("water_contact_days", {}),
+		data.get("showered_days", {})
+	)
 	# 旧存档没有时间与 NPC 状态时，仍按 JSON 固定地点初始化。
 	if save_version == 1:
 		TimeSystem.reset_to_start()
@@ -623,6 +824,51 @@ func _safe_scene_path(value: Variant, fallback: String) -> String:
 	return path if ResourceLoader.exists(path) else fallback
 
 
+func _sanitize_document_clues(value: Variant) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	if not value is Array:
+		return result
+	var seen_ids := {}
+	for raw_entry in value:
+		if not raw_entry is Dictionary:
+			continue
+		var clue_id := _safe_string(raw_entry.get("id", ""), "").strip_edges()
+		var title := _safe_string(raw_entry.get("title", ""), "").strip_edges()
+		var summary := _safe_string(raw_entry.get("summary", ""), "").strip_edges()
+		var image_path := _safe_string(raw_entry.get("image_path", ""), "").strip_edges()
+		var pages := _safe_text_pages(raw_entry.get("pages", []))
+		if clue_id.is_empty() or title.is_empty() or seen_ids.has(clue_id):
+			continue
+		var is_image_document := not image_path.is_empty()
+		if is_image_document:
+			if not image_path.begins_with("res://assets/documents/") or not ResourceLoader.exists(image_path):
+				continue
+		elif pages.is_empty():
+			continue
+		seen_ids[clue_id] = true
+		result.append({
+			"id": clue_id,
+			"title": title,
+			"summary": summary,
+			"entry_type": "image" if is_image_document else "text_pages",
+			"image_path": image_path,
+			"pages": pages,
+		})
+	return result
+
+
+func _safe_text_pages(value: Variant) -> Array[String]:
+	var result: Array[String] = []
+	if value is not Array:
+		return result
+	for raw_page in value:
+		if raw_page is String:
+			var page: String = raw_page.strip_edges()
+			if not page.is_empty() and result.size() < 12:
+				result.append(page)
+	return result
+
+
 func _safe_string(value: Variant, fallback: String) -> String:
 	return String(value) if value is String else fallback
 
@@ -679,6 +925,26 @@ func _sanitize_scene_states(value: Variant) -> Dictionary:
 		if state.has("nodes") and state["nodes"] is not Dictionary:
 			state["nodes"] = {}
 		result[path] = state
+	return result
+
+
+func _load_attribute_runtime_state(adjustments_value: Variant, bonuses_value: Variant, water_count_value: Variant, contact_days_value: Variant, shower_days_value: Variant) -> void:
+	attribute_adjustments = _attribute_delta_dictionary(adjustments_value)
+	daily_attribute_bonuses = _attribute_delta_dictionary(bonuses_value, 0, 1)
+	water_contact_count = clampi(_safe_int(water_count_value, 0), 0, 9999)
+	water_contact_days = _bool_dictionary(contact_days_value)
+	showered_days = _bool_dictionary(shower_days_value)
+	_latest_morning_report = {}
+
+
+func _attribute_delta_dictionary(value: Variant, min_value: int = -5, max_value: int = 5) -> Dictionary:
+	var result := {}
+	if value is not Dictionary:
+		return result
+	for key in ATTRIBUTE_KEYS:
+		var raw: Variant = (value as Dictionary).get(key, 0)
+		if raw is int or raw is float:
+			result[key] = clampi(int(raw), min_value, max_value)
 	return result
 
 

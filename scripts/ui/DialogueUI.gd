@@ -2,6 +2,8 @@ extends CanvasLayer
 ## Dialogue UI with explicit request/session ownership.
 
 const MoodPortraitUtil := preload("res://scripts/ui/MoodPortrait.gd")
+const ClueBookPopupScript := preload("res://scripts/ui/ClueBookPopup.gd")
+const SceneItemInteractionScript := preload("res://scripts/ui/SceneItemInteraction.gd")
 
 signal closed
 ## 公聊模式下由当前 DialogueUI 输入框提交给 GroupChatUI 的玩家文本。
@@ -47,7 +49,7 @@ const REGENERATE_REQUEST := "请根据刚才 NPC 的最新回复，只重新生�
 @onready var btn_investigate: BaseButton = $Actions/Investigate
 @onready var btn_bag: BaseButton = $Actions/OpenBag
 @onready var btn_skill: BaseButton = $Actions/Skill
-@onready var btn_leave: BaseButton = $Actions/Leave
+@onready var btn_leave: BaseButton = $Leave
 @onready var choice_buttons: Array[Button] = [
 	$RootPanel/HBox/Center/ChoiceRow/Choice1,
 	$RootPanel/HBox/Center/ChoiceRow/Choice2,
@@ -84,6 +86,9 @@ var _pending_token_buttons: Dictionary = {}
 var _pending_item_request: Dictionary = {}
 ## 缓存 ItemBagPopup 实例
 var _bag_popup: CanvasLayer = null
+## 线索册与其中“查看资料”时复用的通用资料预览器。
+var _clue_book_popup: ClueBookPopup = null
+var _clue_document_viewer: SceneItemInteraction = null
 
 ## Token 药丸配色（金色，与普通输入区分）
 const TOKEN_BG_COLOR := Color(1.0, 0.85, 0.4, 1.0)
@@ -101,17 +106,19 @@ var _pending_offer: Dictionary = {}
 
 func _ready() -> void:
 	add_to_group("dialogue_ui")
+	btn_investigate.tooltip_text = "打开线索册"
 	get_viewport().size_changed.connect(_apply_responsive_layout)
 	send_btn.pressed.connect(_on_send)
 	retry_btn.pressed.connect(_on_retry)
 	regenerate_btn.pressed.connect(_on_regenerate_choices)
 	input_edit.text_submitted.connect(func(_text): _on_send())
-	btn_investigate.pressed.connect(func(): _on_action("调查"))
+	btn_investigate.pressed.connect(_on_open_clue_book_pressed)
 	btn_bag.pressed.connect(_on_open_bag_pressed)
 	btn_skill.pressed.connect(func(): _on_action("使用技能"))
 	btn_leave.pressed.connect(_on_leave)
 	for button in choice_buttons:
 		button.pressed.connect(_on_choice_pressed.bind(button))
+	# 离开按钮独立定位在常驻操作区上方，显示/隐藏不再改变其余三个按钮的位置。
 
 	LLMService.reply_received.connect(_on_llm_reply)
 	LLMService.reply_failed.connect(_on_llm_failed)
@@ -124,7 +131,7 @@ func _ready() -> void:
 		dialogue_bg.visible = false
 	if is_instance_valid(portrait_overlay):
 		portrait_overlay.visible = false
-	actions_box.visible = false
+	actions_box.visible = true
 	_change_state(DialogueState.CLOSED)
 	call_deferred("_apply_responsive_layout")
 
@@ -134,9 +141,9 @@ func _apply_responsive_layout() -> void:
 	if viewport_size.x <= 0.0 or viewport_size.y <= 0.0:
 		return
 	# 所有位置/大小均在 Godot 编辑器中通过 tscn 定义，代码不再强制覆盖。
-	# 这里只处理可见性跟随对话框开关。
+	# 右侧操作区在普通模式下常驻；公聊仍只保留离开按钮。
 	portrait_box.visible = false
-	actions_box.visible = is_open() and viewport_size.x >= 820.0
+	actions_box.visible = viewport_size.x >= 820.0 and (not _group_mode or is_open())
 	if is_instance_valid(portrait_overlay):
 		portrait_overlay.visible = is_open()
 
@@ -355,7 +362,7 @@ func _change_state(next_state: DialogueState) -> void:
 	if is_instance_valid(portrait_overlay):
 		portrait_overlay.visible = open
 	if is_instance_valid(actions_box):
-		actions_box.visible = open
+		actions_box.visible = get_viewport().get_visible_rect().size.x >= 820.0 and (not _group_mode or open)
 	if _group_mode:
 		btn_investigate.visible = false
 		btn_bag.visible = false
@@ -366,9 +373,10 @@ func _change_state(next_state: DialogueState) -> void:
 		btn_investigate.visible = true
 		btn_bag.visible = true
 		btn_skill.visible = true
-		btn_leave.visible = true
+		btn_leave.visible = open
 		btn_leave.tooltip_text = "离开"
 	var can_interact := state in [DialogueState.WAITING_PLAYER, DialogueState.ERROR] and not _group_finished
+	var can_use_persistent_actions := not _group_mode and state not in [DialogueState.WAITING_LLM, DialogueState.STREAMING]
 	input_row.visible = open
 	input_edit.visible = open
 	send_btn.visible = open
@@ -376,8 +384,9 @@ func _change_state(next_state: DialogueState) -> void:
 	send_btn.disabled = not can_interact
 	retry_btn.visible = state == DialogueState.ERROR
 	retry_btn.disabled = state != DialogueState.ERROR
-	btn_investigate.disabled = not can_interact
-	btn_bag.disabled = not can_interact
+	btn_investigate.disabled = not can_use_persistent_actions
+	btn_bag.disabled = not can_use_persistent_actions
+	# 技能仍需依托当前 NPC 对话发送行动，常驻显示但只在可对话时可用。
 	btn_skill.disabled = not can_interact
 	btn_leave.disabled = not open
 	regenerate_btn.disabled = state != DialogueState.WAITING_PLAYER
@@ -882,6 +891,9 @@ func _show_choices(raw_choices: Variant) -> void:
 			button.disabled = true
 			continue
 		var full_text := choices[index]
+		button.remove_meta("offer_decision")
+		button.remove_meta("is_item_deny")
+		button.remove_meta("is_item_choice")
 		button.text = full_text.left(18) + ("…" if full_text.length() > 18 else "")
 		button.tooltip_text = full_text
 		button.set_meta("choice_text", full_text)
@@ -1074,11 +1086,60 @@ func _redraw_check_entry(entry: Dictionary) -> void:
 	history_label.pop()
 
 
+# ─── 线索册 ──────────────────────────────────────────────────────
+
+## 原“调查环境”按钮改为线索册入口；按钮贴图可在后续直接替换。
+func _on_open_clue_book_pressed() -> void:
+	if _group_mode or state in [DialogueState.WAITING_LLM, DialogueState.STREAMING]:
+		return
+	var popup := _get_or_create_clue_book_popup()
+	if popup == null:
+		return
+	popup.open_ui(GameState.get_document_clues())
+
+
+func _get_or_create_clue_book_popup() -> ClueBookPopup:
+	if is_instance_valid(_clue_book_popup):
+		return _clue_book_popup
+	_clue_book_popup = ClueBookPopupScript.new()
+	get_tree().current_scene.add_child(_clue_book_popup)
+	_clue_book_popup.view_requested.connect(_on_clue_book_view_requested)
+	return _clue_book_popup
+
+
+func _on_clue_book_view_requested(entry: Dictionary) -> void:
+	var viewer := _get_or_create_clue_document_viewer()
+	if viewer == null:
+		return
+	if String(entry.get("entry_type", "")) == "text_pages":
+		var pages: Array[String] = []
+		for raw_page in entry.get("pages", []):
+			if raw_page is String and not raw_page.strip_edges().is_empty():
+				pages.append(raw_page)
+		if not pages.is_empty():
+			viewer.open_paged_text(String(entry.get("title", "教程")), pages)
+		return
+	var image_path := String(entry.get("image_path", ""))
+	if not image_path.begins_with("res://assets/documents/"):
+		return
+	var image_texture := load(image_path) as Texture2D
+	if image_texture != null:
+		viewer.open_document(String(entry.get("title", "资料")), image_texture, {}, false)
+
+
+func _get_or_create_clue_document_viewer() -> SceneItemInteraction:
+	if is_instance_valid(_clue_document_viewer):
+		return _clue_document_viewer
+	_clue_document_viewer = SceneItemInteractionScript.new()
+	get_tree().current_scene.add_child(_clue_document_viewer)
+	return _clue_document_viewer
+
+
 # ─── 道具：Token 条 + 背包弹窗 ─────────────────────────────────────
 
 ## 玩家点击右侧"打开背包"按钮
 func _on_open_bag_pressed() -> void:
-	if state not in [DialogueState.WAITING_PLAYER, DialogueState.ERROR]:
+	if _group_mode or state in [DialogueState.WAITING_LLM, DialogueState.STREAMING]:
 		return
 	var popup := _get_or_create_bag_popup()
 	if popup == null:

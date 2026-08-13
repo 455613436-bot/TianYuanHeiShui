@@ -50,6 +50,8 @@ func _handle_cancel() -> void:
 
 
 func _handle_map() -> void:
+	if not GameState.can_open_world_map():
+		return
 	var top_ui := _top_open_ui()
 	if top_ui != null:
 		if top_ui.is_in_group("world_map"):
