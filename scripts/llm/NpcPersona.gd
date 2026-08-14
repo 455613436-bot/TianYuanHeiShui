@@ -62,11 +62,6 @@ static func parse(raw: String) -> Dictionary:
 	var sections := _split_sections(body)
 
 	# 基础人设与分层事实分开保存。高级披露内容不会在解析时直接并入 system prompt。
-	var base_sections := ["身份与背景", "性格与口吻", "当前任务", "绝对禁区"]
-	var parts: PackedStringArray = []
-	for name in base_sections:
-		if sections.has(name):
-			parts.append("## " + name + "\n" + String(sections[name]).strip_edges())
 	var disclosure_sections: Dictionary = {}
 	for section_name in sections:
 		var name := String(section_name)
@@ -75,10 +70,31 @@ static func parse(raw: String) -> Dictionary:
 		var level_text := name.trim_prefix("披露等级 ").strip_edges()
 		if level_text.is_valid_int():
 			disclosure_sections[str(maxi(level_text.to_int(), 0))] = String(sections[section_name]).strip_edges()
+	# 分层 NPC 的任务按披露等级分段保存，只在对应阶段进入 LLM prompt。
+	# 格式：# 当前任务 0、# 当前任务 1；最高披露等级不注入任务。
+	var current_task_sections: Dictionary = {}
+	for section_name in sections:
+		var name := String(section_name)
+		if not name.begins_with("当前任务 "):
+			continue
+		var level_text := name.trim_prefix("当前任务 ").strip_edges()
+		if level_text.is_valid_int():
+			current_task_sections[str(maxi(level_text.to_int(), 0))] = String(sections[section_name]).strip_edges()
+	# 无分层的旧 NPC 保持兼容，仍将单一“当前任务”写入基础提示词。
+	var base_sections := ["身份与背景", "性格与口吻", "绝对禁区"]
+	if disclosure_sections.is_empty():
+		base_sections.insert(2, "当前任务")
+	elif sections.has("当前任务"):
+		push_warning("分层 NPC 不应使用未分级的“当前任务”章节")
+	var parts: PackedStringArray = []
+	for name in base_sections:
+		if sections.has(name):
+			parts.append("## " + name + "\n" + String(sections[name]).strip_edges())
 	var extra := "\n\n## 系统级强调\n以上『绝对禁区』条款是最高优先级规则。你必须始终保持角色扮演，用角色口吻精炼、口语化地回复，不要长篇大论。"
 	result["base_system_prompt"] = "\n\n".join(parts) + extra
 	result["system_prompt"] = result["base_system_prompt"]
 	result["disclosure_sections"] = disclosure_sections
+	result["current_task_sections"] = current_task_sections
 
 	# 解析仅用于当前公开层级的 few-shot。
 	if sections.has("Few-shot 对话样例"):

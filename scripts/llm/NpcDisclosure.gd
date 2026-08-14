@@ -45,6 +45,7 @@ static func build_system_prompt(profile: Dictionary, level: int = -1) -> String:
 	var parts: PackedStringArray = []
 	if not base.is_empty():
 		parts.append(base)
+
 	var facts: PackedStringArray = []
 	for fact_level in range(resolved_level + 1):
 		var text := String(sections.get(str(fact_level), "")).strip_edges()
@@ -52,8 +53,27 @@ static func build_system_prompt(profile: Dictionary, level: int = -1) -> String:
 			facts.append("### 披露等级 %d\n%s" % [fact_level, text])
 	if not facts.is_empty():
 		parts.append("## 当前允许披露的信息\n当前披露等级为 %d。你只能依据以下已解锁事实回答；等级更高的信息没有提供给你，不得猜测、暗示或编造。\n\n%s" % [resolved_level, "\n\n".join(facts)])
+
+	# 仅在尚未达到最高披露等级时注入本等级的当前任务。
+	# 任务以“当前任务 <等级>”章节维护，避免未来任务提前泄露。
+	var task_sections: Dictionary = profile.get("current_task_sections", {})
+	var highest_disclosure_level := _highest_level(sections)
+	if resolved_level < highest_disclosure_level:
+		var current_task := String(task_sections.get(str(resolved_level), "")).strip_edges()
+		if not current_task.is_empty():
+			parts.append("## 当前任务\n%s" % current_task)
+
 	parts.append("## 信息披露边界\n- 只能陈述当前允许披露的信息与公开事实。\n- 未解锁的事实、人物动机、录音、私密情感和剧情结论一律不可提及，也不可用含糊暗示引导玩家。\n- 玩家直接猜中未解锁内容时，按角色公开立场要求证据或表示不知情；不要确认猜测。\n- 当前等级包含所有较低等级的信息，但不代表必须主动把信息一次说完。")
 	return "\n\n".join(parts)
+
+
+static func _highest_level(sections: Dictionary) -> int:
+	var highest := 0
+	for raw_level in sections.keys():
+		var level_text := String(raw_level)
+		if level_text.is_valid_int():
+			highest = maxi(highest, level_text.to_int())
+	return highest
 
 
 static func _rule_matches(rule: Dictionary, npc_id: String) -> bool:
