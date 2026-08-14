@@ -77,8 +77,10 @@ func _instantiate_npc(npc_id: String, layout_index: int) -> Node2D:
 	var x := portrait_start_x + portrait_spacing * float(layout_index)
 	node.position = Vector2(x, portrait_y)
 	add_child(node)
-	# 给 NPC 创建可见的立绘按钮（让玩家能点击交互）
-	_attach_portrait_button(node, npc_id, layout_index)
+	# 背景已绘入角色时使用场景遮罩热点，避免再叠加一张动态立绘。
+	var profile := NpcRegistry.get_dialogue_profile(npc_id)
+	if not bool(profile.get("scene_hotspot", false)):
+		_attach_portrait_button(node, npc_id, layout_index)
 	return node
 
 

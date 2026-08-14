@@ -17,6 +17,8 @@ const MAP_SCENE := "res://scenes/map/WorldMap.tscn"
 var _showing_alternate_view := false
 var _view_toggle_button: Button
 var _uses_time_based_background := false
+## 地图按钮放入独立 HUD 层，避免被场景遮罩热点截获点击。
+var _map_action_layer: CanvasLayer
 
 @onready var content_panel: Panel = $Content
 @onready var number_label: Label = $Content/NumberLabel
@@ -48,6 +50,7 @@ func _ready() -> void:
 		_refresh_time_based_background()
 	elif alternate_background_texture != null:
 		_create_view_toggle_button()
+	_move_map_button_to_hud_layer()
 	return_button.pressed.connect(_open_map)
 	GameState.item_added.connect(_on_item_added)
 	_refresh_map_access()
@@ -66,11 +69,22 @@ func _ready() -> void:
 	if location_id == "abandoned_clinic":
 		_create_clinic_door_hotspot()
 	elif location_id == "village_committee":
-		_create_factory_notice_hotspot()
+		_create_village_committee_hotspots()
 	elif location_id == "temporary_dorm":
 		_create_temporary_dorm_hotspots()
 		call_deferred("_start_dorm_tutorial_if_needed")
 	call_deferred("_apply_responsive_layout")
+
+
+func _move_map_button_to_hud_layer() -> void:
+	if _map_action_layer != null:
+		return
+	_map_action_layer = CanvasLayer.new()
+	_map_action_layer.name = "MapActionHudLayer"
+	# 高于场景与遮罩热点，低于资料/对话等全屏交互层。
+	_map_action_layer.layer = 10
+	add_child(_map_action_layer)
+	return_button.reparent(_map_action_layer)
 
 
 func _on_item_added(item_id: String) -> void:
@@ -140,50 +154,178 @@ func _create_clinic_door_hotspot() -> void:
 	)
 
 
-func _create_factory_notice_hotspot() -> void:
-	var highlight := MaskInteractionHighlight.new()
-	highlight.name = "FactoryNoticeHighlight"
-	highlight.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	highlight.configure(
-		load("res://assets/scenes/masks/factory_notice_mask.png"),
-		Color(0.28, 0.86, 1.0, 1.0),
-		0.20,
-		3.0
+func _create_village_committee_hotspots() -> void:
+	var xuan := _create_mask_hotspot(
+		"WuXuan",
+		"res://assets/scenes/masks/wu_xuan_mask.png",
+		Rect2(0.247, 0.168, 0.254, 0.829),
+		"与吴萱交谈"
 	)
-	add_child(highlight)
+	var photos := _create_mask_hotspot(
+		"CommitteePhotos",
+		"res://assets/scenes/masks/committee_photos_mask.png",
+		Rect2(0.825, 0.064, 0.175, 0.337),
+		"旧照片与地点记录"
+	)
+	var computer := _create_mask_hotspot(
+		"CommitteeComputer",
+		"res://assets/scenes/masks/committee_computer_mask.png",
+		Rect2(0.575, 0.384, 0.133, 0.247),
+		"村委电脑"
+	)
+	var notice := _create_mask_hotspot(
+		"HospitalNotice",
+		"res://assets/scenes/masks/hospital_notice_mask.png",
+		Rect2(0.279, 0.131, 0.156, 0.054),
+		"田原村全体村民联名请愿书"
+	)
 
-	var hotspot := Button.new()
-	hotspot.name = "FactoryNoticeHotspot"
-	hotspot.anchor_left = 0.265
-	hotspot.anchor_top = 0.135
-	hotspot.anchor_right = 0.445
-	hotspot.anchor_bottom = 0.225
-	hotspot.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	hotspot.tooltip_text = "工厂撤出通知"
-	hotspot.flat = true
-	hotspot.mouse_entered.connect(func() -> void:
-		highlight.show_highlight()
-	)
-	hotspot.mouse_exited.connect(func() -> void:
-		highlight.hide_highlight()
-	)
-	add_child(hotspot)
+	var photo_ui := SceneItemInteraction.new()
+	photo_ui.name = "CommitteePhotoMatchInteraction"
+	add_child(photo_ui)
+	photo_ui.choice_selected.connect(_on_committee_photo_choice.bind(photo_ui))
+	var computer_ui := SceneItemInteraction.new()
+	computer_ui.name = "CommitteeComputerInteraction"
+	add_child(computer_ui)
+	computer_ui.choice_selected.connect(_on_committee_computer_choice.bind(computer_ui))
+	var notice_ui := SceneItemInteraction.new()
+	notice_ui.name = "HospitalNoticeInteraction"
+	add_child(notice_ui)
 
-	var interaction_ui := SceneItemInteraction.new()
-	interaction_ui.name = "FactoryNoticeInteraction"
-	add_child(interaction_ui)
-	hotspot.pressed.connect(func() -> void:
-		highlight.hide_highlight()
-		interaction_ui.open_document(
-			"甘艾工业园区撤出计划",
-			load("res://assets/documents/notice.png"),
+	(xuan["button"] as Button).pressed.connect(_open_wu_xuan_dialogue.bind(xuan["highlight"]))
+	(photos["button"] as Button).pressed.connect(_open_committee_photo_match.bind(photos["highlight"], photo_ui))
+	(computer["button"] as Button).pressed.connect(_open_committee_computer.bind(computer["highlight"], computer_ui))
+	(notice["button"] as Button).pressed.connect(_open_hospital_notice.bind(notice["highlight"], notice_ui))
+
+
+func _open_wu_xuan_dialogue(highlight: MaskInteractionHighlight) -> void:
+	highlight.hide_highlight()
+	var dialogue_ui := get_tree().get_first_node_in_group("dialogue_ui")
+	if dialogue_ui == null or not dialogue_ui.has_method("open_dialogue"):
+		return
+	if dialogue_ui.has_method("is_open") and dialogue_ui.is_open():
+		return
+	var profile := NpcRegistry.get_dialogue_profile("wu_xuan")
+	if not profile.is_empty():
+		dialogue_ui.open_dialogue(profile)
+
+
+func _open_committee_photo_match(highlight: MaskInteractionHighlight, interaction_ui: SceneItemInteraction) -> void:
+	highlight.hide_highlight()
+	var stage := GameState.get_quest_stage("wu_xuan_photo_location_match")
+	if stage >= 2:
+		interaction_ui.open_paged_text("旧照片", ["这些旧照片的拍摄地点已经整理完成。去和吴萱谈谈，她会知道下一步该怎么做。"])
+		return
+	if stage == 0:
+		GameState.set_quest_stage("wu_xuan_photo_location_match", 1)
+		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
+	interaction_ui.open_choice({
+		"id": "wu_xuan_photo_location_match",
+		"title": "旧照片地点匹配",
+		"description": "照片缺少地点标注。你试着根据墙上的旧地图、建筑细节和年份信息把它们对应起来。",
+		"choices": [
 			{
-				"id": "factory_withdrawal_notice",
-				"title": "甘艾工业园区撤出计划",
-				"summary": "村委处未贴出的公示，写着甘艾工厂早已撤出的消息。",
-				"image_path": "res://assets/documents/notice.png",
+				"id": "match_locations",
+				"label": "核对地点（智力检定）",
+				"type": "check",
+				"attribute": "智力",
+				"difficulty": 8,
+				"reason": "根据村委会旧照片的建筑和年代信息匹配拍摄地点",
+				"success_text": "你找到了足够多的对应点，照片的地点记录终于能整理出来。",
+				"failure_text": "照片中的建筑改动太多，你暂时还无法确定所有地点。",
+			},
+			{"id": "leave", "label": "暂时放下", "close": true},
+		],
+	})
+
+
+func _on_committee_photo_choice(interaction_id: String, choice_id: String, result: Dictionary, interaction_ui: SceneItemInteraction) -> void:
+	if interaction_id != "wu_xuan_photo_location_match" or choice_id != "match_locations":
+		return
+	if not bool(result.get("passed", false)):
+		return
+	GameState.set_quest_stage("wu_xuan_photo_location_match", 2)
+	GameState.save_game(GameState.AUTO_SAVE_PATH, false)
+	interaction_ui.open_paged_text("地点匹配完成", ["你完成了照片地点的核对。去告诉吴萱这件事，她也许会愿意开放更多村委电脑的使用范围。"])
+
+
+func _open_committee_computer(highlight: MaskInteractionHighlight, interaction_ui: SceneItemInteraction) -> void:
+	highlight.hide_highlight()
+	var has_game_access := GameState.has_item("village_committee_computer_game_access")
+	var has_archive_access := GameState.has_item("village_committee_archive_access")
+	if not has_game_access and not has_archive_access:
+		interaction_ui.open_choice({
+			"id": "committee_computer_locked",
+			"title": "村委电脑",
+			"description": "屏幕亮着，但吴萱没有允许你使用。这里存着村委资料，不能擅自操作。",
+			"choices": [{"id": "leave", "label": "离开", "close": true}],
+		})
+		return
+
+	var choices: Array[Dictionary] = []
+	var description := "吴萱为你开放了有限的电脑使用权限。"
+	if has_game_access:
+		var can_play := not bool(GameState.get_investigation_state("wu_xuan_computer_game_completed", false)) and TimeSystem.minute_of_day + 240 <= 19 * 60
+		if can_play:
+			choices.append({"id": "play_game", "label": "玩本地游戏（消耗 4 小时）"})
+		elif bool(GameState.get_investigation_state("wu_xuan_computer_game_completed", false)):
+			description += "你已经通过本地游戏获得过一次智力成长。"
+		else:
+			description += "距离 19:00 已不足四小时，现在不适合开始游戏。"
+	if has_archive_access:
+		choices.append({"id": "search_archives", "label": "查阅限定档案"})
+	choices.append({"id": "leave", "label": "离开", "close": true})
+	interaction_ui.open_choice({
+		"id": "committee_computer",
+		"title": "村委电脑",
+		"description": description,
+		"choices": choices,
+	})
+
+
+func _on_committee_computer_choice(interaction_id: String, choice_id: String, _result: Dictionary, interaction_ui: SceneItemInteraction) -> void:
+	if interaction_id != "committee_computer":
+		return
+	if choice_id == "play_game":
+		if bool(GameState.get_investigation_state("wu_xuan_computer_game_completed", false)) or TimeSystem.minute_of_day + 240 > 19 * 60:
+			return
+		TimeSystem.advance_minutes(240)
+		var gained := GameState.grant_permanent_attribute("intelligence", 1)
+		GameState.set_investigation_state("wu_xuan_computer_game_completed", true)
+		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
+		var reward_text := "你在一套老旧的解谜游戏里花了四个小时，思路变得更清晰。"
+		if gained > 0:
+			reward_text += "\n\n[color=sea_green]永久获得：智力 +%d[/color]" % gained
+		else:
+			reward_text += "\n\n你的智力已达到上限，无法继续提升。"
+		interaction_ui.open_paged_text("本地游戏", [reward_text])
+	elif choice_id == "search_archives":
+		GameState.trigger_clue("committee_2000_glasses_bronze_fragment")
+		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
+		interaction_ui.open_paged_text(
+			"档案检索结果",
+			["检索到一条 2000 年的登报登记：一名戴眼镜的人拿着青铜鼎碎片，请求在地方报纸上刊登相关消息。登记没有留下完整姓名，附件也已缺失。"],
+			"",
+			{
+				"id": "committee_2000_glasses_bronze_fragment",
+				"title": "2000 年登报登记",
+				"summary": "一名戴眼镜的人持青铜鼎碎片请求登报，登记缺少姓名与附件。",
+				"pages": ["2000 年登报登记：一名戴眼镜的人拿着青铜鼎碎片，请求在地方报纸上刊登相关消息。登记没有留下完整姓名，附件也已缺失。"],
 			}
 		)
+
+
+func _open_hospital_notice(highlight: MaskInteractionHighlight, interaction_ui: SceneItemInteraction) -> void:
+	highlight.hide_highlight()
+	interaction_ui.open_document(
+		"田原村全体村民联名请愿书",
+		load("res://assets/documents/hospital_notice.jpg"),
+		{
+			"id": "hospital_relocation_petition",
+			"title": "田原村全体村民联名请愿书",
+			"summary": "村民请求迁走“干水固”医院，并在旧址建立利水君观。",
+			"image_path": "res://assets/documents/hospital_notice.jpg",
+		}
 	)
 
 

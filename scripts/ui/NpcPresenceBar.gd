@@ -30,7 +30,8 @@ var _time_pass_button: Button
 
 
 func _ready() -> void:
-	layer = 8
+	# 与地图按钮同处 HUD 层，确保场景遮罩热点无法覆盖消磨时间按钮。
+	layer = 10
 	# 移除顶部黑色的 NPC/消磨时间横栏；保留独立的时间按钮，与地图按钮同尺寸对齐。
 	bar_panel.hide()
 	_create_time_pass_button()

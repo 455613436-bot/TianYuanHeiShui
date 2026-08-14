@@ -26,8 +26,9 @@ const DEFAULT_MAP_RETURN_SCENE := "res://scenes/locations/VillageChiefHouse.tscn
 const TEMP_DORM_LOCATION_ID := "temporary_dorm"
 const TEMP_DORM_SCENE := "res://scenes/locations/TemporaryDorm.tscn"
 
-## 新游戏开始时默认发放的初始物品（id 需要在 data/items/ 里有对应定义）
-const INITIAL_INVENTORY: Array[String] = ["camera"]
+## 开发调试期间默认发放村庄手绘地图，便于直接切换和测试各地点场景。
+## 正式流程恢复时移除 "village_map"，由村长剧情发放。
+const INITIAL_INVENTORY: Array[String] = ["camera", "village_map"]
 
 ## 玩家属性系统：4 维，每维 0-5，总分固定 10
 const ATTRIBUTE_KEYS := ["strength", "agility", "intellect", "charisma"]
@@ -170,6 +171,20 @@ func attributes_summary_text() -> String:
 	for key in ATTRIBUTE_KEYS:
 		parts.append("%s %d" % [ATTRIBUTE_LABELS.get(key, key), get_attribute(key)])
 	return "  ".join(parts)
+
+
+## 为任务奖励等永久成长提供统一入口；奖励不会突破基础属性上限。
+func grant_permanent_attribute(attribute: String, amount: int = 1) -> int:
+	var key := attribute.strip_edges().to_lower()
+	if not ATTRIBUTE_KEYS.has(key) or amount <= 0:
+		return 0
+	var previous := int(attributes.get(key, ATTRIBUTE_MIN))
+	var updated := clampi(previous + amount, ATTRIBUTE_MIN, ATTRIBUTE_MAX)
+	if updated == previous:
+		return 0
+	attributes[key] = updated
+	attributes_changed.emit()
+	return updated - previous
 
 
 ## 通用水接触入口：任何涉及饮水、涉水、沐浴等内容的交互都可调用。

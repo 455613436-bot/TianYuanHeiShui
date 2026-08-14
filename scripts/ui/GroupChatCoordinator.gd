@@ -98,7 +98,7 @@ func _request_next_speaker() -> void:
 		return
 
 	var npc_id: String = _speaker_queue.pop_front()
-	var profile: Dictionary = NpcRegistry.get_dialogue_profile(npc_id)
+	var profile: Dictionary = NpcRegistry.build_llm_profile(NpcRegistry.get_dialogue_profile(npc_id))
 	if profile.is_empty():
 		call_deferred("_request_next_speaker")
 		return

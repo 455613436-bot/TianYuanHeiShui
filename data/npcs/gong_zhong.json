@@ -1,0 +1,152 @@
+{
+  "id": "gong_zhong",
+  "display_name": "工头 龚忠",
+  "short_name": "老龚",
+  "style_hint": "外来工头，务实直接，执着于时间、人数、方向和距离；不信空话，凡事都要有个数",
+  "system_prompt": "你叫龚忠，田原村后山废弃工地的外来工头，别人叫你老龚。你说话务实、直接，讨厌“大概”“可能”和“听别人说”。你习惯追问具体日期、人数、方向、距离和亲眼所见。",
+  "fallback_lines": [
+    "别跟我说大概。几点、几个人、往哪边走的，你说清楚。",
+    "听别人说不算数。你亲眼见着什么了？",
+    "山路一公里多，雨后能走的不到一半。做事先把数算明白。",
+    "工具箱没找着之前，别跟我扯那些虚的。里面有东西，不能丢。"
+  ],
+  "default_disclosure_level": 0,
+  "disclosure_rules": [
+    {
+      "level": 1,
+      "requires_previous": true,
+      "all_of": [
+        {"type": "quest_stage", "id": "gong_toolbox", "min": 2}
+      ]
+    },
+    {
+      "level": 2,
+      "requires_previous": true,
+      "any_of": [
+        {"type": "clue", "id": "gong_bronze_sample_suspected"},
+        {"type": "clue", "id": "gong_rumor_was_planted"}
+      ]
+    },
+    {
+      "level": 3,
+      "requires_previous": true,
+      "all_of": [
+        {"type": "affinity", "npc_id": "gong_zhong", "min": 2},
+        {"type": "clue", "id": "gong_zes_death_questioned"}
+      ]
+    },
+    {
+      "level": 4,
+      "requires_previous": true,
+      "all_of": [
+        {"type": "clue", "id": "gong_desiccant_experiment"}
+      ]
+    }
+  ],
+  "fixed_story_events": [
+    {
+      "id": "gong_toolbox_opening",
+      "when": "dialogue_open",
+      "once": true,
+      "all_of": [
+        {"type": "quest_stage", "id": "gong_toolbox", "min": 0}
+      ],
+      "text": "（龚忠正焦急地在材料堆和工棚里翻找。）我的工具箱怎么不见了……上周还在这儿。抱歉，没注意到有人。你从村道过来？路上见没见一个深绿色铁皮工具箱，两层卡扣，约半米长？",
+      "choices": ["问问工具箱的事", "询问废弃工地的情况"],
+      "effects": {
+        "set_quest_stage": {"id": "gong_toolbox", "stage": 1},
+        "trigger_clues": ["gong_toolbox_lead"],
+        "document_clue": {
+          "id": "gong_toolbox_missing",
+          "title": "龚忠的工具箱遗失",
+          "summary": "老龚在废弃工地遗失了一个深绿色铁皮工具箱，里面装着不能丢的施工记录和重要物件。",
+          "pages": [
+            "龚忠的工具箱遗失了。工具箱为深绿色铁皮、两层卡扣，约半米长；他称最后一次确认它还在，是上周傍晚收工后。",
+            "若要追问或帮忙寻找，可询问老龚工具箱的具体去向。他会说明可能遗落在村道、村委会附近或运料途中，并要求把箱子和其中物品完整带回。"
+          ]
+        }
+      }
+    },
+    {
+      "id": "gong_toolbox_completed",
+      "when": "manual",
+      "once": true,
+      "all_of": [
+        {"type": "quest_stage", "id": "gong_toolbox", "min": 2}
+      ],
+      "text": "（逐件核对箱里的东西，合上卡扣。）一件没少。你这人做事有数，算我欠你个人情。工厂进驻前水就不对，撤走也不是因为生意差；龚泽那年的事故，我还得继续查。",
+      "choices": ["问问水质异常", "询问 2000 年的事故"],
+      "effects": {
+        "trigger_clues": ["gong_accident_investigation_opened"],
+        "add_items": ["bronze_fragment"]
+      }
+    },
+    {
+      "id": "gong_guided_stranger_reveal",
+      "when": "manual",
+      "once": true,
+      "all_of": [
+        {"type": "quest_stage", "id": "gong_toolbox", "min": 2}
+      ],
+      "any_of": [
+        {"type": "clue", "id": "gong_bronze_sample_suspected"},
+        {"type": "clue", "id": "gong_rumor_was_planted"}
+      ],
+      "text": "龚泽电话里提过，带路的那个人连洞里有几道岔路都说得准。那人不是田原村的，熟悉洞里结构；事故以后附近还有人见过他。姓名我不知道，别急着给谁定罪。",
+      "choices": ["追问带路者的特征", "询问山洞里的岔路"],
+      "effects": {
+        "trigger_clues": ["gong_guided_stranger_revealed"]
+      }
+    },
+    {
+      "id": "gong_guilt_confession",
+      "when": "manual",
+      "once": true,
+      "all_of": [
+        {"type": "affinity", "npc_id": "gong_zhong", "min": 2},
+        {"type": "clue", "id": "gong_zes_death_questioned"}
+      ],
+      "pages": [
+        "事故前一晚，龚泽问我要不要继续。我那时正气他欠债，告诉他都到洞口了，挖到东西老婆孩子就不用吃苦。第二天他死在里面。",
+        "（龚忠低头翻动施工簿。）这笔账算到最后，总有我一份。"
+      ],
+      "choices": ["表示理解", "询问施工记录"],
+      "effects": {
+        "trigger_clues": ["gong_guilt_confession"]
+      }
+    },
+    {
+      "id": "gong_desiccant_admission",
+      "when": "manual",
+      "once": true,
+      "all_of": [
+        {"type": "clue", "id": "gong_desiccant_experiment"}
+      ],
+      "text": "（龚忠摸了摸消退些的手背。）我离开村子几天，确实会好一些。来这四年，不是我胖了。干燥剂能压一阵，可压不住根子。要进山洞，我可以帮你把那段路修出来。",
+      "choices": ["询问修路需要什么", "询问水源的影响"],
+      "effects": {
+        "trigger_clues": ["gong_water_anomaly_admitted"]
+      }
+    }
+  ],
+  "triggers": [
+    {
+      "keywords": ["龚泽", "弟弟", "为什么调查", "为什么执着"],
+      "affinity_delta": 1,
+      "clue_id": "gong_zes_death_questioned",
+      "min_disclosure_level": 1
+    }
+  ],
+  "home_location": "back_mountain",
+  "current_location": "back_mountain",
+  "portrait_small": "",
+  "importance": "main",
+  "sort_priority": 25,
+  "mood_map": {
+    "平静": "neutral",
+    "怀疑": "suspicious",
+    "生气": "angry",
+    "信任": "happy",
+    "疲惫": "sad"
+  }
+}

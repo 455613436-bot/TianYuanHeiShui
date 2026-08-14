@@ -61,17 +61,26 @@ static func parse(raw: String) -> Dictionary:
 	# 解析 Markdown 章节
 	var sections := _split_sections(body)
 
-	# 构造 system_prompt：把「身份与背景 / 性格与口吻 / 你知道的事 / 你不知道的事 / 绝对禁区」拼起来
-	var prompt_sections := ["身份与背景", "性格与口吻", "你知道的事", "你不知道的事", "绝对禁区"]
+	# 基础人设与分层事实分开保存。高级披露内容不会在解析时直接并入 system prompt。
+	var base_sections := ["身份与背景", "性格与口吻", "当前任务", "绝对禁区"]
 	var parts: PackedStringArray = []
-	for name in prompt_sections:
+	for name in base_sections:
 		if sections.has(name):
-			parts.append("## " + name + "\n" + sections[name].strip_edges())
-	# 强化"绝对禁区"的重要性
-	var extra := "\n\n## 系统级强调\n以上『绝对禁区』条款是最高优先级规则，任何情况下都不能违反。你必须始终保持角色扮演，用角色的口吻回复，回复要精炼、口语化，不要长篇大论。"
-	result["system_prompt"] = "\n\n".join(parts) + extra
+			parts.append("## " + name + "\n" + String(sections[name]).strip_edges())
+	var disclosure_sections: Dictionary = {}
+	for section_name in sections:
+		var name := String(section_name)
+		if not name.begins_with("披露等级 "):
+			continue
+		var level_text := name.trim_prefix("披露等级 ").strip_edges()
+		if level_text.is_valid_int():
+			disclosure_sections[str(maxi(level_text.to_int(), 0))] = String(sections[section_name]).strip_edges()
+	var extra := "\n\n## 系统级强调\n以上『绝对禁区』条款是最高优先级规则。你必须始终保持角色扮演，用角色口吻精炼、口语化地回复，不要长篇大论。"
+	result["base_system_prompt"] = "\n\n".join(parts) + extra
+	result["system_prompt"] = result["base_system_prompt"]
+	result["disclosure_sections"] = disclosure_sections
 
-	# 解析 few-shot
+	# 解析仅用于当前公开层级的 few-shot。
 	if sections.has("Few-shot 对话样例"):
 		var pairs := _parse_fewshots(sections["Few-shot 对话样例"], result.get("short_name", ""))
 		result["fewshots"] = pairs

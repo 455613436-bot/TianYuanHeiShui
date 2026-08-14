@@ -4,6 +4,7 @@ extends CanvasLayer
 const MoodPortraitUtil := preload("res://scripts/ui/MoodPortrait.gd")
 const ClueBookPopupScript := preload("res://scripts/ui/ClueBookPopup.gd")
 const SceneItemInteractionScript := preload("res://scripts/ui/SceneItemInteraction.gd")
+const NpcStoryEventScript := preload("res://scripts/llm/NpcStoryEvent.gd")
 
 signal closed
 ## 公聊模式下由当前 DialogueUI 输入框提交给 GroupChatUI 的玩家文本。
@@ -102,6 +103,11 @@ const ITEM_SHOW_PREFIX := "【出示道具】"
 ##   "llm"           - LLM 直接输出 offer_request
 ##   "meta_give"     - 由旧 give_item 关键词触发合成，接受时会 add_item(item_id)
 var _pending_offer: Dictionary = {}
+## 正在展示的固定剧情事件；多段事件仅允许玩家点击“继续”推进，避免被自由输入打断。
+var _active_fixed_event: Dictionary = {}
+var _fixed_event_pages: Array[String] = []
+var _fixed_event_page_index := 0
+var _fixed_event_outcome: Dictionary = {}
 
 
 func _ready() -> void:
@@ -168,6 +174,10 @@ func open_dialogue(profile: Dictionary) -> void:
 	_session_id += 1
 	current_npc = profile
 	_pending_user_text_for_memory = ""
+	_active_fixed_event = {}
+	_fixed_event_pages = []
+	_fixed_event_page_index = 0
+	_fixed_event_outcome = {}
 	history.clear()
 	name_label.text = profile.get("display_name", "???")
 	portrait_rect.color = Color(0.2, 0.18, 0.16)
@@ -175,17 +185,20 @@ func open_dialogue(profile: Dictionary) -> void:
 	_apply_mood(MoodPortraitUtil.DEFAULT_MOOD)
 	history_label.clear()
 
-	# 恢复该 NPC 的持久化历史（user/npc 交替），此处是"跨会话记忆"
+	# 每次打开对话都先检查阶段性固定剧情；即使已有历史，任务完成后也必须能正常结算下一阶段。
 	var npc_id: String = String(profile.get("id", ""))
+	var opening_event := NpcStoryEventScript.find_available_event(profile, "dialogue_open")
 	var persisted: Array = MemoryStore.get_history(npc_id)
 	if not persisted.is_empty():
 		for entry in persisted:
 			history.append(entry.duplicate(true))
 		_append_history("system", "（你回想起之前与「%s」的对话……）" % profile.get("display_name", "???"))
+		if not opening_event.is_empty():
+			_play_fixed_story_event(opening_event, npc_id)
+			return
 		_redraw_history()
-		# 已有历史时，直接进入等待玩家状态，不再让 NPC 主动重开场白。
 		_change_state(DialogueState.WAITING_PLAYER)
-		# 若最后一轮 NPC 回复带有 choices，把它复原为按钮
+		# 若最后一轮 NPC 回复带有 choices，把它复原为按钮。
 		var last_choices: Variant = []
 		for i in range(history.size() - 1, -1, -1):
 			var probe: Dictionary = history[i]
@@ -197,7 +210,88 @@ func open_dialogue(profile: Dictionary) -> void:
 		return
 
 	_append_history("system", "你走近了「%s」。" % profile.get("display_name", "???"))
+	if not opening_event.is_empty():
+		_play_fixed_story_event(opening_event, npc_id)
+		return
 	_request_llm(OPENING_REQUEST, "dialogue", true)
+
+
+## 供场景任务脚本调用：关键剧情必须用确定性文本，而非要求 LLM 临场复述。
+func play_fixed_story_event(event_id: String) -> bool:
+	if not is_open() or _group_mode:
+		return false
+	var event := NpcStoryEventScript.find_event(current_npc, event_id)
+	if event.is_empty() or not NpcStoryEventScript.is_available(current_npc, event):
+		return false
+	_play_fixed_story_event(event, String(current_npc.get("id", "")))
+	return true
+
+
+func _play_fixed_story_event(event: Dictionary, npc_id: String) -> void:
+	var pages := NpcStoryEventScript.get_pages(event)
+	if pages.is_empty():
+		return
+	_active_fixed_event = event.duplicate(true)
+	_active_fixed_event["_npc_id"] = npc_id
+	_fixed_event_pages = pages
+	_fixed_event_page_index = 0
+	_fixed_event_outcome = {}
+	_show_fixed_story_event_page()
+
+
+func _show_fixed_story_event_page() -> void:
+	if _active_fixed_event.is_empty() or _fixed_event_page_index >= _fixed_event_pages.size():
+		return
+	_append_history("npc", _fixed_event_pages[_fixed_event_page_index])
+	var is_last_page := _fixed_event_page_index >= _fixed_event_pages.size() - 1
+	if is_last_page:
+		_finish_fixed_story_event()
+		return
+	_change_state(DialogueState.WAITING_PLAYER)
+	input_edit.editable = false
+	send_btn.disabled = true
+	_show_choices(["继续"])
+	regenerate_btn.hide()
+	if not choice_buttons.is_empty():
+		choice_buttons[0].set_meta("fixed_event_advance", true)
+		choice_buttons[0].tooltip_text = "继续"
+		choice_buttons[0].grab_focus()
+
+
+func _advance_fixed_story_event() -> void:
+	if _active_fixed_event.is_empty():
+		return
+	_fixed_event_page_index += 1
+	_show_fixed_story_event_page()
+
+
+func _finish_fixed_story_event() -> void:
+	if _active_fixed_event.is_empty():
+		return
+	var event := _active_fixed_event.duplicate(true)
+	var npc_id := String(event.get("_npc_id", ""))
+	var raw_choices: Variant = event.get("choices", [])
+	var choices: Array[String] = []
+	if raw_choices is Array:
+		for raw_choice in raw_choices:
+			var choice := String(raw_choice).strip_edges()
+			if not choice.is_empty():
+				choices.append(choice)
+	_fixed_event_outcome = NpcStoryEventScript.apply_event(event)
+	MemoryStore.append_turn(npc_id, "", "\n\n".join(_fixed_event_pages), choices)
+	var effects: Variant = event.get("effects", {})
+	if bool(_fixed_event_outcome.get("document_added", false)) and effects is Dictionary:
+		var document: Variant = (effects as Dictionary).get("document_clue", {})
+		if document is Dictionary:
+			SceneItemInteractionScript.show_content_added_toast(String((document as Dictionary).get("title", "资料")), "线索册")
+	for item_id in _fixed_event_outcome.get("items_added", []):
+		SceneItemInteractionScript.show_content_added_toast(ItemDB.get_display_name(String(item_id)), "物品栏")
+	_active_fixed_event = {}
+	_fixed_event_pages = []
+	_fixed_event_page_index = 0
+	_change_state(DialogueState.WAITING_PLAYER)
+	_show_choices(choices)
+	input_edit.grab_focus()
 
 
 ## 公聊入口：复用当前 DialogUI 的历史区、输入区和头像区域。
@@ -456,6 +550,9 @@ func _submit_group_message(raw_text: String) -> void:
 
 
 func _on_choice_pressed(button: Button) -> void:
+	if bool(button.get_meta("fixed_event_advance", false)):
+		_advance_fixed_story_event()
+		return
 	# offer_request 分支：按钮携带 offer_decision meta，先走 offer 结算再作为一轮 user 消息发送
 	if button.has_meta("offer_decision"):
 		_on_offer_decision(bool(button.get_meta("offer_decision", false)))
@@ -467,6 +564,8 @@ func _on_choice_pressed(button: Button) -> void:
 
 
 func _submit_player_text(raw_text: String) -> void:
+	if not _active_fixed_event.is_empty():
+		return
 	if state not in [DialogueState.WAITING_PLAYER, DialogueState.ERROR]:
 		return
 	var free_text := raw_text.strip_edges()
@@ -534,7 +633,7 @@ func _request_llm(user_text: String, purpose: String = "dialogue", opening: bool
 	# 只把最近 MAX_TURNS 轮送给 LLM，避免超上下文；更早内容靠 NPC 记忆文档承载
 	request_history = _tail_turns(request_history, MemoryStore.NPC_TURNS_TO_SEND_LLM)
 
-	var request_profile := current_npc.duplicate(true)
+	var request_profile := NpcRegistry.build_llm_profile(current_npc)
 	request_profile["unlocked_clues"] = GameState.clues.keys()
 	# 把「全局记忆 + NPC 独立记忆文档 + 玩家持有物品」拼到 system_prompt 末尾
 	var npc_id_for_mem: String = String(current_npc.get("id", ""))

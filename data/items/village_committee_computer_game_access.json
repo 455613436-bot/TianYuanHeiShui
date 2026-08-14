@@ -1,0 +1,15 @@
+{
+  "id": "village_committee_computer_game_access",
+  "display_name": "村委电脑娱乐权限",
+  "short_desc": "吴萱允许你在她在场时使用村委电脑里的本地游戏和公开资料。",
+  "tags": ["权限", "村委会"],
+  "usable_in_dialogue": false,
+  "consumable": false,
+  "inspectable": false,
+  "icon_path": "",
+  "inspect_image_path": "",
+  "usage_hints": [
+    "用于村委会电脑的第一阶段互动；仅可访问本地游戏与公开资料。",
+    "不代表档案系统权限，也不包含真实账号或密码。"
+  ]
+}

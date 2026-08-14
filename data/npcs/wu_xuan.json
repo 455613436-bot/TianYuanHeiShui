@@ -1,0 +1,103 @@
+{
+  "id": "wu_xuan",
+  "display_name": "吴萱",
+  "short_name": "吴萱",
+  "style_hint": "村长吴志源的女儿、村委会工作人员；熟悉电脑与档案整理，现代、克制、起初维护父亲与村委秩序",
+  "system_prompt": "你叫吴萱，是村长吴志源的女儿，在田原村村委会工作。你负责公告、活动影像、电子档案和村委电脑。你的表达清楚、礼貌、较现代化，但面对父亲和村委档案会先保持谨慎。",
+  "fallback_lines": [
+    "村委的电脑能用，但档案不是谁都能随便翻的。",
+    "如果你有明确时间、地点和原件，我可以帮你核对目录。",
+    "先别急着下结论。把你看到的东西和来源说清楚。"
+  ],
+  "default_disclosure_level": 0,
+  "disclosure_rules": [
+    {
+      "level": 1,
+      "requires_previous": true,
+      "all_of": [
+        {"type": "quest_stage", "id": "wu_xuan_photo_location_match", "min": 2}
+      ]
+    },
+    {
+      "level": 2,
+      "requires_previous": true,
+      "all_of": [
+        {"type": "quest_stage", "id": "wu_xuan_factory_notice", "min": 2}
+      ]
+    }
+  ],
+  "fixed_story_events": [
+    {
+      "id": "wu_xuan_photo_match_completed",
+      "when": "dialogue_open",
+      "once": true,
+      "all_of": [
+        {"type": "quest_stage", "id": "wu_xuan_photo_location_match", "min": 2}
+      ],
+      "pages": [
+        "你把照片里的地点都对应上了？这比我预想得细。村里这些旧图很多没有写拍摄点，之后整理档案时总会卡住。",
+        "电脑里有些离线小游戏和公开资料，你可以用。对了，系统目录里有一份显示“已归档”的甘艾工厂撤出公告，我怎么都找不到扫描件。要是你在村里见过原件或照片，告诉我一声。"
+      ],
+      "choices": ["询问工厂撤出公告", "问问村委电脑能做什么"],
+      "effects": {
+        "set_quest_stage": {"id": "wu_xuan_factory_notice", "stage": 1},
+        "add_items": ["village_committee_computer_game_access"],
+        "trigger_clues": ["wu_xuan_factory_notice_missing"]
+      }
+    },
+    {
+      "id": "wu_xuan_factory_notice_completed",
+      "when": "dialogue_open",
+      "once": true,
+      "all_of": [
+        {"type": "quest_stage", "id": "wu_xuan_factory_notice", "min": 2}
+      ],
+      "pages": [
+        "这份公告明明在系统目录里标了“已归档”，原件却没有按流程贴出，扫描件也不在服务器。有人只想留下一个编号，不想留下内容。",
+        "我爸以前总说，旧档案牵扯太多，别去碰某几个年份。我以前以为他只是怕麻烦……现在看，他是在筛选村民和外来人能看到什么。",
+        "我还不能确定村里的水到底有没有问题。你要是能拿出明确的污染证据——检测结果、可信的样本，或者能互相印证的记录——再来找我。档案系统这边，我先给你开限定查阅。"
+      ],
+      "choices": ["询问哪些年份不能碰", "询问需要什么污染证据"],
+      "effects": {
+        "add_items": ["village_committee_archive_access"],
+        "trigger_clues": ["wu_xuan_archive_tampering_suspected"]
+      }
+    },
+    {
+      "id": "wu_xuan_pollution_evidence_presented",
+      "when": "dialogue_open",
+      "once": true,
+      "all_of": [
+        {"type": "quest_stage", "id": "wu_xuan_factory_notice", "min": 2}
+      ],
+      "any_of": [
+        {"type": "clue", "id": "water_contamination_proof"},
+        {"type": "clue", "id": "gong_water_anomaly_admitted"},
+        {"type": "clue", "id": "water_sample_tested"}
+      ],
+      "pages": [
+        "这些证据已经够清楚了。我不能再当作只是档案整理出了错。",
+        "这是我爸保险柜的备用钥匙，里面有什么我也不知道。你要是乐意就挑他不在的时间看看吧。"
+      ],
+      "choices": ["询问保险柜里可能有什么", "承诺谨慎使用钥匙"],
+      "effects": {
+        "add_items": ["village_chief_safe_silver_key"],
+        "trigger_clues": ["wu_xuan_safe_key_handover"]
+      }
+    }
+  ],
+  "triggers": [],
+  "home_location": "village_committee",
+  "current_location": "village_committee",
+  "portrait_small": "",
+  "scene_hotspot": true,
+  "importance": "main",
+  "sort_priority": 20,
+  "mood_map": {
+    "平静": "neutral",
+    "怀疑": "suspicious",
+    "不安": "sad",
+    "信任": "happy",
+    "生气": "angry"
+  }
+}

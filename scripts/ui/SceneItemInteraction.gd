@@ -47,7 +47,7 @@ func open_document(title: String, image_texture: Texture2D, clue_entry: Dictiona
 	_register_document_clue_on_close = register_on_close and not clue_entry.is_empty()
 	if register_clue and not register_on_close and not clue_entry.is_empty() and GameState.add_document_clue(clue_entry):
 		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
-		show_content_added_toast(String(clue_entry.get("title", title)), "线索册")
+		SceneItemInteraction.show_content_added_toast(String(clue_entry.get("title", title)), "线索册")
 	_title_label.text = title
 	_body_label.visible = not description.strip_edges().is_empty()
 	_body_label.text = description
@@ -142,7 +142,7 @@ func _advance_paged_text() -> void:
 		return
 	if not _paged_text_archive_entry.is_empty() and GameState.add_document_clue(_paged_text_archive_entry):
 		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
-		show_content_added_toast(String(_paged_text_archive_entry.get("title", _title_label.text)), "线索册")
+		SceneItemInteraction.show_content_added_toast(String(_paged_text_archive_entry.get("title", _title_label.text)), "线索册")
 	paged_text_completed.emit(_paged_text_interaction_id)
 	close_interaction()
 
@@ -158,21 +158,21 @@ func close_interaction() -> void:
 	_register_document_clue_on_close = false
 	if should_register and GameState.add_document_clue(deferred_clue_entry):
 		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
-		show_content_added_toast(String(deferred_clue_entry.get("title", "资料")), "线索册")
+		SceneItemInteraction.show_content_added_toast(String(deferred_clue_entry.get("title", "资料")), "线索册")
 	if closing_document:
 		document_closed.emit()
 
 
 ## 通用顶部加入通知，今后的线索、背包物品和技能系统均可复用。
 ## 独立使用高层 CanvasLayer，保证不会被资料阅读器的暗幕或其他弹窗压暗。
-func show_content_added_toast(content_title: String, destination: String) -> void:
+static func show_content_added_toast(content_title: String, destination: String) -> void:
+	var scene_tree := Engine.get_main_loop() as SceneTree
+	if scene_tree == null or scene_tree.current_scene == null:
+		return
 	var toast_layer := CanvasLayer.new()
 	toast_layer.name = "ContentAddedToastLayer"
 	toast_layer.layer = 100
-	var scene_root := get_tree().current_scene
-	if scene_root == null:
-		return
-	scene_root.add_child(toast_layer)
+	scene_tree.current_scene.add_child(toast_layer)
 
 	var toast := PanelContainer.new()
 	toast.name = "ContentAddedToast"

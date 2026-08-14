@@ -1,0 +1,15 @@
+{
+  "id": "village_chief_safe_silver_key",
+  "display_name": "村长保险柜银钥匙",
+  "short_desc": "吴萱交给你的备用钥匙，银色钥匙齿磨损明显，对应村长家里那只双锁保险柜。",
+  "tags": ["关键物品", "钥匙", "村委会"],
+  "usable_in_dialogue": true,
+  "consumable": false,
+  "inspectable": false,
+  "icon_path": "",
+  "inspect_image_path": "",
+  "usage_hints": [
+    "可在村长家保险柜前使用，或向吴志源出示，证明吴萱已选择协助调查。",
+    "这是备用钥匙，不应被消耗。"
+  ]
+}

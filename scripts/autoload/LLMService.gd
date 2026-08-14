@@ -221,6 +221,10 @@ func _compute_meta(profile: Dictionary, user_text: String) -> Dictionary:
 	if profile.is_empty() or user_text == "": return meta
 	var lower := user_text.to_lower()
 	for t in profile.get("triggers", []):
+		if t is not Dictionary:
+			continue
+		if not NpcDisclosure.trigger_allows(profile, t):
+			continue
 		var kws: Array = t.get("keywords", [])
 		var hit := false
 		for kw in kws:

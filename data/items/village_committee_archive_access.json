@@ -1,0 +1,15 @@
+{
+  "id": "village_committee_archive_access",
+  "display_name": "村委档案查阅授权",
+  "short_desc": "吴萱提供的村委内部查阅授权，可在限定范围内检索历史项目与扫描档案。",
+  "tags": ["关键物品", "权限", "村委会"],
+  "usable_in_dialogue": true,
+  "consumable": false,
+  "inspectable": false,
+  "icon_path": "",
+  "inspect_image_path": "",
+  "usage_hints": [
+    "用于村委电脑与档案柜的后续调查交互，可检索工厂撤离、村道工程和指定年份档案。",
+    "授权范围可由吴萱的剧情阶段进一步扩大；不包含真实账号、密码或外部系统访问凭据。"
+  ]
+}

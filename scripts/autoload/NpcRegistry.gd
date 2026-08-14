@@ -1,4 +1,5 @@
 extends Node
+const NpcDisclosureScript := preload("res://scripts/llm/NpcDisclosure.gd")
 ## NpcRegistry
 ## NPC 数据仓库 + 固定地点索引 + 事件规则（autoload）。
 ##
@@ -51,6 +52,7 @@ func _ready() -> void:
 func load_all() -> void:
 	_load_locations()
 	_load_npcs()
+	_load_rules()
 	_init_runtime_locations()
 
 
@@ -255,6 +257,15 @@ func get_dialogue_profile(npc_id: String) -> Dictionary:
 	persona["id"] = npc_id
 	_profile_cache[npc_id] = persona
 	return persona.duplicate(true)
+
+
+## 为一次 LLM 请求构建受披露等级约束的副本；原始 profile 仅供 UI 与剧情事件读取。
+func build_llm_profile(profile: Dictionary) -> Dictionary:
+	return NpcDisclosureScript.build_runtime_profile(profile)
+
+
+func get_disclosure_level(profile: Dictionary) -> int:
+	return NpcDisclosureScript.get_disclosure_level(profile)
 
 
 func is_following(npc_id: String) -> bool:

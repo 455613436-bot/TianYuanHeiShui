@@ -1,0 +1,15 @@
+{
+  "id": "village_surveillance_access",
+  "display_name": "村委监控查阅授权",
+  "short_desc": "吴萱留下的村委监控查阅授权，可在她允许的范围内调取旧影像。",
+  "tags": ["关键物品", "权限", "村委会"],
+  "usable_in_dialogue": true,
+  "consumable": false,
+  "inspectable": false,
+  "icon_path": "",
+  "inspect_image_path": "",
+  "usage_hints": [
+    "用于村委电脑或监控主机的后续调查交互。",
+    "仅代表剧情中的村委内部授权，不包含真实账号、密码或外部系统访问凭据。"
+  ]
+}
