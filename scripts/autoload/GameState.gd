@@ -48,7 +48,7 @@ var pollution: int = 0
 var affinity: Dictionary = {}
 var inventory: Array[String] = []
 var clues: Dictionary = {}
-## 场景资料线索册，元素为 {id, title, summary, image_path}，按发现顺序保存。
+## 场景资料线索册，元素为 {id, title, summary, image_path, linked_clue_ids}，按发现顺序保存。
 var document_clues: Array[Dictionary] = []
 ## 玩家四维属性，0-5；首次启动前为空 -> attributes_allocated()==false 时应该跳转到属性分配 UI
 var attributes: Dictionary = {}
@@ -294,6 +294,7 @@ func add_document_clue(entry: Dictionary) -> bool:
 	var summary := _safe_string(entry.get("summary", ""), "").strip_edges()
 	var image_path := _safe_string(entry.get("image_path", ""), "").strip_edges()
 	var pages := _safe_text_pages(entry.get("pages", []))
+	var linked_clue_ids := _string_array(entry.get("linked_clue_ids", []))
 	if clue_id.is_empty() or title.is_empty():
 		return false
 	var is_image_document := not image_path.is_empty()
@@ -313,14 +314,45 @@ func add_document_clue(entry: Dictionary) -> bool:
 		"entry_type": "image" if is_image_document else "text_pages",
 		"image_path": image_path,
 		"pages": pages,
+		"linked_clue_ids": linked_clue_ids,
 	}
 	document_clues.append(normalized)
+	# A clue-book document is itself a clue. Optional linked ids let one physical
+	# document satisfy existing story conditions without duplicating UI entries.
+	trigger_clue(clue_id)
+	for linked_id in linked_clue_ids:
+		trigger_clue(linked_id)
 	document_clue_added.emit(normalized.duplicate(true))
 	return true
 
 
 func get_document_clues() -> Array[Dictionary]:
 	return document_clues.duplicate(true)
+
+
+## Unified clue-book view: rich documents first, then story clues that used to
+## exist only as opaque ids in `clues`. Metadata comes from the central ClueDB.
+func get_clue_book_entries() -> Array[Dictionary]:
+	var result: Array[Dictionary] = document_clues.duplicate(true)
+	var seen_ids: Dictionary = {}
+	for entry in result:
+		seen_ids[String(entry.get("id", ""))] = true
+	for raw_id in clues.keys():
+		var clue_id := String(raw_id).strip_edges()
+		if clue_id.is_empty() or seen_ids.has(clue_id):
+			continue
+		var metadata: Dictionary = ClueDB.get_entry(clue_id)
+		result.append({
+			"id": clue_id,
+			"title": String(metadata.get("title", clue_id)),
+			"summary": String(metadata.get("summary", "")),
+			"entry_type": "story_clue",
+			"image_path": "",
+			"pages": [],
+			"linked_clue_ids": [clue_id],
+		})
+		seen_ids[clue_id] = true
+	return result
 
 
 func unlock_location(location_id: String) -> void:
@@ -609,11 +641,24 @@ func close_world_map() -> Error:
 
 
 func enter_location(scene_path: String) -> Error:
-	var location_id := NpcRegistry.location_id_for_scene(scene_path)
+	var location_id: String = NpcRegistry.location_id_for_scene(scene_path)
 	if location_id == "" or not can_enter_location(location_id):
 		return ERR_UNAUTHORIZED
+	var source_scene_path: String = current_scene_path
+	if source_scene_path == MAP_SCENE:
+		source_scene_path = map_return_scene_path
+	var source_location_id: String = NpcRegistry.location_id_for_scene(source_scene_path)
+	var is_location_change: bool = not source_location_id.is_empty() and source_location_id != location_id
 	unlock_location(location_id)
-	return change_scene(scene_path)
+	var change_error: Error = change_scene(scene_path, false, false)
+	if change_error != OK:
+		return change_error
+	if is_location_change:
+		TimeSystem.on_location_changed()
+		if not night_rest_required and TimeSystem.is_rest_lock_time():
+			night_rest_required = true
+	save_game(AUTO_SAVE_PATH, false)
+	return OK
 
 
 func save_game(path: String = SAVE_PATH, capture_scene: bool = true) -> Error:
@@ -696,6 +741,15 @@ func load_game(path: String = SAVE_PATH, switch_scene: bool = true) -> Error:
 	inventory = _string_array(data.get("inventory", []))
 	clues = _bool_dictionary(data.get("clues", {}))
 	document_clues = _sanitize_document_clues(data.get("document_clues", []))
+	# Backward-compatible migration: old saves kept visible documents and story
+	# clue ids in separate containers. Make every restored document presentable.
+	for document in document_clues:
+		var document_id := String(document.get("id", "")).strip_edges()
+		if not document_id.is_empty():
+			clues[document_id] = true
+		for linked_id in document.get("linked_clue_ids", []):
+			if linked_id is String and not linked_id.is_empty():
+				clues[linked_id] = true
 	unlocked_locations = _bool_dictionary(data.get("unlocked_locations", {}))
 	visited_locations = _bool_dictionary(data.get("visited_locations", {}))
 	quest_stages = _int_dictionary(data.get("quest_stages", {}))
@@ -852,6 +906,7 @@ func _sanitize_document_clues(value: Variant) -> Array[Dictionary]:
 		var summary := _safe_string(raw_entry.get("summary", ""), "").strip_edges()
 		var image_path := _safe_string(raw_entry.get("image_path", ""), "").strip_edges()
 		var pages := _safe_text_pages(raw_entry.get("pages", []))
+		var linked_clue_ids := _string_array(raw_entry.get("linked_clue_ids", []))
 		if clue_id.is_empty() or title.is_empty() or seen_ids.has(clue_id):
 			continue
 		var is_image_document := not image_path.is_empty()
@@ -868,6 +923,7 @@ func _sanitize_document_clues(value: Variant) -> Array[Dictionary]:
 			"entry_type": "image" if is_image_document else "text_pages",
 			"image_path": image_path,
 			"pages": pages,
+			"linked_clue_ids": linked_clue_ids,
 		})
 	return result
 

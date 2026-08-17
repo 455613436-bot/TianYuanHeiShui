@@ -1,8 +1,10 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/locations/LocationBase.tscn" id="1_base"]
 [ext_resource type="Texture2D" path="res://assets/scenes/taoist_temple_front.png" id="2_front"]
 [ext_resource type="Texture2D" path="res://assets/scenes/taoist_temple_rear.png" id="3_rear"]
+[ext_resource type="Texture2D" path="res://assets/scenes/taoist_temple_empty.png" id="4_empty"]
+[ext_resource type="Texture2D" path="res://assets/scenes/taoist_temple_rear_empty.png" id="5_rear_empty"]
 
 [node name="TaoistTemple" instance=ExtResource("1_base")]
 location_number = "7"
@@ -11,5 +13,7 @@ location_id = "taoist_temple"
 location_description = "利水君观香火未绝，前殿与后室藏着截然不同的气息。"
 accent_color = Color(0.38, 0.18, 0.26, 1)
 background_texture = ExtResource("2_front")
+empty_background_texture = ExtResource("4_empty")
 alternate_background_texture = ExtResource("3_rear")
+alternate_empty_background_texture = ExtResource("5_rear_empty")
 alternate_view_label = "切换至后方"

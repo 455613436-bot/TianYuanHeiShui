@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/locations/LocationBase.tscn" id="1_base"]
 [ext_resource type="Texture2D" path="res://assets/scenes/field_path.png" id="2_bg"]
+[ext_resource type="Texture2D" path="res://assets/scenes/field_path_with_man.png" id="3_man_bg"]
 
 [node name="FieldPath" instance=ExtResource("1_base")]
 location_number = "10"
@@ -10,3 +11,4 @@ location_id = "field_path"
 location_description = "穿过村落与坡地的石板小路，通向更深的山间。"
 accent_color = Color(0.34, 0.54, 0.28, 1)
 background_texture = ExtResource("2_bg")
+scheduled_background_texture = ExtResource("3_man_bg")

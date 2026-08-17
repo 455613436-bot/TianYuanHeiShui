@@ -143,10 +143,15 @@
   "importance": "main",
   "sort_priority": 25,
   "mood_map": {
-    "平静": "neutral",
-    "怀疑": "suspicious",
+    "平静": "normal",
+    "neutral": "normal",
+    "thinking": "normal",
+    "怀疑": "angry",
     "生气": "angry",
     "信任": "happy",
-    "疲惫": "sad"
+    "happy": "happy",
+    "surprised": "angry",
+    "疲惫": "sad",
+    "weary": "sad"
   }
 }

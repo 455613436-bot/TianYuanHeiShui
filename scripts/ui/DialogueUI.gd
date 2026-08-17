@@ -24,6 +24,7 @@ enum DialogueState {
 
 const HISTORY_LIMIT := 20
 const LLM_TIMEOUT_SEC := 30.0
+const FIXED_STORY_TYPEWRITER_INTERVAL := 0.025
 const COMPACT_WIDTH := 1050.0
 const OPENING_REQUEST := "请以角色身份自然地先开口打招呼，并生成适合玩家继续交谈的选项。不要提及这条要求。"
 const REGENERATE_REQUEST := "请根据刚才 NPC 的最新回复，只重新生成 2 到 3 个含义不同、可由玩家直接说出口的简短选项。仍按约定的 JSON 格式输出。"
@@ -96,6 +97,7 @@ const TOKEN_BG_COLOR := Color(1.0, 0.85, 0.4, 1.0)
 const TOKEN_FG_COLOR := Color(0.15, 0.10, 0.02, 1.0)
 const TOKEN_PREFIX := "【使用道具】"
 const ITEM_SHOW_PREFIX := "【出示道具】"
+const CLUE_SHOW_PREFIX := "【出示线索】"
 
 ## ─── 通用「NPC 提议 / 请求」（offer_request）─────────────────────
 ## 挂起中的 offer；非空时 choice_row 会被占用为 [接受][拒绝] 两个按钮。
@@ -108,6 +110,9 @@ var _active_fixed_event: Dictionary = {}
 var _fixed_event_pages: Array[String] = []
 var _fixed_event_page_index := 0
 var _fixed_event_outcome: Dictionary = {}
+var _fixed_typewriter_generation := 0
+var _fixed_typewriter_running := false
+var _fixed_typewriter_history_index := -1
 
 
 func _ready() -> void:
@@ -120,7 +125,7 @@ func _ready() -> void:
 	input_edit.text_submitted.connect(func(_text): _on_send())
 	btn_investigate.pressed.connect(_on_open_clue_book_pressed)
 	btn_bag.pressed.connect(_on_open_bag_pressed)
-	btn_skill.pressed.connect(func(): _on_action("使用技能"))
+	btn_skill.pressed.connect(_on_open_skill_menu)
 	btn_leave.pressed.connect(_on_leave)
 	for button in choice_buttons:
 		button.pressed.connect(_on_choice_pressed.bind(button))
@@ -187,6 +192,11 @@ func open_dialogue(profile: Dictionary) -> void:
 
 	# 每次打开对话都先检查阶段性固定剧情；即使已有历史，任务完成后也必须能正常结算下一阶段。
 	var npc_id: String = String(profile.get("id", ""))
+	if npc_id == "li_leshui_night" and not bool(GameState.get_investigation_state("night_li_rear_room_unlocked", false)):
+		# 失败当天锁定；跨日后才允许重新说明来意并检定。
+		var failed_state: Variant = GameState.get_investigation_state("night_li_trust_check_failed_day", -1)
+		if int(failed_state) != TimeSystem.current_day:
+			GameState.set_investigation_state("night_li_trust_check_pending", true)
 	var opening_event := NpcStoryEventScript.find_available_event(profile, "dialogue_open")
 	var persisted: Array = MemoryStore.get_history(npc_id)
 	if not persisted.is_empty():
@@ -227,12 +237,13 @@ func play_fixed_story_event(event_id: String) -> bool:
 	return true
 
 
-func _play_fixed_story_event(event: Dictionary, npc_id: String) -> void:
+func _play_fixed_story_event(event: Dictionary, npc_id: String, user_text: String = "") -> void:
 	var pages := NpcStoryEventScript.get_pages(event)
 	if pages.is_empty():
 		return
 	_active_fixed_event = event.duplicate(true)
 	_active_fixed_event["_npc_id"] = npc_id
+	_active_fixed_event["_user_text"] = user_text
 	_fixed_event_pages = pages
 	_fixed_event_page_index = 0
 	_fixed_event_outcome = {}
@@ -242,7 +253,39 @@ func _play_fixed_story_event(event: Dictionary, npc_id: String) -> void:
 func _show_fixed_story_event_page() -> void:
 	if _active_fixed_event.is_empty() or _fixed_event_page_index >= _fixed_event_pages.size():
 		return
-	_append_history("npc", _fixed_event_pages[_fixed_event_page_index])
+	_fixed_typewriter_generation += 1
+	_fixed_typewriter_running = true
+	_append_history("npc", "")
+	_fixed_typewriter_history_index = history.size() - 1
+	_hide_choices()
+	_change_state(DialogueState.STREAMING)
+	_type_fixed_story_event_page(
+		_fixed_event_pages[_fixed_event_page_index],
+		_fixed_typewriter_generation,
+		_fixed_typewriter_history_index
+	)
+
+
+func _type_fixed_story_event_page(full_text: String, generation: int, history_index: int) -> void:
+	var visible_characters := 0
+	while visible_characters < full_text.length():
+		await get_tree().create_timer(FIXED_STORY_TYPEWRITER_INTERVAL).timeout
+		if (
+			generation != _fixed_typewriter_generation
+			or _active_fixed_event.is_empty()
+			or history_index < 0
+			or history_index >= history.size()
+		):
+			return
+		visible_characters += 1
+		history[history_index]["text"] = full_text.substr(0, visible_characters)
+		_redraw_history()
+	if generation != _fixed_typewriter_generation or _active_fixed_event.is_empty():
+		return
+	_fixed_typewriter_running = false
+	_fixed_typewriter_history_index = -1
+	# 每一段固定剧情 NPC 文本都算作一轮输出，与 LLM 回复保持一致。
+	TimeSystem.on_dialogue_turn_completed()
 	var is_last_page := _fixed_event_page_index >= _fixed_event_pages.size() - 1
 	if is_last_page:
 		_finish_fixed_story_event()
@@ -278,7 +321,7 @@ func _finish_fixed_story_event() -> void:
 			if not choice.is_empty():
 				choices.append(choice)
 	_fixed_event_outcome = NpcStoryEventScript.apply_event(event)
-	MemoryStore.append_turn(npc_id, "", "\n\n".join(_fixed_event_pages), choices)
+	MemoryStore.append_turn(npc_id, String(event.get("_user_text", "")), "\n\n".join(_fixed_event_pages), choices)
 	var effects: Variant = event.get("effects", {})
 	if bool(_fixed_event_outcome.get("document_added", false)) and effects is Dictionary:
 		var document: Variant = (effects as Dictionary).get("document_clue", {})
@@ -289,6 +332,9 @@ func _finish_fixed_story_event() -> void:
 	_active_fixed_event = {}
 	_fixed_event_pages = []
 	_fixed_event_page_index = 0
+	_fixed_typewriter_generation += 1
+	_fixed_typewriter_running = false
+	_fixed_typewriter_history_index = -1
 	_change_state(DialogueState.WAITING_PLAYER)
 	_show_choices(choices)
 	input_edit.grab_focus()
@@ -434,6 +480,9 @@ func close_dialogue() -> void:
 	if _group_mode and not _group_finished:
 		group_close_requested.emit()
 	_cancel_current_request()
+	_fixed_typewriter_generation += 1
+	_fixed_typewriter_running = false
+	_fixed_typewriter_history_index = -1
 	_session_id += 1
 	_group_mode = false
 	_group_finished = false
@@ -480,8 +529,8 @@ func _change_state(next_state: DialogueState) -> void:
 	retry_btn.disabled = state != DialogueState.ERROR
 	btn_investigate.disabled = not can_use_persistent_actions
 	btn_bag.disabled = not can_use_persistent_actions
-	# 技能仍需依托当前 NPC 对话发送行动，常驻显示但只在可对话时可用。
-	btn_skill.disabled = not can_interact
+	# 右下角原有技能按钮是唯一入口：场景中可直接使用，对话中则锁定当前 NPC。
+	btn_skill.disabled = _group_mode or state in [DialogueState.WAITING_LLM, DialogueState.STREAMING, DialogueState.OPENING] or not _active_fixed_event.is_empty()
 	btn_leave.disabled = not open
 	regenerate_btn.disabled = state != DialogueState.WAITING_PLAYER
 	for button in choice_buttons:
@@ -575,6 +624,33 @@ func _submit_player_text(raw_text: String) -> void:
 	# 若什么都没有（无 token 且无自由输入），拒绝提交
 	if token_prefix.is_empty() and free_text.is_empty():
 		return
+	# 夜间道士的首次信任门槛：玩家说明来意后只进行一次确定性魅力检定。
+	var current_id := String(current_npc.get("id", ""))
+	if current_id == "li_leshui_night" and int(GameState.get_investigation_state("night_li_trust_check_failed_day", -1)) == TimeSystem.current_day and not bool(GameState.get_investigation_state("night_li_trust_check_pending", false)):
+		_append_history("npc", "今天先到这里。准备好更可靠的证据，明天再来。")
+		_redraw_history()
+		return
+	if current_id == "li_leshui_night" and bool(GameState.get_investigation_state("night_li_trust_check_pending", false)):
+		var trust_result := SkillSystem.perform_trust_check(free_text)
+		GameState.set_investigation_state("night_li_trust_check_pending", false)
+		if bool(trust_result.get("passed", false)):
+			GameState.set_investigation_state("night_li_rear_room_unlocked", true)
+			GameState.add_affinity(current_id, 1)
+			_append_history("user", free_text)
+			history.append({"role": "check", "text": CheckSystem.result_to_display_text(trust_result), "check_result": trust_result})
+			_append_history("npc", "你的来意和证据足够明确。今晚起，你可以进入后室。进去之后，我会把我知道的一切告诉你。")
+			_redraw_history()
+			TimeSystem.on_dialogue_turn_completed()
+			GameState.save_game(GameState.AUTO_SAVE_PATH, false)
+			return
+		GameState.set_investigation_state("night_li_trust_check_failed_day", TimeSystem.current_day)
+		TimeSystem.on_dialogue_turn_completed()
+		_append_history("user", free_text)
+		history.append({"role": "check", "text": CheckSystem.result_to_display_text(trust_result), "check_result": trust_result})
+		_append_history("npc", "还不够。准备好更可靠的证据再来，后室不能向你开放。")
+		_redraw_history()
+		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
+		return
 	var text := token_prefix
 	if free_text != "":
 		if not token_prefix.is_empty():
@@ -592,6 +668,67 @@ func _on_action(label: String) -> void:
 	var text := "【动作】" + label
 	_append_history("user", text)
 	_request_llm(text)
+
+
+func _on_open_skill_menu() -> void:
+	if _group_mode or state in [DialogueState.WAITING_LLM, DialogueState.STREAMING, DialogueState.OPENING] or not _active_fixed_event.is_empty():
+		return
+	var scene := get_tree().current_scene
+	if scene != null and scene.has_method("open_skill_menu_for_npc"):
+		var target_npc_id := String(current_npc.get("id", "")) if is_open() else ""
+		var dialogue_context: Node = self if is_open() else null
+		scene.open_skill_menu_for_npc(target_npc_id, dialogue_context)
+		return
+	if is_open():
+		_append_history("system", "[当前场景尚未接入技能列表。]")
+
+
+## LocationBase 完成理由输入与确定性检定后回调这里，让技能结果进入当前对话。
+func resolve_scene_skill(skill_id: String, reason: String, check_result: Dictionary) -> void:
+	if not is_open() or _group_mode or not _active_fixed_event.is_empty():
+		return
+	var npc_id := String(current_npc.get("id", ""))
+	var skill_name := "劝离" if skill_id == "dismiss" else "说服同阵营（共同摧毁祭坛）"
+	var user_line := "【使用技能：%s】\n理由：%s" % [skill_name, reason]
+	_append_history("user", user_line)
+	history.append({"role": "check", "text": CheckSystem.result_to_display_text(check_result), "check_result": check_result})
+	_append_history("system", SkillSystem.social_breakdown(check_result))
+	_redraw_history()
+	var passed := bool(check_result.get("passed", false))
+	MemoryStore.add_global_memory(
+		"外来者以“%s”为理由对%s使用%s，检定%s。" % [reason, current_npc.get("short_name", "对方"), skill_name, "成功" if passed else "失败"],
+		["skill", skill_id, npc_id]
+	)
+	if skill_id == "dismiss":
+		var npc_reply := ""
+		if passed:
+			npc_reply = "%s接受了你的理由，收拾东西离开了这里。两小时后才会回来。" % current_npc.get("short_name", "对方")
+		else:
+			npc_reply = "%s摇了摇头，拒绝离开。" % current_npc.get("short_name", "对方")
+		_append_history("npc", npc_reply)
+		MemoryStore.append_turn(npc_id, user_line, npc_reply, [])
+		if passed:
+			NpcRegistry.dismiss_npc(npc_id, "被玩家以理由劝离：%s" % reason)
+		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
+		if passed:
+			call_deferred("close_dialogue")
+		else:
+			_change_state(DialogueState.WAITING_PLAYER)
+			input_edit.grab_focus()
+		return
+	if passed:
+		GameState.add_affinity(npc_id, 1)
+		GameState.set_investigation_state("altar_ally_%s" % npc_id, true)
+		MemoryStore.add_belief(npc_id, "应该与外来者结成同盟，并共同摧毁祭坛", 3, reason, "altar_alliance_skill", "ally_destroy_altar")
+		if npc_id == "wu_zhiyuan":
+			GameState.add_item("village_chief_safe_silver_key")
+			GameState.trigger_clue("wu_chief_safe_key_given")
+	GameState.save_game(GameState.AUTO_SAVE_PATH, false)
+	var feedback := CheckSystem.result_to_llm_feedback(check_result, String(current_npc.get("display_name", "")))
+	feedback += "\n玩家使用了‘说服同阵营’技能，目标是拉拢你加入其阵营并共同摧毁祭坛，原话是：%s\n%s" % [reason, "检定成功：你已经正式答应加入该阵营，之后必须记得这一承诺并自然回应。" if passed else "检定失败：你没有加入该阵营，请按角色立场说明顾虑或拒绝。"]
+	if passed and npc_id == "wu_zhiyuan":
+		feedback += "\n这是村长：请在本轮回复中明确描写他从柜底取出并交给玩家一把保险柜钥匙，同时说明他希望玩家保护外乡人。"
+	_request_llm(feedback, "check_followup")
 
 
 func _on_leave() -> void:
@@ -772,7 +909,10 @@ func _on_llm_reply(request_id: int, session_id: int, npc_id: String, reply: Dict
 	if not run_check:
 		meta_offered = _apply_meta(reply.get("meta", {}))
 	else:
-		_apply_meta_no_offer(reply.get("meta", {}))
+		var check_meta: Dictionary = (reply.get("meta", {}) as Dictionary).duplicate(true) if reply.get("meta", null) is Dictionary else {}
+		# 检定轮的关系变化只接受 check_request 中经过限幅的字段，避免与 meta 重复结算。
+		check_meta.erase("affinity_delta")
+		_apply_meta_no_offer(check_meta)
 
 	# item_used：LLM 承认玩家在本轮使用/出示了某道具（顶层字段，独立于 meta）
 	var item_used_value: Variant = reply.get("item_used", null)
@@ -990,6 +1130,7 @@ func _show_choices(raw_choices: Variant) -> void:
 			button.disabled = true
 			continue
 		var full_text := choices[index]
+		button.remove_meta("fixed_event_advance")
 		button.remove_meta("offer_decision")
 		button.remove_meta("is_item_deny")
 		button.remove_meta("is_item_choice")
@@ -1136,10 +1277,24 @@ func _run_check_flow(check_request: Dictionary) -> void:
 	var attribute_raw: String = String(check_request.get("attribute", ""))
 	var difficulty: int = int(check_request.get("difficulty", 0))
 	var reason: String = String(check_request.get("reason", ""))
+	var check_kind: String = String(check_request.get("kind", "general"))
+	var belief_claim: String = String(check_request.get("belief_claim", "")).strip_edges()
+	var repeat_key: String = String(check_request.get("repeat_key", "")).strip_edges()
 	if CheckSystem.normalize_attribute(attribute_raw) == "" or difficulty <= 0:
 		# 非法请求 → 静默降级为普通回复：直接进入等待玩家状态
 		_change_state(DialogueState.WAITING_PLAYER)
 		input_edit.grab_focus()
+		return
+	var npc_id: String = String(current_npc.get("id", ""))
+	var npc_name: String = String(current_npc.get("display_name", current_npc.get("short_name", "村民")))
+	var check_context: String = _build_check_context_signature(npc_id)
+	var player_attempt_key: String = _build_player_attempt_key()
+	var repeated_topic: bool = not repeat_key.is_empty() and MemoryStore.is_failed_check_blocked(npc_id, repeat_key, check_context)
+	var repeated_wording: bool = not player_attempt_key.is_empty() and MemoryStore.is_failed_check_blocked(npc_id, player_attempt_key, check_context)
+	if repeated_topic or repeated_wording:
+		_append_history("system", "[重复检定已阻止] 相同目标在当前情境下已经检定失败；需要取得新线索、物品或改变局势后才能重试。")
+		var refusal_feedback := "【系统·重复检定被拒绝】玩家正在重复刚才已经失败的同一项请求或观点说服。当前证据与局势没有发生足以支持重试的变化，因此本轮不掷骰、不改变好感，也不得接受请求。请用角色口吻直接拒绝、表示不愿再谈，或要求玩家先带来新的依据；不要再次输出 check_request。"
+		_request_llm(refusal_feedback, "check_followup", false)
 		return
 
 	var result: Dictionary = CheckSystem.perform_check(attribute_raw, difficulty, 0, reason)
@@ -1159,17 +1314,82 @@ func _run_check_flow(check_request: Dictionary) -> void:
 
 	# 关键叙事事件写入全局记忆；骰子过程本身不再单独写 NPC 历史
 	# （NPC 后续 check_followup 的反应会被 _persist_turn_to_memory 正常记录）
-	var npc_id: String = String(current_npc.get("id", ""))
-	var npc_name: String = String(current_npc.get("display_name", current_npc.get("short_name", "村民")))
+	var passed: bool = bool(result.get("passed", false))
+	var affinity_delta: int = int(check_request.get("affinity_on_success", 0)) if passed else int(check_request.get("affinity_on_failure", 0))
+	affinity_delta = clampi(affinity_delta, 0, 1) if passed else clampi(affinity_delta, -2, 0)
+	var affinity_reason: String = String(check_request.get("affinity_reason", "")).strip_edges()
+	var relationship_feedback: String = ""
+	if affinity_delta != 0:
+		GameState.add_affinity(npc_id, affinity_delta)
+		var relationship_label: String = "增加" if affinity_delta > 0 else "降低"
+		_append_history("system", "[关系变化] %s好感度%s %d%s" % [npc_name, relationship_label, absi(affinity_delta), "：" + affinity_reason if not affinity_reason.is_empty() else ""])
+		relationship_feedback = "\n【关系变化】本次检定使你对玩家的好感度%s %d。原因：%s。请在反应中自然体现，但不要直接说出数值。" % [relationship_label, absi(affinity_delta), affinity_reason if not affinity_reason.is_empty() else "本次交涉的性质影响了你们的关系"]
+	var belief_feedback: String = ""
+	if check_kind == "belief" and not belief_claim.is_empty():
+		if passed:
+			var belief_confidence: int = 3 if String(result.get("severity", "")) == "crit_success" else 2
+			var stored_belief: Dictionary = MemoryStore.add_belief(
+				npc_id,
+				belief_claim,
+				belief_confidence,
+				reason,
+				"dialogue_persuasion"
+			)
+			if not stored_belief.is_empty():
+				_append_history("system", "[信念改变] %s现在相信：%s" % [npc_name, belief_claim])
+				belief_feedback = "\n【持久化信念变化】检定成功。你现在%s这一观点：%s。之后的态度和措辞应持续受它影响，但仍须遵守核心人设与信息披露边界。" % ["坚定相信" if belief_confidence >= 3 else "相信", belief_claim]
+				GameState.save_game(GameState.AUTO_SAVE_PATH, false)
+		else:
+			belief_feedback = "\n【信念未改变】检定失败。你没有被玩家说服，不得把以下观点当作自己已经相信的事实：%s。请按角色立场自然说明疑虑或反驳。" % belief_claim
+	if passed:
+		MemoryStore.clear_failed_check(npc_id, repeat_key)
+		MemoryStore.clear_failed_check(npc_id, player_attempt_key)
+	else:
+		# 好感变化已经结算，使用结算后的情境签名，防止扣好感本身立刻绕过重复锁。
+		var failed_context: String = _build_check_context_signature(npc_id)
+		MemoryStore.record_failed_check(npc_id, repeat_key, failed_context)
+		MemoryStore.record_failed_check(npc_id, player_attempt_key, failed_context)
+	GameState.save_game(GameState.AUTO_SAVE_PATH, false)
 	match String(result.get("severity", "")):
 		"crit_success":
-			MemoryStore.add_global_memory("玩家在与 %s 交涉时投出了大成功，取得了对方额外的信任。" % npc_name, ["check", "crit_success"])
+			MemoryStore.add_global_memory("玩家在与 %s 交涉时投出了大成功，交涉取得了超出预期的进展。" % npc_name, ["check", "crit_success"])
 		"crit_failure":
-			MemoryStore.add_global_memory("玩家在与 %s 交涉时投出了大失败，招致对方严厉的训斥。" % npc_name, ["check", "crit_failure"])
+			MemoryStore.add_global_memory("玩家在与 %s 交涉时投出了大失败，交涉遭遇了严重挫折。" % npc_name, ["check", "crit_failure"])
 
 	# 再次调用 LLM，让 NPC 根据结果反应；purpose=check_followup 避免二次检定
 	var feedback: String = CheckSystem.result_to_llm_feedback(result, npc_name)
+	feedback += belief_feedback
+	feedback += relationship_feedback
 	_request_llm(feedback, "check_followup", false)
+
+
+func _build_check_context_signature(npc_id: String) -> String:
+	var clue_ids: Array = GameState.clues.keys()
+	clue_ids.sort()
+	var item_ids: Array = GameState.inventory.duplicate()
+	item_ids.sort()
+	var belief_ids: Array[String] = []
+	for belief in MemoryStore.get_beliefs(npc_id):
+		belief_ids.append(String(belief.get("id", "")))
+	belief_ids.sort()
+	var context: Dictionary = {
+		"clues": clue_ids,
+		"items": item_ids,
+		"beliefs": belief_ids,
+		"disclosure": NpcRegistry.get_disclosure_level(current_npc),
+		"quest_stages": GameState.quest_stages,
+		"investigation_states": GameState.investigation_states,
+	}
+	return JSON.stringify(context).sha256_text().left(32)
+
+
+func _build_player_attempt_key() -> String:
+	var normalized: String = _last_user_text.to_lower().replace("\r", " ").replace("\n", " ").replace("\t", " ").strip_edges()
+	while normalized.contains("  "):
+		normalized = normalized.replace("  ", " ")
+	if normalized.is_empty():
+		return ""
+	return "input_" + normalized.sha256_text().left(20)
 
 
 func _redraw_check_entry(entry: Dictionary) -> void:
@@ -1194,7 +1414,7 @@ func _on_open_clue_book_pressed() -> void:
 	var popup := _get_or_create_clue_book_popup()
 	if popup == null:
 		return
-	popup.open_ui(GameState.get_document_clues())
+	popup.open_ui(GameState.get_clue_book_entries(), true)
 
 
 func _get_or_create_clue_book_popup() -> ClueBookPopup:
@@ -1203,12 +1423,18 @@ func _get_or_create_clue_book_popup() -> ClueBookPopup:
 	_clue_book_popup = ClueBookPopupScript.new()
 	get_tree().current_scene.add_child(_clue_book_popup)
 	_clue_book_popup.view_requested.connect(_on_clue_book_view_requested)
+	_clue_book_popup.present_requested.connect(_on_clue_book_present_requested)
 	return _clue_book_popup
 
 
 func _on_clue_book_view_requested(entry: Dictionary) -> void:
 	var viewer := _get_or_create_clue_document_viewer()
 	if viewer == null:
+		return
+	if String(entry.get("entry_type", "")) == "story_clue":
+		var story_summary := String(entry.get("summary", "")).strip_edges()
+		if not story_summary.is_empty():
+			viewer.open_paged_text(String(entry.get("title", "线索")), [story_summary])
 		return
 	if String(entry.get("entry_type", "")) == "text_pages":
 		var pages: Array[String] = []
@@ -1224,6 +1450,50 @@ func _on_clue_book_view_requested(entry: Dictionary) -> void:
 	var image_texture := load(image_path) as Texture2D
 	if image_texture != null:
 		viewer.open_document(String(entry.get("title", "资料")), image_texture, {}, false)
+
+
+func _on_clue_book_present_requested(entry: Dictionary) -> void:
+	if _group_mode or not is_open() or not _active_fixed_event.is_empty():
+		return
+	if state not in [DialogueState.WAITING_PLAYER, DialogueState.ERROR]:
+		return
+	var clue_ids := _clue_ids_for_entry(entry)
+	if clue_ids.is_empty():
+		return
+	if is_instance_valid(_clue_book_popup):
+		_clue_book_popup.close_ui()
+	var title := String(entry.get("title", "线索")).strip_edges()
+	var summary := String(entry.get("summary", "")).strip_edges()
+	var presentation_text := "%s%s" % [CLUE_SHOW_PREFIX, title]
+	if not summary.is_empty():
+		presentation_text += "\n简述：" + summary
+	_append_history("user", presentation_text)
+
+	# Key evidence uses authored NPC JSON pages/effects and never relies on the
+	# model to reproduce quest-critical dialogue or rewards.
+	var fixed_event := NpcStoryEventScript.find_presented_clue_event(current_npc, clue_ids)
+	if not fixed_event.is_empty():
+		_play_fixed_story_event(fixed_event, String(current_npc.get("id", "")), presentation_text)
+		return
+
+	# Ordinary clues are supplied to the provider as concrete observed facts.
+	# Existing trigger keyword matching still runs in LLMService, so configured
+	# non-fixed effects remain deterministic while the wording stays free-form.
+	_request_llm(presentation_text)
+
+
+func _clue_ids_for_entry(entry: Dictionary) -> Array[String]:
+	var result: Array[String] = []
+	var clue_id := String(entry.get("id", "")).strip_edges()
+	if not clue_id.is_empty():
+		result.append(clue_id)
+	var linked: Variant = entry.get("linked_clue_ids", [])
+	if linked is Array:
+		for raw_id in linked:
+			var linked_id := String(raw_id).strip_edges()
+			if not linked_id.is_empty() and not result.has(linked_id):
+				result.append(linked_id)
+	return result
 
 
 func _get_or_create_clue_document_viewer() -> SceneItemInteraction:

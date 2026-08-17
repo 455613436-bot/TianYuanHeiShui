@@ -28,11 +28,15 @@ InputManager="*res://scripts/autoload/InputManager.gd"
 TimeSystem="*res://scripts/autoload/TimeSystem.gd"
 NpcRegistry="*res://scripts/autoload/NpcRegistry.gd"
 SettingsMenu="*res://scenes/ui/SettingsMenu.tscn"
+ClueDB="*res://scripts/autoload/ClueDB.gd"
+SkillSystem="*res://scripts/autoload/SkillSystem.gd"
 
 [display]
 
 window/size/viewport_width=1280
 window/size/viewport_height=720
+window/size/window_width_override=1920
+window/size/window_height_override=1080
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 

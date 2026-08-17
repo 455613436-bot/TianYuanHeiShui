@@ -211,9 +211,8 @@ static func _ensure_npc_mood_map_loaded(npc_id: String) -> void:
 ## 对外的统一入口：**优先加载真图，找不到再生成占位**
 ## 查找顺序：
 ##   1. res://assets/portraits/<npc_id>_<mood>.png   ← NPC 差分图（mood 已按 NPC mood_map 映射）
-##   2. res://assets/portraits/<npc_id>.png          ← NPC 通用底图（配合动态 mood_badge 也能用）
-##   3. res://assets/portraits/default_<mood>.png    ← 全局差分
-##   4. 动态生成的占位（按 npc_id hash 分色调）
+##   2. res://assets/portraits/default_<mood>.png    ← 全局差分
+##   3. 动态生成的占位（按 npc_id hash 分色调）
 static func load_or_generate(npc_id: String, mood: String, size: Vector2i = Vector2i(200, 240)) -> Texture2D:
 	var canonical := normalize_mood(mood, npc_id)
 	if canonical == "":
@@ -223,10 +222,6 @@ static func load_or_generate(npc_id: String, mood: String, size: Vector2i = Vect
 		var tex := _try_load_disk("res://assets/portraits/%s_%s.png" % [npc_id, canonical])
 		if tex != null:
 			return tex
-		tex = _try_load_disk("res://assets/portraits/%s.png" % npc_id)
-		if tex != null:
-			return tex
-
 	var tex2 := _try_load_disk("res://assets/portraits/default_%s.png" % canonical)
 
 

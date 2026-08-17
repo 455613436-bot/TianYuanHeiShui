@@ -1,0 +1,13 @@
+{
+  "id": "hunting_rifle",
+  "display_name": "村长的猎枪",
+  "short_desc": "一支保养尚可的旧猎枪，村长原本将它留作极端情况下保护外乡人的手段。",
+  "tags": ["武器", "枪械", "猎枪"],
+  "attack_difficulty_reduction": 15,
+  "usable_in_dialogue": false,
+  "consumable": false,
+  "inspectable": false,
+  "icon_path": "",
+  "inspect_image_path": "",
+  "usage_hints": ["在攻击技能中作为武器时，力量检定难度降低 15。"]
+}

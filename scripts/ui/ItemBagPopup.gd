@@ -8,6 +8,7 @@ extends CanvasLayer
 ## 已经在本次组合里选过的物品会被外部通过 set_disabled_ids 变灰。
 
 signal item_picked(item_id: String)
+signal weapon_picked(item_id: String)
 signal closed
 
 const InspectPopupScene := preload("res://scenes/ui/ItemInspectPopup.tscn")
@@ -30,6 +31,7 @@ const BTN_HEIGHT := 40.0
 var _disabled_ids: Dictionary = {}       # id -> true
 var _use_buttons_by_id: Dictionary = {}  # id -> Button（"使用"按钮，用来 disable/enable）
 var _inspect_popup: CanvasLayer = null
+var _selection_mode: String = "dialogue"
 
 
 func _ready() -> void:
@@ -39,9 +41,20 @@ func _ready() -> void:
 ## 打开弹窗；inventory 是玩家背包 id 数组；disabled_ids 是已经插入过输入区、要变灰的 id
 func open_ui(inventory: Array, disabled_ids: Array) -> void:
 	visible = true
+	_selection_mode = "dialogue"
 	_disabled_ids.clear()
 	for id_variant in disabled_ids:
 		_disabled_ids[String(id_variant)] = true
+	_rebuild(inventory)
+
+
+## 场景攻击用的背包选择：展示所有持有物，而不局限于普通对话可用物。
+func open_weapon_selection(inventory: Array) -> void:
+	visible = true
+	_selection_mode = "weapon"
+	_disabled_ids.clear()
+	title_label.text = "选择攻击用物品"
+	hint_label.text = "选择后会先显示力量检定的最终难度，确认后才会发动攻击。"
 	_rebuild(inventory)
 
 
@@ -58,7 +71,7 @@ func _rebuild(inventory: Array) -> void:
 		child.queue_free()
 	_use_buttons_by_id.clear()
 
-	var usable_ids: Array = ItemDB.filter_usable(inventory)
+	var usable_ids: Array = ItemDB.filter_usable(inventory) if _selection_mode == "dialogue" else inventory.duplicate()
 	if usable_ids.is_empty():
 		empty_label.visible = true
 		scroll.visible = false
@@ -160,8 +173,8 @@ func _build_row(item_id: String) -> Control:
 		btn_box.add_child(inspect_btn)
 
 	var use_btn := Button.new()
-	use_btn.text = "使用"
-	use_btn.tooltip_text = "在对话输入区插入「使用道具」标签"
+	use_btn.text = "作为武器" if _selection_mode == "weapon" else "使用"
+	use_btn.tooltip_text = "将该物品作为攻击武器" if _selection_mode == "weapon" else "在对话输入区插入「使用道具」标签"
 	use_btn.custom_minimum_size = Vector2(BTN_WIDTH, BTN_HEIGHT)
 	use_btn.disabled = _disabled_ids.has(item_id)
 	use_btn.pressed.connect(_on_use_pressed.bind(item_id))
@@ -183,6 +196,10 @@ func set_disabled_ids(disabled_ids: Array) -> void:
 
 
 func _on_use_pressed(id: String) -> void:
+	if _selection_mode == "weapon":
+		weapon_picked.emit(id)
+		close_ui()
+		return
 	# 抛出信号；是否要在本次组合里禁用由 DialogueUI 决定（回调 set_disabled_ids）
 	item_picked.emit(id)
 

@@ -1,0 +1,14 @@
+{
+  "id": "li_leshui_talisman",
+  "display_name": "夜间道士的护符",
+  "short_desc": "夜间道士交给你的护符。符面有旧水尺和山洞的细线刻痕，似乎用于保持神志清醒。",
+  "tags": ["关键物品", "护符", "道观"],
+  "usable_in_dialogue": false,
+  "consumable": false,
+  "inspectable": false,
+  "icon_path": "",
+  "inspect_image_path": "",
+  "usage_hints": [
+    "夜间道士交付的关键物品，与旧水尺和山洞线索有关。"
+  ]
+}

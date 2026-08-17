@@ -3,7 +3,7 @@
 [ext_resource type="Script" uid="uid://dbg5575j2sryd" path="res://scripts/ui/DialogueUI.gd" id="4_dialogue"]
 [ext_resource type="Texture2D" uid="uid://cavvkhorkrxaf" path="res://assets/ui/dialogue_panel.png" id="8_dlg_bg"]
 [ext_resource type="Texture2D" uid="uid://xj864tyi4l7r" path="res://assets/ui/portrait_frame.png" id="9_frame"]
-[ext_resource type="Texture2D" uid="uid://14ut325b2rgb" path="res://assets/ui/btn_investigate.png" id="10_btn_inv"]
+[ext_resource type="Texture2D" path="res://assets/ui/btn_clue_book.png" id="10_btn_inv"]
 [ext_resource type="Texture2D" uid="uid://dbg20vmpv2c3k" path="res://assets/ui/btn_give_item.png" id="11_btn_give"]
 [ext_resource type="Texture2D" uid="uid://c4sftn3j0nx52" path="res://assets/ui/btn_skill.png" id="12_btn_skill"]
 [ext_resource type="Texture2D" uid="uid://b5ej2s0hk2516" path="res://assets/ui/btn_leave.png" id="13_btn_leave"]
@@ -224,7 +224,7 @@ theme_override_constants/separation = 16
 [node name="Investigate" type="TextureButton" parent="Actions"]
 custom_minimum_size = Vector2(160, 48)
 layout_mode = 2
-tooltip_text = "调查环境"
+tooltip_text = "打开线索册"
 texture_normal = ExtResource("10_btn_inv")
 texture_hover = ExtResource("10_btn_inv")
 ignore_texture_size = true

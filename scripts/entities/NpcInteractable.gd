@@ -81,6 +81,8 @@ func _on_body_exited(body: Node) -> void:
 
 ## 玩家按 E 调用
 func on_player_interact(_player: Node) -> void:
+	if not NpcRegistry.can_interact_with_npc(npc_id):
+		return
 	if profile.is_empty():
 		push_warning("[NPC %s] profile 为空，无法对话" % npc_id)
 		return

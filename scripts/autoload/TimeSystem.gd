@@ -3,7 +3,7 @@ extends Node
 ## 游戏时钟 autoload：分钟计数 → 时段（period）。
 ## - 时间推进的唯一入口是 advance_minutes()；一次玩家发言 = 1 轮 = +10 分钟，
 ##   由 DialogueUI 在收到 LLM 回答后调用 on_dialogue_turn_completed()。
-## - 场景切换默认不推时间（避免来回切图产生时间黑洞）。
+## - 玩家在两个不同地点之间移动时同样推进 10 分钟；单纯打开/关闭地图不计时。
 ## - 时段边界供 F7「NPC 主动预告离场」使用。
 ##
 ## 数据随 GameState.save_game() / load_game() 持久化。
@@ -36,6 +36,7 @@ const NIGHT_END := 360 # 次日 06:00
 var current_day: int = 1
 var minute_of_day: int = 540 # 09:00 起始
 var minutes_per_dialogue_turn: int = 10
+var minutes_per_location_change: int = 10
 
 
 func _ready() -> void:
@@ -80,6 +81,11 @@ func rest_until_next_day(hour: int = 9, minute: int = 0) -> void:
 ## DialogueUI / GroupChatCoordinator 每轮对话结束调一次
 func on_dialogue_turn_completed() -> void:
 	advance_minutes(minutes_per_dialogue_turn)
+
+
+## GameState 在确认已成功切换到另一个地点后调用。
+func on_location_changed() -> void:
+	advance_minutes(minutes_per_location_change)
 
 
 func is_rest_lock_time() -> bool:

@@ -22,6 +22,7 @@ const IMPORTANCE_RANK := {"main": 0, "normal": 1, "ambient": 2}
 ## 人物位置固定，不接受 LLM 生成的跟随、移动或离开动作。
 const LLM_ACTION_TYPES: Array[String] = []
 const POSTPONE_LEAVE_MINUTES := 15
+const DISMISS_DURATION_MINUTES := 120
 
 ## loc_id -> 地点信息 dict（来自 locations.json）
 var _locations: Dictionary = {}
@@ -33,6 +34,12 @@ var _npcs: Dictionary = {}
 var _profile_cache: Dictionary = {}
 ## npc_id -> loc_id（运行时位置，存档写这里）
 var _current_locations: Dictionary = {}
+## 被玩家成功劝离的 NPC。保留原始固定地点，但查询在场人物时会过滤；该状态写入存档。
+var _dismissed_npcs: Dictionary = {}
+## 被攻击致死的人物：永久不再出现在任何场景中。
+var _killed_npcs: Dictionary = {}
+## 攻击失败后拒绝与玩家交互的人物；仍会留在场景中。
+var _hostile_npcs: Dictionary = {}
 ## 保留旧存档兼容字段；跟随功能已停用。
 var _following: Dictionary = {}
 ## npc_id -> {location, until_total_minutes, reason}（事件规则的临时位移）
@@ -45,6 +52,8 @@ var _rules: Array = []
 
 func _ready() -> void:
 	load_all()
+	if not TimeSystem.minute_changed.is_connected(_on_time_advanced):
+		TimeSystem.minute_changed.connect(_on_time_advanced)
 
 
 # ─── 数据装载 ──────────────────────────────────────────────────────────────
@@ -136,6 +145,9 @@ func _load_rules() -> void:
 ## 启动与新游戏时从 JSON 的固定 current_location 初始化 NPC；旧存档位置不会覆盖它。
 func _init_runtime_locations() -> void:
 	_current_locations.clear()
+	_dismissed_npcs.clear()
+	_killed_npcs.clear()
+	_hostile_npcs.clear()
 	_following.clear()
 	_temp_overrides.clear()
 	_postpone_leave_until.clear()
@@ -172,9 +184,14 @@ func get_location_of(npc_id: String) -> String:
 
 
 func get_npcs_at(location_id: String) -> Array[String]:
+	_restore_expired_dismissals()
 	var result: Array[String] = []
 	for npc_id in _current_locations:
-		if String(_current_locations[npc_id]) == location_id:
+		if String(npc_id) == "mysterious_hermit" and not is_mysterious_hermit_road_time():
+			continue
+		if not _is_li_leshui_active(String(npc_id)):
+			continue
+		if String(_current_locations[npc_id]) == location_id and not _dismissed_npcs.has(npc_id) and not _killed_npcs.has(npc_id):
 			result.append(String(npc_id))
 	result.sort_custom(func(a: String, b: String) -> bool:
 		var ra := int(IMPORTANCE_RANK.get(String(_npcs.get(a, {}).get("importance", "normal")), 1))
@@ -187,6 +204,113 @@ func get_npcs_at(location_id: String) -> Array[String]:
 			return pa < pb
 		return a < b)
 	return result
+
+
+func is_npc_present_at(npc_id: String, location_id: String) -> bool:
+	_restore_expired_dismissals()
+	if npc_id == "mysterious_hermit" and not is_mysterious_hermit_road_time():
+		return false
+	if not _is_li_leshui_active(npc_id):
+		return false
+	return not _dismissed_npcs.has(npc_id) and not _killed_npcs.has(npc_id) and String(_current_locations.get(npc_id, "")) == location_id
+
+
+func get_interactable_npcs_at(location_id: String) -> Array[String]:
+	var result: Array[String] = []
+	for npc_id in get_npcs_at(location_id):
+		if can_interact_with_npc(npc_id):
+			result.append(npc_id)
+	return result
+
+
+func _is_li_leshui_active(npc_id: String) -> bool:
+	if npc_id == "li_leshui_day":
+		return TimeSystem.minute_of_day >= 6 * 60 and TimeSystem.minute_of_day < 19 * 60
+	if npc_id == "li_leshui_night":
+		return TimeSystem.minute_of_day >= 19 * 60 or TimeSystem.minute_of_day < 6 * 60
+	return true
+
+
+func is_mysterious_hermit_road_time() -> bool:
+	return (
+		TimeSystem.current_day >= 3
+		and TimeSystem.minute_of_day >= 16 * 60 + 50
+		and TimeSystem.minute_of_day < 18 * 60
+	)
+
+
+func dismiss_npc(npc_id: String, reason: String = "被玩家劝离") -> bool:
+	if not _npcs.has(npc_id) or _dismissed_npcs.has(npc_id):
+		return false
+	var from_location := String(_current_locations.get(npc_id, ""))
+	if from_location.is_empty():
+		return false
+	_dismissed_npcs[npc_id] = {
+		"location": from_location,
+		"reason": reason.strip_edges(),
+		"day": TimeSystem.current_day,
+		"minute": TimeSystem.minute_of_day,
+		"until_total_minutes": TimeSystem.total_minutes() + DISMISS_DURATION_MINUTES,
+	}
+	MemoryStore.add_global_memory("%s被外来者劝离了%s。" % [get_short_name(npc_id), get_location_name(from_location)], ["dismiss", npc_id, from_location])
+	npc_moved.emit(npc_id, from_location, "", reason)
+	return true
+
+
+func restore_dismissed_npc(npc_id: String) -> bool:
+	if not _dismissed_npcs.erase(npc_id):
+		return false
+	var location := String(_current_locations.get(npc_id, ""))
+	npc_moved.emit(npc_id, "", location, "恢复在场")
+	return true
+
+
+func is_npc_dismissed(npc_id: String) -> bool:
+	_restore_expired_dismissals()
+	return _dismissed_npcs.has(npc_id)
+
+
+func _on_time_advanced(_day: int, _minute_of_day: int) -> void:
+	_restore_expired_dismissals()
+
+
+func _restore_expired_dismissals() -> void:
+	var expired_ids: Array[String] = []
+	var now := TimeSystem.total_minutes()
+	for raw_id in _dismissed_npcs:
+		var record: Variant = _dismissed_npcs[raw_id]
+		if record is not Dictionary:
+			continue
+		var until := int((record as Dictionary).get("until_total_minutes", -1))
+		if until >= 0 and now >= until:
+			expired_ids.append(String(raw_id))
+	for npc_id in expired_ids:
+		var location := String(_current_locations.get(npc_id, ""))
+		_dismissed_npcs.erase(npc_id)
+		MemoryStore.add_global_memory("%s在两小时后回到了%s。" % [get_short_name(npc_id), get_location_name(location)], ["dismiss_return", npc_id, location])
+		npc_moved.emit(npc_id, "", location, "劝离时限结束")
+
+
+func kill_npc(npc_id: String, reason: String = "被玩家攻击致死") -> bool:
+	if not _npcs.has(npc_id) or _killed_npcs.has(npc_id):
+		return false
+	var from_location := String(_current_locations.get(npc_id, ""))
+	if from_location.is_empty():
+		return false
+	_killed_npcs[npc_id] = {"location": from_location, "reason": reason.strip_edges(), "day": TimeSystem.current_day, "minute": TimeSystem.minute_of_day}
+	npc_moved.emit(npc_id, from_location, "", reason)
+	return true
+
+
+func mark_npc_hostile(npc_id: String, reason: String = "攻击失败") -> bool:
+	if not _npcs.has(npc_id) or _killed_npcs.has(npc_id):
+		return false
+	_hostile_npcs[npc_id] = {"reason": reason.strip_edges(), "day": TimeSystem.current_day, "minute": TimeSystem.minute_of_day}
+	return true
+
+
+func can_interact_with_npc(npc_id: String) -> bool:
+	return _npcs.has(npc_id) and not _dismissed_npcs.has(npc_id) and not _killed_npcs.has(npc_id) and not _hostile_npcs.has(npc_id)
 
 
 ## F5：未探索地点的 NPC 显示为 "？？？"（返回空数组，由 UI 层画占位）
@@ -388,6 +512,10 @@ func _apply_rule_action(_rule: Dictionary) -> void:
 func can_be_persuaded(npc_id: String) -> bool:
 	if not _npcs.has(npc_id):
 		return false
+	if _dismissed_npcs.has(npc_id):
+		return false
+	if _killed_npcs.has(npc_id) or _hostile_npcs.has(npc_id):
+		return false
 	if String(_npcs[npc_id].get("importance", "normal")) == "ambient":
 		return false
 	if _temp_overrides.has(npc_id):
@@ -434,10 +562,34 @@ func build_scene_prompt_block(npc_id: String) -> String:
 # ─── 持久化 ────────────────────────────────────────────────────────────────
 
 func to_dict() -> Dictionary:
-	# 固定地点配置来自 NPC JSON，不再把运行时移动状态写入存档。
-	return {}
+	# 固定地点仍来自 NPC JSON；这里只保存玩家造成的缺席状态。
+	return {"dismissed_npcs": _dismissed_npcs.duplicate(true), "killed_npcs": _killed_npcs.duplicate(true), "hostile_npcs": _hostile_npcs.duplicate(true)}
 
 
-func load_from_dict(_data: Variant) -> void:
-	# 忽略旧存档中的人物位置，始终应用当前 JSON 的固定 current_location。
+func load_from_dict(data: Variant) -> void:
+	# 忽略旧存档中的人物位置，始终应用当前 JSON 的固定 current_location；恢复合法的缺席记录。
 	_init_runtime_locations()
+	if data is not Dictionary:
+		return
+	var raw_dismissed: Variant = (data as Dictionary).get("dismissed_npcs", {})
+	if raw_dismissed is not Dictionary:
+		return
+	for raw_id in raw_dismissed:
+		var npc_id := String(raw_id)
+		var record: Variant = raw_dismissed[raw_id]
+		if _npcs.has(npc_id) and record is Dictionary:
+			_dismissed_npcs[npc_id] = (record as Dictionary).duplicate(true)
+	var raw_killed: Variant = (data as Dictionary).get("killed_npcs", {})
+	if raw_killed is Dictionary:
+		for raw_id in raw_killed:
+			var killed_id := String(raw_id)
+			var record: Variant = raw_killed[raw_id]
+			if _npcs.has(killed_id) and record is Dictionary:
+				_killed_npcs[killed_id] = (record as Dictionary).duplicate(true)
+	var raw_hostile: Variant = (data as Dictionary).get("hostile_npcs", {})
+	if raw_hostile is Dictionary:
+		for raw_id in raw_hostile:
+			var hostile_id := String(raw_id)
+			var record: Variant = raw_hostile[raw_id]
+			if _npcs.has(hostile_id) and record is Dictionary:
+				_hostile_npcs[hostile_id] = (record as Dictionary).duplicate(true)

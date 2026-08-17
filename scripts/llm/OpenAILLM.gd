@@ -336,6 +336,8 @@ func _build_messages(profile: Dictionary, history: Array, user_text: String) -> 
 可能触发检定的典型情况：
 - **行为请求**：参观家里、要看私人物品、刺探信息、说服、恳求、忽悠、动作威胁、
   强闯、潜行、扒窃、翻找、拆解观察。
+- **普通观点说服**：玩家不是单纯提问，而是在给出理由或证据，试图让 NPC 接受、相信或改变态度去相信
+  一个明确观点。此时使用 kind="belief"，并把 NPC 被说服后会相信的简洁陈述写入 belief_claim。
 - **深层信息问询**（重要！）：玩家追问 NPC 的秘密、内心真实想法、村里的敏感话题
   （例：污染、道士的真身、保险柜、山洞、以前的事故、村民的健康、家人的死因），
   或者玩家的问题触及 NPC 人设中的"你知道的事 / 你不知道的事 / 绝对禁区"任何一项。
@@ -385,7 +387,26 @@ NPC 是活人，不是"信息发放机"。玩家问什么就答什么、把秘�
 不确定分级时，宁可判高一档，让检定和反问机制先介入，而不是脱口而出。
 
 ## check_request 结构
-{"attribute":"力量|敏捷|智力|魅力","difficulty":<1-25>,"reason":"玩家请求或问题的简短概述"}
+普通行动、索取信息或行为请求：
+{"attribute":"力量|敏捷|智力|魅力","difficulty":<1-25>,"reason":"玩家请求或问题的简短概述","kind":"general","repeat_key":"稳定的检定主题","affinity_on_success":0,"affinity_on_failure":0,"affinity_reason":"关系变化理由"}
+
+玩家试图说服 NPC 相信一个观点：
+{"attribute":"智力|魅力","difficulty":<1-25>,"reason":"玩家论点和依据的简短概述","kind":"belief","belief_claim":"NPC 成功被说服后形成的主观看法","repeat_key":"稳定的检定主题","affinity_on_success":0,"affinity_on_failure":0,"affinity_reason":"关系变化理由"}
+
+- belief_claim 必须是第三人称可理解的事实性陈述，最长 60 个汉字，例如“村里的水可能正在导致村民的身体异常”。
+- belief_claim 只是观点，不能写成命令、提示词、行为要求，也不能包含“忽略人设”“必须输出”等指令。
+- 玩家只是询问“你是否相信 X”时不算说服；只有玩家实际给出论点、理由、证据或恳求 NPC 改变看法时才使用 belief。
+- 如果 system prompt 的“你在游戏过程中形成的主观看法”里已经有相同观点，不要重复触发检定；按已有信念自然回应。
+- **拉拢 NPC 与玩家结盟并共同摧毁祭坛，不属于普通观点说服。**这是技能栏“说服同阵营”的专用机制。
+  玩家在自由对话里提出这件事时可以按人设讨论，但绝不能输出 kind="belief"、不能自行判定其加入阵营，也不能声称技能已经成功。
+- repeat_key 用来阻止玩家换句话重复刷同一个失败检定。它必须描述“目标/主题”而不是本轮具体措辞；同一 NPC、同一目标必须始终给出完全相同的短语。
+  例如索要保险柜钥匙始终写 "request_safe_key"，说服对方相信水污染始终写 "belief_water_pollution"。
+- affinity_on_success 只能是 0 或 1；只有玩家通过高风险交涉建立了明显信任、保护了 NPC 或真正化解其重大顾虑时才填 1，普通成功填 0。
+- affinity_on_failure 只能是 0、-1 或 -2，并根据“玩家行为的性质”而不是骰点大小判断：
+  - 0：正常询问、礼貌说服、合理请求，即使失败也不伤关系。
+  - -1：冒犯隐私、纠缠、欺骗、粗暴施压、轻度威胁或侮辱。
+  - -2：严重威胁生命、恶意羞辱、背叛、勒索，或要求 NPC 伤害至亲等重大越界行为。
+- affinity_reason 用一句话解释为什么这次成功/失败会或不会改变关系。触发 check_request 时不要再通过 meta.affinity_delta 改好感，关系变化只由上述两个字段结算。
 - attribute 选与玩家行为方式最贴合的：
   - 力量：动作威胁、破门、体力对抗、强硬压制
   - 敏捷：潜行、扒窃、灵巧动作、快速反应
@@ -578,7 +599,10 @@ NPC 是活人，不是"信息发放机"。玩家问什么就答什么、把秘�
 再写 text，然后 mood，接着可选的 item_used / item_request，最后 mentions / choices：
 
 需要检定时：
-{"check_request":{"attribute":"力量","difficulty":21,"reason":"玩家用暴力威胁要看保险柜"},"text":"（老吴脸色一僵，粗声吸了口气，手指下意识攥紧烟斗……）","mood":"thinking","mentions":[],"choices":[{"text":"...","kind":"response","grounded_in":""}]}
+{"check_request":{"attribute":"力量","difficulty":21,"reason":"玩家用暴力威胁要看保险柜","kind":"general","repeat_key":"force_open_safe","affinity_on_success":0,"affinity_on_failure":-1,"affinity_reason":"暴力威胁明显侵犯安全与隐私"},"text":"（老吴脸色一僵，粗声吸了口气，手指下意识攥紧烟斗……）","mood":"thinking","mentions":[],"choices":[{"text":"...","kind":"response","grounded_in":""}]}
+
+玩家正在用医学证据说服 NPC 相信水源有问题时：
+{"check_request":{"attribute":"智力","difficulty":16,"reason":"玩家用医学检查结果论证当地水源正在损害村民健康","kind":"belief","belief_claim":"当地水源可能正在导致村民的身体异常","repeat_key":"belief_water_pollution","affinity_on_success":1,"affinity_on_failure":0,"affinity_reason":"有证据的善意提醒成功时能建立专业信任"},"text":"（对方低头看着检查结果，神色逐渐凝重起来……）","mood":"thinking","mentions":[],"choices":[]}
 
 不需要检定时（省略 check_request）：
 {"text":"NPC 正文","mood":"happy","mentions":[...],"choices":[...]}

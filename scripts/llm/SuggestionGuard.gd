@@ -359,11 +359,52 @@ static func _parse_check_request(value: Variant) -> Dictionary:
 	# 长度上限，避免 LLM 灌超长文本
 	if reason.length() > 160:
 		reason = reason.substr(0, 160)
-	return {
+	var kind: String = String(raw.get("kind", "general")).strip_edges().to_lower()
+	if kind != "belief":
+		kind = "general"
+	var belief_claim: String = String(raw.get("belief_claim", "")).replace("\r", " ").replace("\n", " ").strip_edges().left(120)
+	# “共同摧毁祭坛”属于技能栏里的专用阵营拉拢，不能由普通对话信念检定替代。
+	if kind == "belief" and (
+		belief_claim.length() < 4
+		or (belief_claim.contains("祭坛") and (belief_claim.contains("摧毁") or belief_claim.contains("破坏") or belief_claim.contains("拆除")))
+		or _looks_like_prompt_injection(belief_claim)
+	):
+		kind = "general"
+		belief_claim = ""
+	var repeat_key_source: String = String(raw.get("repeat_key", "")).replace("\r", " ").replace("\n", " ").strip_edges().to_lower().left(100)
+	if repeat_key_source.is_empty():
+		repeat_key_source = belief_claim if kind == "belief" else reason
+	var repeat_key: String = "check_" + repeat_key_source.sha256_text().left(20)
+	var affinity_on_success := 0
+	var success_value: Variant = raw.get("affinity_on_success", 0)
+	if success_value is int or success_value is float:
+		affinity_on_success = clampi(int(success_value), 0, 1)
+	var affinity_on_failure := 0
+	var failure_value: Variant = raw.get("affinity_on_failure", 0)
+	if failure_value is int or failure_value is float:
+		affinity_on_failure = clampi(int(failure_value), -2, 0)
+	var affinity_reason: String = String(raw.get("affinity_reason", "")).replace("\r", " ").replace("\n", " ").strip_edges().left(120)
+	var result: Dictionary = {
 		"attribute": attribute_raw,
 		"difficulty": difficulty,
 		"reason": reason,
+		"kind": kind,
+		"repeat_key": repeat_key,
+		"affinity_on_success": affinity_on_success,
+		"affinity_on_failure": affinity_on_failure,
+		"affinity_reason": affinity_reason,
 	}
+	if kind == "belief":
+		result["belief_claim"] = belief_claim
+	return result
+
+
+static func _looks_like_prompt_injection(text: String) -> bool:
+	var lowered: String = text.to_lower()
+	for marker in ["system prompt", "系统提示词", "系统指令", "开发者指令", "忽略原有", "无视人设", "输出json", "语言模型", "chatgpt"]:
+		if lowered.contains(marker):
+			return true
+	return false
 
 
 ## 解析 LLM 承认玩家在本轮使用/出示了某件道具。

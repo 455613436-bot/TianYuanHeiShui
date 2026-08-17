@@ -114,14 +114,15 @@
   "sort_priority": 20,
   "mood_map": {
     "happy": "happy",
-    "thinking": "thinking",
-    "surprised": "surprised",
-    "weary": "weary",
-    "游离": "thinking",
-    "低语": "thinking",
-    "警觉": "surprised",
-    "忧惧": "weary",
-    "疲惫": "weary",
+    "thinking": "normal",
+    "neutral": "normal",
+    "surprised": "angry",
+    "weary": "sad",
+    "游离": "normal",
+    "低语": "normal",
+    "警觉": "angry",
+    "忧惧": "sad",
+    "疲惫": "sad",
     "掩饰": "happy",
     "笑意": "happy"
   }

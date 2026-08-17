@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/locations/LocationBase.tscn" id="1_base"]
 [ext_resource type="Texture2D" path="res://assets/scenes/village_chief_house.png" id="2_bg"]
+[ext_resource type="Texture2D" path="res://assets/scenes/village_chief_house_empty.png" id="3_empty"]
 
 [node name="VillageChiefHouse" instance=ExtResource("1_base")]
 location_number = "1"
@@ -10,3 +11,4 @@ location_id = "village_chief_house"
 location_description = "村长吴志源的住处，也许藏着不愿示人的秘密。"
 accent_color = Color(0.62, 0.28, 0.2, 1)
 background_texture = ExtResource("2_bg")
+empty_background_texture = ExtResource("3_empty")

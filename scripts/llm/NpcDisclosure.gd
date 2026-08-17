@@ -110,6 +110,19 @@ static func _condition_matches(raw_condition: Variant, npc_id: String) -> bool:
 			return bool(GameState.get_investigation_state(String(condition.get("id", "")), false)) == bool(condition.get("value", true))
 		"event":
 			return GameState.has_triggered_event(String(condition.get("id", "")))
+		"belief":
+			var belief_owner: String = String(condition.get("npc_id", npc_id))
+			return MemoryStore.has_belief(
+				belief_owner,
+				String(condition.get("id", "")),
+				maxi(int(condition.get("min_confidence", 1)), 1)
+			)
+		"elapsed_minutes":
+			var time_state: Variant = GameState.get_investigation_state(String(condition.get("id", "")), {})
+			if time_state is not Dictionary:
+				return false
+			var started_at: int = int((time_state as Dictionary).get("total_minutes", -1))
+			return started_at >= 0 and TimeSystem.total_minutes() - started_at >= maxi(int(condition.get("min", 0)), 0)
 		_:
 			return false
 

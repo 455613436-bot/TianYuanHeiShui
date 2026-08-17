@@ -72,13 +72,13 @@
     "tags": ["outdoor", "dangerous"]
   },
   {
-    "id": "ancestral_hall",
+    "id": "construction_site",
     "number": "9",
-    "name": "祠堂",
-    "description": "祠堂尚待布置，目前仅保留空白占位。",
+    "name": "旧工地",
+    "description": "村中停工已久的旧工地，废弃建材和半成品散落各处。",
     "map_position": [0.420, 0.585],
-    "scene": "res://scenes/locations/AncestralHall.tscn",
-    "tags": ["indoor", "religious"]
+    "scene": "res://scenes/locations/ConstructionSite.tscn",
+    "tags": ["outdoor", "ruins", "dangerous"]
   },
   {
     "id": "field_path",

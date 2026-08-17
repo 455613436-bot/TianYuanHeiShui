@@ -1,0 +1,15 @@
+{
+  "id": "abandoned_clinic_key",
+  "display_name": "废弃医院钥匙",
+  "short_desc": "神秘人交给你的旧钥匙，钥匙牌上还能辨认出干水固医院的褪色字样。",
+  "tags": ["关键物品", "钥匙", "废弃医院"],
+  "usable_in_dialogue": true,
+  "consumable": false,
+  "inspectable": false,
+  "icon_path": "",
+  "inspect_image_path": "",
+  "usage_hints": [
+    "可以打开废弃医院的大门，完成神秘人要求的第一阶段调查。",
+    "这是不会消耗的关键钥匙。"
+  ]
+}

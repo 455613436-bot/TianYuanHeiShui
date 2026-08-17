@@ -381,6 +381,7 @@ func _add_choice_button(choice: Dictionary) -> void:
 	var button := Button.new()
 	button.text = String(choice.get("label", "继续"))
 	button.custom_minimum_size = Vector2(150, 42)
+	button.tooltip_text = String(choice.get("description", ""))
 	button.add_theme_font_size_override("font_size", 19)
 	button.add_theme_color_override("font_color", Color(0.16, 0.12, 0.08, 1.0))
 	button.add_theme_stylebox_override("normal", _choice_style(CHOICE_BACKGROUND))
@@ -430,6 +431,8 @@ func _run_daily_check(choice: Dictionary) -> void:
 		0,
 		String(choice.get("reason", ""))
 	)
+	# 场景物品检定也消耗一轮调查时间，和对话/地点切换统一按 10 分钟推进。
+	TimeSystem.on_dialogue_turn_completed()
 	GameState.set_investigation_state(state_key, {"day": TimeSystem.current_day})
 	GameState.save_game(GameState.AUTO_SAVE_PATH, false)
 	var message := CheckSystem.result_to_display_text(result)

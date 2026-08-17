@@ -2,6 +2,7 @@ extends Control
 ## 地图地点的共享占位场景。后续可用真正的探索场景替换各地点文件。
 
 const MAP_SCENE := "res://scenes/map/WorldMap.tscn"
+const ITEM_BAG_POPUP_SCENE := preload("res://scenes/ui/ItemBagPopup.tscn")
 
 @export var location_number: String = "?"
 @export var location_name: String = "未命名地点"
@@ -9,16 +10,28 @@ const MAP_SCENE := "res://scenes/map/WorldMap.tscn"
 @export var location_id: String = ""
 @export_multiline var location_description: String = "该地点仍在建设中。"
 @export var background_texture: Texture2D
+## 某些地点完成永久交互后使用的替代背景，例如废弃医院开锁后的场景。
+@export var unlocked_background_texture: Texture2D
+## 按日程出现人物时使用的背景，例如田间小路傍晚出现神秘人的版本。
+@export var scheduled_background_texture: Texture2D
+## 某些正式背景把 NPC 直接画进图里；场景无人时切换到对应的空景版本。
+@export var empty_background_texture: Texture2D
 ## 同一地点的第二个视角；设置后会自动生成场景切换按键。
 @export var alternate_background_texture: Texture2D
+## 第二视角在无人状态时使用的空景；例如道观后室。
+@export var alternate_empty_background_texture: Texture2D
 @export var alternate_view_label: String = "切换至后方"
 @export var accent_color: Color = Color(0.45, 0.58, 0.36)
 
 var _showing_alternate_view := false
 var _view_toggle_button: Button
 var _uses_time_based_background := false
+var _uses_road_hermit_schedule := false
+var _road_hermit_departure_deferred := false
+var _road_hermit_nodes: Dictionary = {}
 ## 地图按钮放入独立 HUD 层，避免被场景遮罩热点截获点击。
 var _map_action_layer: CanvasLayer
+var _scene_npc_hotspots: Dictionary = {}
 
 @onready var content_panel: Panel = $Content
 @onready var number_label: Label = $Content/NumberLabel
@@ -45,11 +58,14 @@ func _ready() -> void:
 	# 有背景图时隐藏占位 Content 面板（场景已接入真背景，不再显示"待开发"）
 	content_panel.visible = background_texture == null and alternate_background_texture == null
 	_uses_time_based_background = location_id == "temporary_dorm" and background_texture != null and alternate_background_texture != null
+	_uses_road_hermit_schedule = location_id == "field_path" and scheduled_background_texture != null
 	if _uses_time_based_background:
 		TimeSystem.minute_changed.connect(_on_time_changed)
 		_refresh_time_based_background()
 	elif alternate_background_texture != null:
 		_create_view_toggle_button()
+	if _uses_road_hermit_schedule:
+		TimeSystem.minute_changed.connect(_on_time_changed)
 	_move_map_button_to_hud_layer()
 	return_button.pressed.connect(_open_map)
 	GameState.item_added.connect(_on_item_added)
@@ -67,12 +83,19 @@ func _ready() -> void:
 		if presence_bar.has_signal("group_chat_requested"):
 			presence_bar.group_chat_requested.connect(_on_group_chat_requested)
 	if location_id == "abandoned_clinic":
-		_create_clinic_door_hotspot()
+		_setup_clinic_state()
+	elif location_id == "field_path":
+		_refresh_road_hermit_schedule()
+	elif location_id == "village_chief_house":
+		_create_village_chief_house_hotspots()
 	elif location_id == "village_committee":
 		_create_village_committee_hotspots()
 	elif location_id == "temporary_dorm":
 		_create_temporary_dorm_hotspots()
 		call_deferred("_start_dorm_tutorial_if_needed")
+	if not NpcRegistry.npc_moved.is_connected(_on_scene_npc_presence_changed):
+		NpcRegistry.npc_moved.connect(_on_scene_npc_presence_changed)
+	_refresh_scene_presence()
 	call_deferred("_apply_responsive_layout")
 
 
@@ -97,6 +120,13 @@ func _refresh_map_access() -> void:
 	return_button.disabled = not unlocked
 	return_button.tooltip_text = "打开地图" if unlocked else "先向村长询问并取得村庄手绘地图"
 	return_button.text = "打开地图  M / Esc" if unlocked else "地图尚未解锁"
+
+
+func _setup_clinic_state() -> void:
+	if bool(GameState.get_investigation_state("abandoned_clinic_door_unlocked", false)):
+		_activate_clinic_open_state()
+	else:
+		_create_clinic_door_hotspot()
 
 
 func _create_clinic_door_hotspot() -> void:
@@ -131,27 +161,104 @@ func _create_clinic_door_hotspot() -> void:
 	var interaction_ui := SceneItemInteraction.new()
 	interaction_ui.name = "ClinicDoorInteraction"
 	add_child(interaction_ui)
+	interaction_ui.choice_selected.connect(func(interaction_id: String, choice_id: String, result: Dictionary) -> void:
+		if interaction_id != "abandoned_clinic_door_lock":
+			return
+		var unlocked: bool = choice_id == "use_clinic_key" or (choice_id == "pry_lock" and bool(result.get("passed", false)))
+		if not unlocked:
+			return
+		GameState.set_investigation_state("abandoned_clinic_door_unlocked", true)
+		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
+		_activate_clinic_open_state()
+		mask.queue_free()
+		hotspot.queue_free()
+		var unlock_text: String = "钥匙顺利转动，诊所大门的旧锁被打开了。" if choice_id == "use_clinic_key" else "锁芯终于松开，诊所大门可以自由出入了。"
+		interaction_ui.open_paged_text("诊所大门", [unlock_text])
+	)
 	hotspot.pressed.connect(func() -> void:
 		mask.hide_highlight()
+		var door_unlocked: bool = bool(GameState.get_investigation_state("abandoned_clinic_door_unlocked", false))
+		var door_choices: Array[Dictionary] = []
+		if door_unlocked:
+			door_choices.append({"id": "leave", "label": "门锁已经打开", "close": true})
+		else:
+			if GameState.has_item("abandoned_clinic_key"):
+				door_choices.append({
+					"id": "use_clinic_key",
+					"label": "使用神秘人给的医院钥匙",
+				})
+			door_choices.append({
+				"id": "pry_lock",
+				"label": "撬锁（敏捷检定）",
+				"type": "check",
+				"attribute": "敏捷",
+				"difficulty": 30,
+				"reason": "尝试撬开废弃诊所大门的锁",
+				"success_text": "锁芯发出一声轻响，门闩松开了。",
+				"failure_text": "铁片从锁眼滑开，锈蚀的锁仍纹丝不动。",
+			})
+			door_choices.append({"id": "leave", "label": "离开", "close": true})
 		interaction_ui.open_choice({
 			"id": "abandoned_clinic_door_lock",
 			"title": "诊所大门",
-			"description": "这是一个摇摇欲坠的锁。锈蚀的锁芯仍勉强卡住门闩。",
-			"choices": [
-				{
-					"id": "pry_lock",
-					"label": "撬锁（敏捷检定）",
-					"type": "check",
-					"attribute": "敏捷",
-					"difficulty": 12,
-					"reason": "尝试撬开废弃诊所大门的锁",
-					"success_text": "锁芯发出一声轻响，门闩松开了。",
-					"failure_text": "铁片从锁眼滑开，锈蚀的锁仍纹丝不动。",
-				},
-				{"id": "leave", "label": "离开", "close": true},
-			],
+			"description": "门锁已经打开，可以自由出入。" if door_unlocked else "这是一个摇摇欲坠的锁。锈蚀的锁芯仍勉强卡住门闩。",
+			"choices": door_choices,
 		})
 	)
+
+
+func _activate_clinic_open_state() -> void:
+	if unlocked_background_texture != null:
+		background.texture = unlocked_background_texture
+		background.visible = true
+	if has_node("ClinicFileHotspot"):
+		return
+
+	var files := _create_mask_hotspot(
+		"ClinicFile",
+		"res://assets/scenes/masks/clinic_file_mask.png",
+		Rect2(0.375, 0.545, 0.085, 0.090),
+		"查看桌上的医院档案"
+	)
+	var equipment := _create_mask_hotspot(
+		"ClinicEquipment",
+		"res://assets/scenes/masks/clinic_equipment_mask.png",
+		Rect2(0.435, 0.530, 0.095, 0.100),
+		"检查遗留的医学检验设备"
+	)
+	var file_ui := SceneItemInteraction.new()
+	file_ui.name = "ClinicFileInteraction"
+	add_child(file_ui)
+	var equipment_ui := SceneItemInteraction.new()
+	equipment_ui.name = "ClinicEquipmentInteraction"
+	add_child(equipment_ui)
+	(files["button"] as Button).pressed.connect(_open_clinic_files.bind(files["highlight"], file_ui))
+	(equipment["button"] as Button).pressed.connect(_learn_medical_exam.bind(equipment["highlight"], equipment_ui))
+
+
+func _open_clinic_files(highlight: MaskInteractionHighlight, ui: SceneItemInteraction) -> void:
+	highlight.hide_highlight()
+	var pages: Array[String] = [
+		"【日记残章】老甘催我敲定这里的项目，可是迟迟难有进展。这里的村民似乎误会了我，旧友木匠也斥责我，说我们的工厂毁坏了这里的花草树木。可我无意破坏这里的生态环境，这里的水流恶臭也并非是工业园区带来的，为什么他们不信任我，为什么……",
+		"【一张乡村医院记录】患者口吐黑血，身体浮肿严重，当前医疗资源无法进行进一步检查。已尝试联系患者丈夫，未打通电话，会持续尝试联络其亲属。",
+	]
+	ui.open_paged_text("废弃医院档案", pages, "clinic_files", {
+		"id": "abandoned_clinic_medical_records",
+		"title": "废弃医院档案",
+		"summary": "日记否认工业园区造成水流恶臭；另一份乡村医院记录记载患者口吐黑血、身体严重浮肿，院方未能联系上其丈夫。",
+		"pages": pages,
+	})
+
+
+func _learn_medical_exam(highlight: MaskInteractionHighlight, ui: SceneItemInteraction) -> void:
+	highlight.hide_highlight()
+	if SkillSystem.is_medical_exam_unlocked():
+		ui.open_paged_text("医学检验设备", ["你已经掌握了这套设备的使用方法，可以从右下角的技能列表中使用“医学检验”。"])
+		return
+	GameState.set_investigation_state("skill_unlocked_medical_exam", true)
+	GameState.save_game(GameState.AUTO_SAVE_PATH, false)
+	SceneItemInteraction.show_content_added_toast("医学检验", "技能列表")
+	ui.open_paged_text("学会技能：医学检验", ["你整理了诊所遗留的检验器械与试剂，掌握了基础医学检验方法。现在可以对宿舍洗澡水或场景中的人物使用“医学检验”。"])
 
 
 func _create_village_committee_hotspots() -> void:
@@ -193,6 +300,7 @@ func _create_village_committee_hotspots() -> void:
 	add_child(notice_ui)
 
 	(xuan["button"] as Button).pressed.connect(_open_wu_xuan_dialogue.bind(xuan["highlight"]))
+	_scene_npc_hotspots["wu_xuan"] = xuan
 	(photos["button"] as Button).pressed.connect(_open_committee_photo_match.bind(photos["highlight"], photo_ui))
 	(computer["button"] as Button).pressed.connect(_open_committee_computer.bind(computer["highlight"], computer_ui))
 	(notice["button"] as Button).pressed.connect(_open_hospital_notice.bind(notice["highlight"], notice_ui))
@@ -200,6 +308,12 @@ func _create_village_committee_hotspots() -> void:
 
 func _open_wu_xuan_dialogue(highlight: MaskInteractionHighlight) -> void:
 	highlight.hide_highlight()
+	if not NpcRegistry.is_npc_present_at("wu_xuan", location_id):
+		_show_scene_message("无人回应", "吴萱已经不在村委会，这里现在没有人回应你。")
+		return
+	if not NpcRegistry.can_interact_with_npc("wu_xuan"):
+		_show_scene_message("无人回应", "吴萱拒绝再与你交谈。")
+		return
 	var dialogue_ui := get_tree().get_first_node_in_group("dialogue_ui")
 	if dialogue_ui == null or not dialogue_ui.has_method("open_dialogue"):
 		return
@@ -329,6 +443,332 @@ func _open_hospital_notice(highlight: MaskInteractionHighlight, interaction_ui: 
 	)
 
 
+func _create_village_chief_house_hotspots() -> void:
+	# 保险柜位于画面左侧高柜区域。这里使用透明矩形热点，避免为尚无独立遮罩的物品伪造素材。
+	var safe_button := Button.new()
+	safe_button.name = "VillageChiefSafeHotspot"
+	safe_button.anchor_left = 0.17
+	safe_button.anchor_top = 0.13
+	safe_button.anchor_right = 0.34
+	safe_button.anchor_bottom = 0.58
+	safe_button.flat = true
+	safe_button.tooltip_text = "里屋保险柜"
+	safe_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	add_child(safe_button)
+	safe_button.pressed.connect(_open_village_chief_safe)
+
+
+func _open_village_chief_safe() -> void:
+	var ui := SceneItemInteraction.new()
+	ui.name = "VillageChiefSafeInteraction"
+	add_child(ui)
+	if not NpcRegistry.get_npcs_at(location_id).is_empty():
+		ui.open_choice({
+			"id": "village_chief_safe_blocked",
+			"title": "里屋保险柜",
+			"description": "吴志源还在屋里。他一直留意着你的动作，现在不能检查这只保险柜。",
+			"choices": [{"id": "leave", "label": "离开", "close": true}],
+		})
+		return
+	if bool(GameState.get_investigation_state("village_chief_safe_opened", false)):
+		ui.open_paged_text("里屋保险柜", ["保险柜已经被打开。你收好其中的账本记录，其余物品暂时没有新的发现。"])
+		return
+	if not GameState.has_item("village_chief_safe_silver_key"):
+		ui.open_choice({
+			"id": "village_chief_safe_locked",
+			"title": "里屋保险柜",
+			"description": "保险柜上着双锁。没有对应钥匙时，贸然撬动很可能留下明显痕迹。",
+			"choices": [{"id": "leave", "label": "暂时离开", "close": true}],
+		})
+		return
+	GameState.set_investigation_state("village_chief_safe_opened", true)
+	GameState.trigger_clue("bribe_ledger")
+	GameState.add_item("hunting_rifle")
+	GameState.add_document_clue({
+		"id": "bribe_ledger",
+		"title": "可疑的贿赂账本",
+		"summary": "一份记录异常款项往来的账本，可能与村中利益交换有关。",
+		"pages": ["你用吴萱交出的备用钥匙打开了双锁保险柜。几本普通旧账中夹着一册没有封面的往来记录。", "记录里有数笔来源含糊的款项，日期与工厂撤出、医院迁址以及村中水源争议接近。收款人与具体用途被人为简写，像是刻意避免留下完整证据。"],
+	})
+	GameState.save_game(GameState.AUTO_SAVE_PATH, false)
+	SceneItemInteraction.show_content_added_toast("可疑的贿赂账本", "线索册")
+	ui.open_paged_text("保险柜中的账本", ["你用备用钥匙打开保险柜，在普通旧账中发现了一册没有封面的异常往来记录。", "记录日期与工厂撤出、医院迁址和水源争议接近，但收款人与用途都被刻意简写。", "保险柜内侧还固定着一支旧猎枪。你将它收进背包；它可在攻击技能中作为武器使用。"])
+
+
+func open_skill_menu_for_npc(npc_id: String = "", dialogue_ui: Node = null) -> void:
+	var targets: Array[String] = []
+	if not npc_id.is_empty() and NpcRegistry.is_npc_present_at(npc_id, location_id):
+		targets.append(npc_id)
+	elif npc_id.is_empty():
+		targets = NpcRegistry.get_npcs_at(location_id)
+	var entries: Array[Dictionary] = []
+	if location_id == "temporary_dorm" and SkillSystem.is_medical_exam_unlocked():
+		entries.append({
+			"id": "medical_exam::water",
+			"skill_id": "medical_exam",
+			"target_id": "water",
+			"title": "医学检验：淋浴水",
+			"summary": "采集宿舍淋浴水样并生成污染检验线索。",
+			"badge": "医学",
+			"action_tooltip": "对淋浴水使用医学检验",
+		})
+	for target_id in targets:
+		if not NpcRegistry.can_interact_with_npc(target_id):
+			continue
+		var target_name := NpcRegistry.get_short_name(target_id)
+		for skill in SkillSystem.skills_for_target(true, location_id):
+			var skill_id := String(skill.get("id", ""))
+			if not SkillSystem.is_skill_available_for_npc(skill_id, target_id):
+				continue
+			entries.append({
+				"id": "%s::%s" % [skill_id, target_id],
+				"skill_id": skill_id,
+				"target_id": target_id,
+				"title": "%s：%s" % [String(skill.get("title", skill_id)), target_name],
+				"summary": String(skill.get("description", "")),
+				"badge": "医学" if skill_id == "medical_exam" else ("力量" if skill_id == "attack" else "魅力"),
+				"action_tooltip": "对%s使用%s" % [target_name, String(skill.get("title", skill_id))],
+			})
+	var popup := ClueBookPopup.new()
+	popup.name = "SkillListPopup"
+	add_child(popup)
+	popup.action_requested.connect(_on_skill_list_action.bind(popup, dialogue_ui))
+	popup.open_action_list(entries, "技能", "选择当前场景可用的技能与目标。", "使用")
+
+
+func _on_skill_list_action(entry: Dictionary, popup: ClueBookPopup, dialogue_ui: Node) -> void:
+	var skill_id := String(entry.get("skill_id", ""))
+	var target_id := String(entry.get("target_id", ""))
+	if skill_id.is_empty() or target_id.is_empty():
+		return
+	var ui := SceneItemInteraction.new()
+	ui.name = "SceneSkillInteraction"
+	add_child(ui)
+	ui.choice_selected.connect(_on_skill_ui_choice.bind(ui, dialogue_ui))
+	if skill_id == "medical_exam":
+		_apply_medical_skill(target_id, ui)
+	elif skill_id == "attack":
+		if is_instance_valid(popup):
+			popup.queue_free()
+		_open_attack_weapon_mode(target_id, ui)
+	else:
+		_open_social_reason(skill_id, target_id, ui)
+	if is_instance_valid(popup):
+		popup.queue_free()
+
+
+func _open_attack_weapon_mode(npc_id: String, ui: SceneItemInteraction) -> void:
+	ui.choice_selected.connect(_on_attack_weapon_mode_selected.bind(ui, npc_id), CONNECT_ONE_SHOT)
+	ui.open_choice({
+		"id": "attack_weapon_mode::%s" % npc_id,
+		"title": "攻击：%s" % NpcRegistry.get_short_name(npc_id),
+		"description": "选择徒手攻击，或打开背包选择一件物品作为武器。选定后会先明确展示力量检定难度，再由你确认。",
+		"choices": [{"id": "bare_hands", "label": "徒手攻击"}, {"id": "open_bag", "label": "从背包选择武器"}, {"id": "leave", "label": "取消", "close": true}],
+	})
+
+
+func _on_attack_weapon_mode_selected(_interaction_id: String, choice_id: String, _result: Dictionary, ui: SceneItemInteraction, npc_id: String) -> void:
+	if choice_id == "bare_hands":
+		_open_attack_confirmation(npc_id, "", ui)
+	elif choice_id == "open_bag":
+		ui.close_interaction()
+		_open_attack_weapon_bag(npc_id)
+
+
+func _open_attack_weapon_bag(npc_id: String) -> void:
+	var bag: Node = get_tree().get_first_node_in_group("attack_weapon_bag")
+	if bag == null:
+		bag = ITEM_BAG_POPUP_SCENE.instantiate()
+		bag.name = "AttackWeaponBag"
+		bag.add_to_group("attack_weapon_bag")
+		add_child(bag)
+	if bag.has_signal("weapon_picked"):
+		bag.connect("weapon_picked", _on_attack_weapon_picked.bind(npc_id), CONNECT_ONE_SHOT)
+	if bag.has_method("open_weapon_selection"):
+		bag.call("open_weapon_selection", GameState.inventory)
+
+
+func _on_attack_weapon_picked(weapon_id: String, npc_id: String) -> void:
+	var ui := SceneItemInteraction.new()
+	ui.name = "AttackConfirmation"
+	add_child(ui)
+	_open_attack_confirmation(npc_id, weapon_id, ui)
+
+
+func _open_attack_confirmation(npc_id: String, weapon_id: String, ui: SceneItemInteraction) -> void:
+	var preview := SkillSystem.get_attack_preview(npc_id, weapon_id)
+	ui.choice_selected.connect(_on_attack_confirmation_selected.bind(ui, npc_id, weapon_id), CONNECT_ONE_SHOT)
+	ui.open_choice({
+		"id": "attack_confirm::%s" % npc_id,
+		"title": "确认攻击：%s" % NpcRegistry.get_short_name(npc_id),
+		"description": "武器：%s\n基础难度：%d；力量：%d；武器减难度：%d。\n本次力量检定最终难度为：%d。\n攻击成功会永久杀死目标；失败后目标将永久拒绝与你交互，且所有人都会知道这次攻击。" % [String(preview.get("weapon_name", "徒手")), int(preview.get("base_difficulty", 18)), int(preview.get("strength", 0)), int(preview.get("weapon_reduction", 0)), int(preview.get("final_difficulty", 18))],
+		"choices": [{"id": "confirm", "label": "发动攻击"}, {"id": "leave", "label": "取消", "close": true}],
+	})
+
+
+func _on_attack_confirmation_selected(_interaction_id: String, choice_id: String, _result: Dictionary, ui: SceneItemInteraction, npc_id: String, weapon_id: String) -> void:
+	if choice_id != "confirm":
+		return
+	if not NpcRegistry.is_npc_present_at(npc_id, location_id) or not NpcRegistry.can_interact_with_npc(npc_id):
+		ui.open_paged_text("攻击无法发动", ["目标已经不在这里，或不再接受你的交互。"])
+		return
+	var result := SkillSystem.perform_attack_check(npc_id, weapon_id)
+	var passed := bool(result.get("passed", false))
+	var target_name := NpcRegistry.get_short_name(npc_id)
+	var weapon_name := String(result.get("weapon_name", "徒手"))
+	var pages: Array[String] = [CheckSystem.result_to_display_text(result)]
+	if passed and NpcRegistry.kill_npc(npc_id, "被玩家用%s攻击致死" % weapon_name):
+		pages.append("%s倒下后再也没有起身。该人物已永久死亡，此场景会切换为无人状态。" % target_name)
+		MemoryStore.add_global_memory("外来者在%s用%s杀死了%s。村中所有人都已得知此事。" % [NpcRegistry.get_location_name(location_id), weapon_name, target_name], ["attack", "killed", npc_id, location_id])
+	else:
+		NpcRegistry.mark_npc_hostile(npc_id, "玩家使用%s攻击失败" % weapon_name)
+		pages.append("攻击没有得手。%s从此拒绝与你进行任何交互；村中所有人都会知道你攻击过他。" % target_name)
+		MemoryStore.add_global_memory("外来者在%s试图用%s攻击%s但失败了。村中所有人都已得知此事。" % [NpcRegistry.get_location_name(location_id), weapon_name, target_name], ["attack", "failed", npc_id, location_id])
+	var dialogue_ui := get_tree().get_first_node_in_group("dialogue_ui")
+	if dialogue_ui != null and dialogue_ui.has_method("is_open") and dialogue_ui.is_open() and dialogue_ui.has_method("close_dialogue"):
+		dialogue_ui.close_dialogue()
+	TimeSystem.on_dialogue_turn_completed()
+	GameState.save_game(GameState.AUTO_SAVE_PATH, false)
+	ui.open_paged_text("攻击检定", pages)
+
+
+func _on_skill_ui_choice(interaction_id: String, choice_id: String, result: Dictionary, ui: SceneItemInteraction, dialogue_ui: Node) -> void:
+	if not interaction_id.begins_with("social_skill::") or choice_id != "confirm":
+		return
+	var interaction_parts := interaction_id.split("::", false)
+	if interaction_parts.size() != 3:
+		return
+	var reason := String(result.get("input", "")).strip_edges()
+	if reason.is_empty():
+		ui.open_choice({
+			"id": interaction_id,
+			"title": "需要说明理由",
+			"description": "理由不能为空。具体、能引用事实或线索的理由更容易说服对方。",
+			"allow_input": true,
+			"input_placeholder": "输入你的理由……",
+			"choices": [{"id": "confirm", "label": "进行魅力检定"}, {"id": "leave", "label": "取消", "close": true}],
+		})
+		return
+	_resolve_social_skill(String(interaction_parts[1]), String(interaction_parts[2]), reason, ui, dialogue_ui)
+
+
+func _open_social_reason(skill_id: String, npc_id: String, ui: SceneItemInteraction) -> void:
+	var title := "劝离" if skill_id == "dismiss" else "说服同阵营"
+	var description := "输入你的理由。检定会综合魅力、好感度、披露等级以及理由是否具体合理。"
+	var placeholder := "输入你的说服理由……"
+	if skill_id == "persuade_ally":
+		description = "劝说对方加入你的阵营，与你共同摧毁祭坛。普通观点说服请直接在对话输入框中进行。"
+		placeholder = "说明为什么应该与你共同摧毁祭坛……"
+	ui.open_choice({
+		"id": "social_skill::%s::%s" % [skill_id, npc_id],
+		"title": "%s：%s" % [title, NpcRegistry.get_short_name(npc_id)],
+		"description": description,
+		"allow_input": true,
+		"input_placeholder": placeholder,
+		"choices": [{"id": "confirm", "label": "进行魅力检定"}, {"id": "leave", "label": "取消", "close": true}],
+	})
+
+
+func _resolve_social_skill(skill_id: String, npc_id: String, reason: String, ui: SceneItemInteraction, dialogue_ui: Node) -> void:
+	var profile := NpcRegistry.get_dialogue_profile(npc_id)
+	if profile.is_empty() or not NpcRegistry.can_be_persuaded(npc_id):
+		ui.open_paged_text("技能无法使用", ["当前人物已经离开，或不接受这种形式的说服。"])
+		return
+	if skill_id == "persuade_ally" and bool(GameState.get_investigation_state("altar_ally_%s" % npc_id, false)):
+		ui.open_paged_text("已经加入阵营", ["%s已经答应与你共同摧毁祭坛，无需再次检定。" % NpcRegistry.get_short_name(npc_id)])
+		return
+	if skill_id == "persuade_ally" and bool(GameState.get_investigation_state("altar_ally_attempted_%s" % npc_id, false)):
+		ui.open_paged_text("机会已经用过", ["你已经尝试拉拢过%s。无论上次结果如何，都不能再次进行这项检定。" % NpcRegistry.get_short_name(npc_id)])
+		return
+	var check_result := SkillSystem.perform_social_check(profile, skill_id, reason)
+	if skill_id == "persuade_ally":
+		GameState.set_investigation_state("altar_ally_attempted_%s" % npc_id, true)
+		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
+	if is_instance_valid(dialogue_ui) and dialogue_ui.has_method("resolve_scene_skill"):
+		ui.close_interaction()
+		dialogue_ui.resolve_scene_skill(skill_id, reason, check_result)
+		return
+	var passed := bool(check_result.get("passed", false))
+	var pages: Array[String] = [CheckSystem.result_to_display_text(check_result), SkillSystem.social_breakdown(check_result)]
+	if skill_id == "dismiss":
+		if passed and NpcRegistry.dismiss_npc(npc_id, "被玩家以理由劝离：%s" % reason):
+			pages.append("%s接受了你的理由，离开了当前场景。两小时内这里会保持无人，之后他会返回。" % NpcRegistry.get_short_name(npc_id))
+		else:
+			pages.append("%s拒绝离开。" % NpcRegistry.get_short_name(npc_id))
+	else:
+		if passed:
+			GameState.add_affinity(npc_id, 1)
+			GameState.set_investigation_state("altar_ally_%s" % npc_id, true)
+			MemoryStore.add_belief(npc_id, "应该与外来者结成同盟，并共同摧毁祭坛", 3, reason, "altar_alliance_skill", "ally_destroy_altar")
+			if npc_id == "wu_zhiyuan":
+				GameState.add_item("village_chief_safe_silver_key")
+				pages.append("村长把保险柜钥匙交给了你。")
+			pages.append("%s被你的理由打动，正式答应加入你的阵营，与你共同摧毁祭坛。好感度 +1。" % NpcRegistry.get_short_name(npc_id))
+		else:
+			pages.append("%s认为风险太大，没有答应加入摧毁祭坛的阵营。" % NpcRegistry.get_short_name(npc_id))
+	MemoryStore.add_global_memory("外来者以“%s”为理由对%s使用%s，检定%s。" % [reason, NpcRegistry.get_short_name(npc_id), "劝离" if skill_id == "dismiss" else "祭坛阵营拉拢", "成功" if passed else "失败"], ["skill", skill_id, npc_id])
+	GameState.save_game(GameState.AUTO_SAVE_PATH, false)
+	ui.open_paged_text("技能检定", pages)
+
+
+func _apply_medical_skill(target_id: String, ui: SceneItemInteraction) -> void:
+	var data := SkillSystem.get_water_result() if target_id == "water" else SkillSystem.get_medical_result(target_id)
+	if data.is_empty():
+		return
+	var pages: Array[String] = []
+	for raw_page in data.get("pages", []):
+		var page := String(raw_page).strip_edges()
+		if not page.is_empty():
+			pages.append(page)
+	var entry := {
+		"id": String(data.get("clue_id", "")),
+		"title": String(data.get("title", "医学检验结果")),
+		"summary": String(data.get("summary", "")),
+		"pages": pages,
+		"linked_clue_ids": data.get("linked_clue_ids", []),
+	}
+	if GameState.add_document_clue(entry):
+		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
+		SceneItemInteraction.show_content_added_toast(String(entry.get("title", "医学检验结果")), "线索册")
+	ui.open_paged_text(String(data.get("title", "医学检验结果")), pages, "medical_exam::%s" % target_id)
+
+
+func _show_scene_message(title: String, text: String) -> void:
+	var ui := SceneItemInteraction.new()
+	add_child(ui)
+	ui.open_paged_text(title, [text])
+
+
+func _on_scene_npc_presence_changed(_npc_id: String, from_loc: String, to_loc: String, _reason: String) -> void:
+	if from_loc == location_id or to_loc == location_id:
+		_refresh_scene_presence()
+
+
+func _refresh_scene_presence() -> void:
+	if location_id.is_empty():
+		return
+	var scene_empty := NpcRegistry.get_npcs_at(location_id).is_empty()
+	# 田间小路的人物背景由分钟级日程控制，不能被通用的有人/无人刷新覆盖。
+	# 否则玩家在出场时段进入场景时会看到人物 mask，却仍是无人背景。
+	if _uses_road_hermit_schedule:
+		_refresh_road_hermit_schedule()
+	elif scene_empty and empty_background_texture != null:
+		background.texture = alternate_empty_background_texture if _showing_alternate_view and alternate_empty_background_texture != null else empty_background_texture
+	elif not _uses_time_based_background:
+		background.texture = alternate_background_texture if _showing_alternate_view else background_texture
+	for raw_id in _scene_npc_hotspots:
+		var hotspot: Variant = _scene_npc_hotspots[raw_id]
+		if hotspot is not Dictionary:
+			continue
+		var present := NpcRegistry.is_npc_present_at(String(raw_id), location_id)
+		var button: Variant = (hotspot as Dictionary).get("button")
+		var highlight: Variant = (hotspot as Dictionary).get("highlight")
+		if button is CanvasItem:
+			(button as CanvasItem).visible = present
+		if highlight is CanvasItem and not present:
+			(highlight as CanvasItem).visible = false
+
+
 func _start_dorm_tutorial_if_needed() -> void:
 	const TUTORIAL_STATE_ID := "onboarding:temporary_dorm_tutorial"
 	if bool(GameState.get_investigation_state(TUTORIAL_STATE_ID, false)):
@@ -336,7 +776,7 @@ func _start_dorm_tutorial_if_needed() -> void:
 	var tutorial_pages: Array[String] = [
 		"欢迎来到思源村。你会从临时宿舍开始每一天的调查：前往地图上的地点、与村民交谈并观察环境，逐步拼出事件的真相。",
 		"完成本指引后，这份教程会被收录在右侧的线索册中，方便你随时重看。",
-		"点击场景中高亮人物或物品可以进行交互。与村民对话时，可以直接打字，也可以打开背包附带物品并说明用途。",
+		"点击场景中高亮人物或物品可以进行交互。右下角原有的技能按钮会列出当前场景可用的技能与目标；对话中点击同一按钮会针对当前人物打开技能列表。",
 		"部分行动会触发检定。系统会掷出骰点，加入相应属性和修正值，再与难度（由你选择方式的合理性判定）比较；检定过程与成功或失败都会明确展示。某些物品每天只能尝试检定一次。",
 		"时间会持续推进。白天可以自由调查；19点后需要回到临时宿舍休息，休息会推进到次日早晨9点。请留意一天内有限的行动与检定机会。",
 		"准备好后，开始你的调查吧。"
@@ -534,7 +974,7 @@ func _on_group_chat_requested() -> void:
 		loc_id = NpcRegistry.location_id_for_scene(String(scene.scene_file_path)) if scene != null else ""
 	if loc_id == "":
 		return
-	var npc_ids := NpcRegistry.get_npcs_at(loc_id)
+	var npc_ids := NpcRegistry.get_interactable_npcs_at(loc_id)
 	if npc_ids.size() < 2:
 		return
 	# 获取内嵌的 GroupChatCoordinator 节点
@@ -549,6 +989,8 @@ func _on_group_chat_requested() -> void:
 
 ## NpcPresenceBar 上选中某 NPC → 走 NpcInteractable 路径打开私聊
 func _on_presence_npc_selected(npc_id: String) -> void:
+	if not NpcRegistry.can_interact_with_npc(npc_id):
+		return
 	var ui := get_tree().get_first_node_in_group("dialogue_ui")
 	if ui == null or (ui.has_method("is_open") and ui.is_open()):
 		return
@@ -598,13 +1040,14 @@ func _create_view_toggle_button() -> void:
 
 func _toggle_background_view() -> void:
 	_showing_alternate_view = not _showing_alternate_view
-	background.texture = alternate_background_texture if _showing_alternate_view else background_texture
+	_refresh_scene_presence()
 	if is_instance_valid(_view_toggle_button):
 		_view_toggle_button.text = "切换至前方" if _showing_alternate_view else alternate_view_label
 
 
 func _on_time_changed(_day: int, _minute_of_day: int) -> void:
 	_refresh_time_based_background()
+	_refresh_road_hermit_schedule()
 
 
 func _refresh_time_based_background() -> void:
@@ -614,6 +1057,59 @@ func _refresh_time_based_background() -> void:
 	var is_night := TimeSystem.minute_of_day >= 19 * 60
 	background.texture = alternate_background_texture if is_night else background_texture
 	background.visible = background.texture != null
+
+
+func _refresh_road_hermit_schedule() -> void:
+	if not _uses_road_hermit_schedule:
+		return
+	var should_show := NpcRegistry.is_mysterious_hermit_road_time()
+	if not should_show and not _road_hermit_departure_deferred and _is_hermit_dialogue_open():
+		# 如果 18:00 到点时仍在交谈，本次进入场景期间不再切走人物。
+		# 场景离开后节点会销毁，下次进入时重新依据真实时间判定。
+		_road_hermit_departure_deferred = true
+	if _road_hermit_departure_deferred:
+		should_show = true
+	_set_road_hermit_visible(should_show)
+
+
+func _is_hermit_dialogue_open() -> bool:
+	var dialogue_ui := get_tree().get_first_node_in_group("dialogue_ui")
+	if dialogue_ui == null or not dialogue_ui.has_method("is_open") or not dialogue_ui.is_open():
+		return false
+	var active_npc: Variant = dialogue_ui.get("current_npc")
+	return active_npc is Dictionary and String((active_npc as Dictionary).get("id", "")) == "mysterious_hermit"
+
+
+func _set_road_hermit_visible(visible_now: bool) -> void:
+	background.texture = scheduled_background_texture if visible_now else background_texture
+	background.visible = background.texture != null
+	if _road_hermit_nodes.is_empty():
+		_road_hermit_nodes = _create_mask_hotspot(
+			"RoadMysteriousHermit",
+			"res://assets/scenes/masks/road_man_mask.png",
+			Rect2(0.155, 0.485, 0.105, 0.370),
+			"与神秘人交谈"
+		)
+		(_road_hermit_nodes["button"] as Button).pressed.connect(_open_road_mysterious_hermit_dialogue)
+	(_road_hermit_nodes["highlight"] as Control).visible = visible_now
+	(_road_hermit_nodes["button"] as Control).visible = visible_now
+
+
+func _open_road_mysterious_hermit_dialogue() -> void:
+	if _road_hermit_nodes.is_empty():
+		return
+	(_road_hermit_nodes["highlight"] as MaskInteractionHighlight).hide_highlight()
+	var dialogue_ui := get_tree().get_first_node_in_group("dialogue_ui")
+	if dialogue_ui == null or not dialogue_ui.has_method("open_dialogue"):
+		return
+	if dialogue_ui.has_method("is_open") and dialogue_ui.is_open():
+		return
+	if not NpcRegistry.can_interact_with_npc("mysterious_hermit"):
+		_show_scene_message("无人回应", "神秘人警惕地避开了你，不再接受交谈。")
+		return
+	var profile: Dictionary = NpcRegistry.get_dialogue_profile("mysterious_hermit")
+	if not profile.is_empty():
+		dialogue_ui.open_dialogue(profile)
 
 
 func _open_map() -> void:

@@ -65,7 +65,12 @@
     },
     {
       "id": "wu_xuan_pollution_evidence_presented",
-      "when": "dialogue_open",
+      "when": "clue_presented",
+      "presented_clues": [
+        "water_contamination_proof",
+        "gong_water_anomaly_admitted",
+        "water_sample_tested"
+      ],
       "once": true,
       "all_of": [
         {"type": "quest_stage", "id": "wu_xuan_factory_notice", "min": 2}
@@ -94,10 +99,15 @@
   "importance": "main",
   "sort_priority": 20,
   "mood_map": {
-    "平静": "neutral",
-    "怀疑": "suspicious",
+    "平静": "normal",
+    "neutral": "normal",
+    "thinking": "normal",
+    "怀疑": "angry",
     "不安": "sad",
     "信任": "happy",
+    "happy": "happy",
+    "surprised": "angry",
+    "weary": "sad",
     "生气": "angry"
   }
 }

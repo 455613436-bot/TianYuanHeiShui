@@ -19,6 +19,35 @@ static func find_available_event(profile: Dictionary, when: String) -> Dictionar
 	return {}
 
 
+## Find a deterministic response that explicitly accepts one of the presented
+## clue ids. Story requirements (quest stage, affinity, other clues, once) are
+## still evaluated by is_available(), so presenting evidence cannot bypass
+## progression gates.
+static func find_presented_clue_event(profile: Dictionary, clue_ids: Array[String]) -> Dictionary:
+	if clue_ids.is_empty():
+		return {}
+	var events: Variant = profile.get("fixed_story_events", [])
+	if events is not Array:
+		return {}
+	for raw_event in events:
+		if raw_event is not Dictionary:
+			continue
+		var event: Dictionary = raw_event
+		if String(event.get("when", "")) != "clue_presented":
+			continue
+		var accepted: Variant = event.get("presented_clues", [])
+		if accepted is not Array:
+			continue
+		var matches := false
+		for raw_accepted in accepted:
+			if clue_ids.has(String(raw_accepted)):
+				matches = true
+				break
+		if matches and is_available(profile, event):
+			return event.duplicate(true)
+	return {}
+
+
 ## 固定事件可用 text（单段）或 pages（多段）定义；多段会逐页等待玩家确认。
 static func get_pages(event: Dictionary) -> Array[String]:
 	var pages: Array[String] = []
@@ -80,6 +109,13 @@ static func apply_event(event: Dictionary) -> Dictionary:
 			var state_id := String((investigation as Dictionary).get("id", ""))
 			if not state_id.is_empty():
 				GameState.set_investigation_state(state_id, (investigation as Dictionary).get("value", true))
+		var current_time_state_id: String = String(data.get("record_current_time_state", "")).strip_edges()
+		if not current_time_state_id.is_empty():
+			GameState.set_investigation_state(current_time_state_id, {
+				"day": TimeSystem.current_day,
+				"minute": TimeSystem.minute_of_day,
+				"total_minutes": TimeSystem.total_minutes(),
+			})
 		var affinity_delta := int(data.get("affinity_delta", 0))
 		var affinity_npc_id := String(data.get("affinity_npc_id", ""))
 		if affinity_delta != 0 and not affinity_npc_id.is_empty():
