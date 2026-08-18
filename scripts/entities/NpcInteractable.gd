@@ -83,6 +83,9 @@ func _on_body_exited(body: Node) -> void:
 func on_player_interact(_player: Node) -> void:
 	if not NpcRegistry.can_interact_with_npc(npc_id):
 		return
+	var location_id := NpcRegistry.get_location_of(npc_id)
+	if location_id.is_empty() or not NpcRegistry.is_npc_present_at(npc_id, location_id):
+		return
 	if profile.is_empty():
 		push_warning("[NPC %s] profile 为空，无法对话" % npc_id)
 		return

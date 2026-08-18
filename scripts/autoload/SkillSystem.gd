@@ -125,7 +125,7 @@ func perform_trust_check(reason: String) -> Dictionary:
 
 
 func get_attack_preview(npc_id: String, weapon_id: String = "") -> Dictionary:
-	var base_difficulty := 28 if npc_id in ["li_leshui_day", "li_leshui_night", "mysterious_hermit"] else 18
+	var base_difficulty := CheckSystem.RAW_DIFFICULTY_MAX if npc_id in ["li_leshui_day", "li_leshui_night", "mysterious_hermit"] else 18
 	var reduction := _attack_weapon_reduction(weapon_id)
 	var attribute := GameState.get_attribute("strength")
 	var final_difficulty := clampi(base_difficulty - attribute - reduction, CheckSystem.MIN_DIFFICULTY, CheckSystem.MAX_DIFFICULTY)

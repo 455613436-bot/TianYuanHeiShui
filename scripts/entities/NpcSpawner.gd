@@ -21,13 +21,18 @@ const MoodPortraitUtil := preload("res://scripts/ui/MoodPortrait.gd")
 
 ## 已经生成的 NPC 节点：npc_id -> NpcInteractable
 var _spawned: Dictionary = {}
+var _time_refresh_scheduled := false
 
 
 func _ready() -> void:
 	# 场景切换后 registry 可能还没就绪（autoload 顺序），用 call_deferred 等一帧
 	call_deferred("_spawn_npcs")
 	# 监听位置变化，动态更新（NPC 走了就隐藏节点，新来的就生成）
-	NpcRegistry.npc_moved.connect(_on_npc_moved)
+	if not NpcRegistry.npc_moved.is_connected(_on_npc_moved):
+		NpcRegistry.npc_moved.connect(_on_npc_moved)
+	# 白天/夜间李乐水的在场状态由游戏时间决定；时间变化时刷新当前地点。
+	if not TimeSystem.minute_changed.is_connected(_on_time_changed):
+		TimeSystem.minute_changed.connect(_on_time_changed)
 
 
 func get_location_id() -> String:
@@ -58,6 +63,33 @@ func _spawn_npcs() -> void:
 		if node != null:
 			_spawned[npc_id] = node
 		index += 1
+
+
+func _on_time_changed(_day: int, _minute_of_day: int) -> void:
+	if _time_refresh_scheduled:
+		return
+	_time_refresh_scheduled = true
+	call_deferred("_refresh_npcs_for_time")
+
+
+func _refresh_npcs_for_time() -> void:
+	_time_refresh_scheduled = false
+	var loc_id := get_location_id()
+	if loc_id == "":
+		return
+	var expected_ids: Array[String] = NpcRegistry.get_npcs_at(loc_id)
+	expected_ids.sort()
+	if _spawned_ids() == expected_ids:
+		return
+	_spawn_npcs()
+
+
+func _spawned_ids() -> Array[String]:
+	var ids: Array[String] = []
+	for raw_id in _spawned.keys():
+		ids.append(String(raw_id))
+	ids.sort()
+	return ids
 
 
 func _instantiate_npc(npc_id: String, layout_index: int) -> Node2D:

@@ -3,6 +3,48 @@ extends Control
 
 const MAP_SCENE := "res://scenes/map/WorldMap.tscn"
 const ITEM_BAG_POPUP_SCENE := preload("res://scenes/ui/ItemBagPopup.tscn")
+const PHOTO_MATCHING_INTERACTION_SCRIPT := preload("res://scripts/ui/PhotoMatchingInteraction.gd")
+
+const PHOTO_MATCH_ATTEMPT_STATE := "item_check:wu_xuan_photo_location_match"
+const PHOTO_MATCH_OPTIONS := [
+	{"id": "taoist_temple", "label": "道观"},
+	{"id": "carpenter_workshop", "label": "木匠工坊"},
+	{"id": "construction_site", "label": "旧工地"},
+	{"id": "lakeside_dock", "label": "湖边码头"},
+	{"id": "village_chief_house", "label": "村长家"},
+]
+const PHOTO_MATCH_SNIPPETS := [
+	{
+		"label": "局部 A",
+		"image_path": "res://assets/scenes/village_chief_house.png",
+		"region": Rect2(330, 685, 240, 220),
+		"answer_id": "village_chief_house",
+	},
+	{
+		"label": "局部 B",
+		"image_path": "res://assets/scenes/lakeside_dock.png",
+		"region": Rect2(60, 255, 260, 220),
+		"answer_id": "lakeside_dock",
+	},
+	{
+		"label": "局部 C",
+		"image_path": "res://assets/scenes/carpenter_workshop.png",
+		"region": Rect2(1270, 560, 260, 210),
+		"answer_id": "carpenter_workshop",
+	},
+	{
+		"label": "局部 D",
+		"image_path": "res://assets/scenes/taoist_temple_front.png",
+		"region": Rect2(1120, 745, 260, 215),
+		"answer_id": "taoist_temple",
+	},
+	{
+		"label": "局部 E",
+		"image_path": "res://assets/scenes/bg_construction_site.png",
+		"region": Rect2(1320, 650, 290, 220),
+		"answer_id": "construction_site",
+	},
+]
 
 @export var location_number: String = "?"
 @export var location_name: String = "未命名地点"
@@ -192,7 +234,7 @@ func _create_clinic_door_hotspot() -> void:
 				"label": "撬锁（敏捷检定）",
 				"type": "check",
 				"attribute": "敏捷",
-				"difficulty": 30,
+				"difficulty": CheckSystem.RAW_DIFFICULTY_MAX,
 				"reason": "尝试撬开废弃诊所大门的锁",
 				"success_text": "锁芯发出一声轻响，门闩松开了。",
 				"failure_text": "铁片从锁眼滑开，锈蚀的锁仍纹丝不动。",
@@ -287,10 +329,10 @@ func _create_village_committee_hotspots() -> void:
 		"田原村全体村民联名请愿书"
 	)
 
-	var photo_ui := SceneItemInteraction.new()
+	var photo_ui: PhotoMatchingInteraction = PHOTO_MATCHING_INTERACTION_SCRIPT.new()
 	photo_ui.name = "CommitteePhotoMatchInteraction"
 	add_child(photo_ui)
-	photo_ui.choice_selected.connect(_on_committee_photo_choice.bind(photo_ui))
+	photo_ui.submitted.connect(_on_committee_photo_matching_submitted.bind(photo_ui))
 	var computer_ui := SceneItemInteraction.new()
 	computer_ui.name = "CommitteeComputerInteraction"
 	add_child(computer_ui)
@@ -324,43 +366,36 @@ func _open_wu_xuan_dialogue(highlight: MaskInteractionHighlight) -> void:
 		dialogue_ui.open_dialogue(profile)
 
 
-func _open_committee_photo_match(highlight: MaskInteractionHighlight, interaction_ui: SceneItemInteraction) -> void:
+func _open_committee_photo_match(highlight: MaskInteractionHighlight, interaction_ui: PhotoMatchingInteraction) -> void:
 	highlight.hide_highlight()
 	var stage := GameState.get_quest_stage("wu_xuan_photo_location_match")
 	if stage >= 2:
-		interaction_ui.open_paged_text("旧照片", ["这些旧照片的拍摄地点已经整理完成。去和吴萱谈谈，她会知道下一步该怎么做。"])
+		interaction_ui.open_notice("旧照片", "这些旧照片的拍摄地点已经整理完成。去和吴萱谈谈，她会知道下一步该怎么做。")
+		return
+	var last_attempt: Variant = GameState.get_investigation_state(PHOTO_MATCH_ATTEMPT_STATE, {})
+	if last_attempt is Dictionary and int((last_attempt as Dictionary).get("day", 0)) == TimeSystem.current_day:
+		interaction_ui.open_notice("旧照片", "你今天已经核对过这批照片了。先把结果整理一下，明天再来继续。")
 		return
 	if stage == 0:
 		GameState.set_quest_stage("wu_xuan_photo_location_match", 1)
 		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
-	interaction_ui.open_choice({
-		"id": "wu_xuan_photo_location_match",
-		"title": "旧照片地点匹配",
-		"description": "照片缺少地点标注。你试着根据墙上的旧地图、建筑细节和年份信息把它们对应起来。",
-		"choices": [
-			{
-				"id": "match_locations",
-				"label": "核对地点（智力检定）",
-				"type": "check",
-				"attribute": "智力",
-				"difficulty": 8,
-				"reason": "根据村委会旧照片的建筑和年代信息匹配拍摄地点",
-				"success_text": "你找到了足够多的对应点，照片的地点记录终于能整理出来。",
-				"failure_text": "照片中的建筑改动太多，你暂时还无法确定所有地点。",
-			},
-			{"id": "leave", "label": "暂时放下", "close": true},
-		],
-	})
+	interaction_ui.open_task(
+		"wu_xuan_photo_location_match",
+		"旧照片地点匹配",
+		"照片缺少地点标注。观察每张局部图中的物件、材质和环境细节，从每行独立排列的下拉框选择它属于哪个场景；全部填对才算完成。今天只能提交一次。",
+		PHOTO_MATCH_SNIPPETS,
+		PHOTO_MATCH_OPTIONS,
+		PHOTO_MATCH_ATTEMPT_STATE
+	)
 
 
-func _on_committee_photo_choice(interaction_id: String, choice_id: String, result: Dictionary, interaction_ui: SceneItemInteraction) -> void:
-	if interaction_id != "wu_xuan_photo_location_match" or choice_id != "match_locations":
-		return
+func _on_committee_photo_matching_submitted(result: Dictionary, interaction_ui: PhotoMatchingInteraction) -> void:
 	if not bool(result.get("passed", false)):
 		return
 	GameState.set_quest_stage("wu_xuan_photo_location_match", 2)
 	GameState.save_game(GameState.AUTO_SAVE_PATH, false)
-	interaction_ui.open_paged_text("地点匹配完成", ["你完成了照片地点的核对。去告诉吴萱这件事，她也许会愿意开放更多村委电脑的使用范围。"])
+	SceneItemInteraction.show_content_added_toast("照片地点匹配完成", "调查进度")
+	interaction_ui.set_result_note("你完成了照片地点的核对。去告诉吴萱这件事，她也许会愿意开放更多村委电脑的使用范围。")
 
 
 func _open_committee_computer(highlight: MaskInteractionHighlight, interaction_ui: SceneItemInteraction) -> void:
@@ -404,7 +439,7 @@ func _on_committee_computer_choice(interaction_id: String, choice_id: String, _r
 		if bool(GameState.get_investigation_state("wu_xuan_computer_game_completed", false)) or TimeSystem.minute_of_day + 240 > 19 * 60:
 			return
 		TimeSystem.advance_minutes(240)
-		var gained := GameState.grant_permanent_attribute("intelligence", 1)
+		var gained := GameState.grant_permanent_attribute("intellect", 1)
 		GameState.set_investigation_state("wu_xuan_computer_game_completed", true)
 		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
 		var reward_text := "你在一套老旧的解谜游戏里花了四个小时，思路变得更清晰。"
