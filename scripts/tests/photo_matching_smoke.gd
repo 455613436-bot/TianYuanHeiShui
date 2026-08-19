@@ -59,7 +59,7 @@ func _run() -> void:
 		var dropdown := dropdowns[index]
 		var answer_id := String(snippets[index].get("answer_id", ""))
 		for item_index in range(dropdown.item_count):
-			if String(dropdown.get_item_metadata(item_index)) == answer_id:
+			if str(dropdown.get_item_metadata(item_index)) == answer_id:
 				dropdown.select(item_index)
 				dropdown.item_selected.emit(item_index)
 				break

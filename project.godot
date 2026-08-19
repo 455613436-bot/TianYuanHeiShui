@@ -25,6 +25,7 @@ LLMDebugLogger="*res://scripts/autoload/LLMDebugLogger.gd"
 LLMService="*res://scripts/autoload/LLMService.gd"
 LLMConfig="*res://scripts/autoload/LLMConfig.gd"
 InputManager="*res://scripts/autoload/InputManager.gd"
+AudioManager="*res://scripts/autoload/AudioManager.gd"
 TimeSystem="*res://scripts/autoload/TimeSystem.gd"
 NpcRegistry="*res://scripts/autoload/NpcRegistry.gd"
 SettingsMenu="*res://scenes/ui/SettingsMenu.tscn"
@@ -47,6 +48,10 @@ enabled=PackedStringArray("res://addons/godot_mcp/plugin.cfg")
 [gui]
 
 theme/custom="res://assets/theme/default_theme.tres"
+
+[audio]
+
+default_bus_layout="res://assets/audio/default_bus_layout.tres"
 
 [input]
 

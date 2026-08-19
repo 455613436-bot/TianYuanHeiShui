@@ -10,11 +10,9 @@ extends Control
 ##
 ## 背景音乐 "All That Follows is True.mp3" 循环播放；离开本场景前淡出。
 
-const BGM_PATH := "res://assets/audio/All That Follows is True.mp3"
 const NEW_GAME_SCENE := "res://scenes/ui/AttributeAllocation.tscn"
 const SETTINGS_SCENE_PATH := "res://scenes/ui/SettingsMenu.tscn"  # 兜底：SettingsMenu autoload 缺失时手动打开
 const FADE_OUT_SECONDS := 0.8
-const BGM_TARGET_DB := -6.0
 
 @onready var title_label: Label = $Center/VBox/Title
 @onready var subtitle_label: Label = $Center/VBox/Subtitle
@@ -23,7 +21,6 @@ const BGM_TARGET_DB := -6.0
 @onready var settings_btn: Button = $Center/VBox/Buttons/SettingsBtn
 @onready var quit_btn: Button = $Center/VBox/Buttons/QuitBtn
 @onready var footer_label: Label = $Footer/FooterLabel
-@onready var bgm_player: AudioStreamPlayer = $BGMPlayer
 
 var _leaving := false
 
@@ -39,7 +36,7 @@ func _ready() -> void:
 	quit_btn.pressed.connect(_on_quit)
 
 	_refresh_continue_button()
-	_setup_bgm()
+	AudioManager.play_title_bgm()
 	new_game_btn.grab_focus()
 
 
@@ -53,26 +50,6 @@ func _refresh_continue_button() -> void:
 		continue_btn.tooltip_text = "继续 " + when if when != "" else "继续之前的进度"
 	else:
 		continue_btn.tooltip_text = "尚无存档"
-
-
-func _setup_bgm() -> void:
-	if not ResourceLoader.exists(BGM_PATH):
-		push_warning("[TitleScreen] BGM 缺失: %s" % BGM_PATH)
-		return
-	var stream: AudioStream = load(BGM_PATH)
-	if stream == null:
-		return
-	# 运行时开启循环，避免依赖 .import 里的手动设置
-	if stream is AudioStreamMP3:
-		(stream as AudioStreamMP3).loop = true
-	elif stream is AudioStreamOggVorbis:
-		(stream as AudioStreamOggVorbis).loop = true
-	elif stream is AudioStreamWAV:
-		(stream as AudioStreamWAV).loop_mode = AudioStreamWAV.LOOP_FORWARD
-	bgm_player.stream = stream
-	bgm_player.volume_db = BGM_TARGET_DB
-	bgm_player.bus = "Master"
-	bgm_player.play()
 
 
 func _on_new_game() -> void:
@@ -126,9 +103,4 @@ func _on_quit() -> void:
 
 func _fade_out_bgm() -> void:
 	_leaving = true
-	if not is_instance_valid(bgm_player) or not bgm_player.playing:
-		return
-	var tween := create_tween()
-	tween.tween_property(bgm_player, "volume_db", -80.0, FADE_OUT_SECONDS)
-	await tween.finished
-	bgm_player.stop()
+	await AudioManager.fade_out_bgm(FADE_OUT_SECONDS)

@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/tests/audio_manager_smoke.gd" id="1_audio_test"]
+
+[node name="AudioManagerSmoke" type="Node"]
+script = ExtResource("1_audio_test")

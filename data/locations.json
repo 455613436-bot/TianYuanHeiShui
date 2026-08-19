@@ -6,6 +6,7 @@
     "description": "村长吴志源的住处，也许藏着不愿示人的秘密。",
     "map_position": [0.303, 0.263],
     "scene": "res://scenes/locations/VillageChiefHouse.tscn",
+    "bgm": "res://assets/audio/bgm/village_chief_house.ogg",
     "tags": ["indoor", "private"]
   },
   {
@@ -15,6 +16,7 @@
     "description": "临湖而建的旧亭子，水面平静得有些反常。",
     "map_position": [0.677, 0.473],
     "scene": "res://scenes/locations/LakesidePavilion.tscn",
+    "bgm": "res://assets/audio/bgm/lakeside_pavilion.ogg",
     "tags": ["outdoor", "public"]
   },
   {
@@ -24,6 +26,7 @@
     "description": "阴云下的旧码头，系泊的船只随着水声轻轻摇晃。",
     "map_position": [0.742, 0.552],
     "scene": "res://scenes/locations/LakesideDock.tscn",
+    "bgm": "res://assets/audio/bgm/lakeside_dock.ogg",
     "tags": ["outdoor", "public"]
   },
   {
@@ -33,6 +36,7 @@
     "description": "荒废多年的乡间诊所，门窗紧闭，仍残留着消毒水气味。",
     "map_position": [0.495, 0.306],
     "scene": "res://scenes/locations/AbandonedClinic.tscn",
+    "bgm": "res://assets/audio/bgm/abandoned_clinic.ogg",
     "tags": ["indoor", "ruins"]
   },
   {
@@ -42,6 +46,7 @@
     "description": "蓝瓦白墙的村务中心，保管着村庄档案与重要物品。",
     "map_position": [0.296, 0.431],
     "scene": "res://scenes/locations/VillageCommittee.tscn",
+    "bgm": "res://assets/audio/bgm/village_committee.ogg",
     "tags": ["indoor", "public"]
   },
   {
@@ -51,6 +56,7 @@
     "description": "穆江的樟谊轩，空气中弥漫着木香与艾草的苦味。",
     "map_position": [0.680, 0.180],
     "scene": "res://scenes/locations/CarpenterWorkshop.tscn",
+    "bgm": "res://assets/audio/bgm/carpenter_workshop.ogg",
     "tags": ["indoor", "private"]
   },
   {
@@ -60,6 +66,7 @@
     "description": "利水君观香火未绝，前殿与后室藏着截然不同的气息。",
     "map_position": [0.178, 0.694],
     "scene": "res://scenes/locations/TaoistTemple.tscn",
+    "bgm": "res://assets/audio/bgm/taoist_temple.ogg",
     "tags": ["outdoor", "religious"]
   },
   {
@@ -69,6 +76,7 @@
     "description": "通往山洞深处的山路，两端都透着令人不安的静谧。",
     "map_position": [0.285, 0.752],
     "scene": "res://scenes/locations/BackMountain.tscn",
+    "bgm": "res://assets/audio/bgm/back_mountain.ogg",
     "tags": ["outdoor", "dangerous"]
   },
   {
@@ -78,6 +86,7 @@
     "description": "村中停工已久的旧工地，废弃建材和半成品散落各处。",
     "map_position": [0.420, 0.585],
     "scene": "res://scenes/locations/ConstructionSite.tscn",
+    "bgm": "res://assets/audio/bgm/construction_site.ogg",
     "tags": ["outdoor", "ruins", "dangerous"]
   },
   {
@@ -87,6 +96,7 @@
     "description": "穿过村落与坡地的石板小路，通向更深的山间。",
     "map_position": [0.752, 0.094],
     "scene": "res://scenes/locations/FieldPath.tscn",
+    "bgm": "res://assets/audio/bgm/field_path.ogg",
     "tags": ["outdoor", "public"]
   },
   {
@@ -96,6 +106,7 @@
     "description": "村北的农田仍使用占位背景，等待补充正式场景 CG。",
     "map_position": [0.840, 0.180],
     "scene": "res://scenes/locations/Farmland.tscn",
+    "bgm": "res://assets/audio/bgm/farmland.ogg",
     "tags": ["outdoor", "public", "placeholder"]
   },
   {
@@ -105,6 +116,7 @@
     "description": "夜色已深，先回这里休息，明天再继续调查。",
     "map_position": [0.115, 0.487],
     "scene": "res://scenes/locations/TemporaryDorm.tscn",
+    "bgm": "res://assets/audio/bgm/temporary_dorm.ogg",
     "tags": ["indoor", "temporary", "rest", "placeholder"]
   }
 ]

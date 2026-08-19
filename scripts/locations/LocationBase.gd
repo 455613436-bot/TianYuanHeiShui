@@ -90,6 +90,8 @@ var _scene_npc_hotspots: Dictionary = {}
 func _ready() -> void:
 	resized.connect(_apply_responsive_layout)
 	GameState.restore_current_scene()
+	if not location_id.is_empty():
+		AudioManager.play_location_bgm(location_id)
 	background.texture = background_texture
 	background.visible = background_texture != null
 	background.modulate = Color.WHITE

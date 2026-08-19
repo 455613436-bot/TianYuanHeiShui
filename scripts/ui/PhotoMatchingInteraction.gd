@@ -39,6 +39,10 @@ func open_task(
 	attempt_state_id: String
 ) -> void:
 	_reset()
+	var attempt_state: Variant = GameState.get_investigation_state(attempt_state_id, {})
+	if attempt_state is Dictionary and int((attempt_state as Dictionary).get("day", 0)) == TimeSystem.current_day:
+		open_notice(title, "你今天已经核对过这批照片了。先把结果整理一下，明天再来继续。")
+		return
 	_active_interaction_id = interaction_id
 	_attempt_state_id = attempt_state_id
 	_title_label.text = title
@@ -244,11 +248,12 @@ func _submit_task() -> void:
 	var correct_count := 0
 	for row in _rows:
 		var choice: OptionButton = row.get("choice") as OptionButton
-		var selected_id := String(choice.get_item_metadata(choice.selected))
+		var selected_id := str(choice.get_item_metadata(choice.selected))
 		if selected_id == String(row.get("answer_id", "")):
 			correct_count += 1
 	var total := _rows.size()
 	var passed := correct_count == total
+	AudioManager.play_sfx("confirm" if passed else "error")
 	GameState.set_investigation_state(_attempt_state_id, {
 		"day": attempt_day,
 		"correct": correct_count,

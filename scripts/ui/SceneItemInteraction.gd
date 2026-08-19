@@ -436,6 +436,7 @@ func _run_daily_check(choice: Dictionary) -> void:
 	GameState.set_investigation_state(state_key, {"day": TimeSystem.current_day})
 	GameState.save_game(GameState.AUTO_SAVE_PATH, false)
 	var message := CheckSystem.result_to_display_text(result)
+	AudioManager.play_sfx("confirm" if bool(result.get("passed", false)) else "error")
 	var outcome_key := "success_text" if bool(result.get("passed", false)) else "failure_text"
 	var outcome := String(choice.get(outcome_key, ""))
 	if not outcome.is_empty():

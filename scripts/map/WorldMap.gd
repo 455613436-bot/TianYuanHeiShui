@@ -33,6 +33,7 @@ var _mask_hotspots: Array[Dictionary] = []
 func _ready() -> void:
 	add_to_group("world_map")
 	GameState.restore_current_scene()
+	AudioManager.play_map_bgm()
 	_load_locations()
 	for raw_location: Variant in _locations:
 		var location: Dictionary = raw_location as Dictionary
