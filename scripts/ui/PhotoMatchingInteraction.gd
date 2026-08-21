@@ -21,6 +21,7 @@ var _close_button: Button
 var _rows: Array[Dictionary] = []
 var _active_interaction_id := ""
 var _attempt_state_id := ""
+var _progress_state_id := ""
 var _submitted := false
 
 
@@ -36,15 +37,13 @@ func open_task(
 	instruction: String,
 	snippets: Array,
 	options: Array,
-	attempt_state_id: String
+	attempt_state_id: String,
+	progress_state_id: String = ""
 ) -> void:
 	_reset()
-	var attempt_state: Variant = GameState.get_investigation_state(attempt_state_id, {})
-	if attempt_state is Dictionary and int((attempt_state as Dictionary).get("day", 0)) == TimeSystem.current_day:
-		open_notice(title, "你今天已经核对过这批照片了。先把结果整理一下，明天再来继续。")
-		return
 	_active_interaction_id = interaction_id
 	_attempt_state_id = attempt_state_id
+	_progress_state_id = progress_state_id
 	_title_label.text = title
 	_instruction_label.text = instruction
 	_rows_scroll.show()
@@ -55,6 +54,11 @@ func open_task(
 		var snippet: Variant = snippets[index]
 		if snippet is Dictionary:
 			_add_matching_row(index, snippet as Dictionary, options)
+	var attempt_state: Variant = GameState.get_investigation_state(attempt_state_id, {})
+	if attempt_state is Dictionary and int((attempt_state as Dictionary).get("day", -1)) == TimeSystem.current_day:
+		_submitted = true
+		_status_label.text = "你今天已经验证过了。已确认正确的条目会保留，明天可以继续核对其他疯话。"
+		_status_label.show()
 	_update_submit_state()
 	_overlay.show()
 	_close_button.grab_focus()
@@ -182,17 +186,28 @@ func _add_matching_row(index: int, snippet: Dictionary, options: Array) -> void:
 	label.add_theme_font_size_override("font_size", 18)
 	row.add_child(label)
 
-	var preview := TextureRect.new()
-	preview.custom_minimum_size = Vector2(250, 118)
-	preview.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	preview.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	preview.texture = _build_region_texture(snippet)
-	row.add_child(preview)
+	var prompt_text := String(snippet.get("text", "")).strip_edges()
+	if prompt_text.is_empty():
+		var preview := TextureRect.new()
+		preview.custom_minimum_size = Vector2(250, 118)
+		preview.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		preview.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		preview.texture = _build_region_texture(snippet)
+		row.add_child(preview)
+	else:
+		var prompt := Label.new()
+		prompt.custom_minimum_size = Vector2(520, 0)
+		prompt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		prompt.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		prompt.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		prompt.add_theme_font_size_override("font_size", 17)
+		prompt.text = prompt_text
+		row.add_child(prompt)
 
 	var choice := OptionButton.new()
-	choice.custom_minimum_size = Vector2(240, 44)
+	choice.custom_minimum_size = Vector2(240, 36)
 	choice.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	choice.add_item("请选择场景")
+	choice.add_item("请选择匹配人物" if _active_interaction_id == "lin_deshan_diary_match" else "请选择场景")
 	var row_options: Array = options.duplicate(true)
 	row_options.shuffle()
 	for raw_option in row_options:
@@ -206,9 +221,17 @@ func _add_matching_row(index: int, snippet: Dictionary, options: Array) -> void:
 	)
 	row.add_child(choice)
 
+	var answer_id := String(snippet.get("answer_id", ""))
+	var locked_answers := _get_locked_answers()
+	if locked_answers.has(answer_id):
+		for item_index in range(1, choice.item_count):
+			if str(choice.get_item_metadata(item_index)) == answer_id:
+				choice.select(item_index)
+				choice.disabled = true
+				break
 	_rows.append({
 		"choice": choice,
-		"answer_id": String(snippet.get("answer_id", "")),
+		"answer_id": answer_id,
 	})
 
 
@@ -252,8 +275,19 @@ func _submit_task() -> void:
 		if selected_id == String(row.get("answer_id", "")):
 			correct_count += 1
 	var total := _rows.size()
+	var locked_answers := _get_locked_answers()
+	var newly_locked := 0
+	if not _progress_state_id.is_empty():
+		for row in _rows:
+			var choice: OptionButton = row.get("choice") as OptionButton
+			var answer_id := String(row.get("answer_id", ""))
+			if choice != null and str(choice.get_item_metadata(choice.selected)) == answer_id and not locked_answers.has(answer_id):
+				locked_answers[answer_id] = true
+				newly_locked += 1
+		GameState.set_investigation_state(_progress_state_id, {"locked_answers": locked_answers})
+	correct_count = locked_answers.size() if not _progress_state_id.is_empty() else correct_count
 	var passed := correct_count == total
-	AudioManager.play_sfx("confirm" if passed else "error")
+	AudioManager.play_sfx("confirm" if newly_locked > 0 else "error")
 	GameState.set_investigation_state(_attempt_state_id, {
 		"day": attempt_day,
 		"correct": correct_count,
@@ -280,9 +314,21 @@ func _submit_task() -> void:
 		"interaction_id": _active_interaction_id,
 		"passed": passed,
 		"correct": correct_count,
+		"new_correct": newly_locked,
 		"total": total,
 		"day": attempt_day,
 	})
+
+
+func _get_locked_answers() -> Dictionary:
+	if _progress_state_id.is_empty():
+		return {}
+	var state: Variant = GameState.get_investigation_state(_progress_state_id, {})
+	if state is Dictionary:
+		var locked: Variant = (state as Dictionary).get("locked_answers", {})
+		if locked is Dictionary:
+			return (locked as Dictionary).duplicate(true)
+	return {}
 
 
 func close_interaction() -> void:
@@ -298,6 +344,7 @@ func _reset() -> void:
 	_rows.clear()
 	_active_interaction_id = ""
 	_attempt_state_id = ""
+	_progress_state_id = ""
 	_submitted = false
 	if _status_label != null:
 		_status_label.text = ""

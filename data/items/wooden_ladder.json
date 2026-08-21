@@ -1,0 +1,14 @@
+{
+  "id": "wooden_ladder",
+  "display_name": "木梯子",
+  "short_desc": "穆江亲手做的旧式木梯，榫卯牢靠，梯脚还包着防滑麻绳。",
+  "tags": ["关键物品", "工具", "木匠工坊"],
+  "usable_in_dialogue": true,
+  "consumable": false,
+  "inspectable": false,
+  "icon_path": "",
+  "inspect_image_path": "",
+  "usage_hints": [
+    "可用于抵达高处、跨越断层，或在需要可靠攀爬工具的场景互动中使用。"
+  ]
+}

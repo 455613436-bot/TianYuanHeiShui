@@ -1,0 +1,12 @@
+{
+  "id": "ritual_fish",
+  "display_name": "祭献用鱼",
+  "short_desc": "一条被村民郑重包好的河鱼，鳞片泛着不自然的暗蓝色。",
+  "tags": ["贡品", "鱼", "祭坛"],
+  "usable_in_dialogue": true,
+  "consumable": true,
+  "inspectable": false,
+  "icon_path": "",
+  "inspect_image_path": "",
+  "usage_hints": ["可在山洞前方祭台供奉。供奉会在次日提供属性增益，同时加深仪式与对抗道士的风险。"]
+}

@@ -8,7 +8,7 @@
 location_number = "11"
 location_name = "农田"
 location_id = "farmland"
-location_description = "村北的农田仍使用占位背景，等待补充正式场景 CG。"
+location_description = "村南边的农田，作物生长情况喜人。"
 accent_color = Color(0.34, 0.56, 0.22, 1)
 background_texture = ExtResource("2_bg")
 empty_background_texture = ExtResource("3_empty")

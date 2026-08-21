@@ -6,6 +6,7 @@ extends Node2D
 ## 场景只负责：背景 + 返回地图按钮 + DialogueUI + PresenceBar + GroupChatUI。
 
 const MAP_SCENE := "res://scenes/map/WorldMap.tscn"
+const ITEM_BAG_POPUP_SCENE := preload("res://scenes/ui/ItemBagPopup.tscn")
 
 ## 村长 NPC 的 profile 路径（兜底用，spawner 未就绪时）
 const NPC_ID := "wu_zhiyuan"
@@ -20,6 +21,8 @@ const NPC_JSON_PATH := "res://data/npcs/wu_zhiyuan.json"
 func _ready() -> void:
 	GameState.restore_current_scene()
 	return_map_button.pressed.connect(_open_map)
+	if not InputManager.inventory_requested.is_connected(_on_inventory_requested):
+		InputManager.inventory_requested.connect(_on_inventory_requested)
 	if presence_bar != null and presence_bar.has_signal("npc_selected"):
 		presence_bar.npc_selected.connect(_on_presence_npc_selected)
 	if presence_bar != null and presence_bar.has_signal("group_chat_requested"):
@@ -61,6 +64,24 @@ func _is_dialogue_open() -> bool:
 	if ui.has_method("is_open"):
 		return ui.is_open()
 	return false
+
+
+func _on_inventory_requested() -> void:
+	var popup := ITEM_BAG_POPUP_SCENE.instantiate()
+	add_child(popup)
+	popup.open_ui(GameState.inventory, [], false)
+
+
+func _on_night_return_required(message: String) -> void:
+	var dialog := AcceptDialog.new()
+	dialog.title = "夜间休整"
+	dialog.dialog_text = message
+	dialog.ok_button_text = "返回宿舍"
+	dialog.exclusive = true
+	add_child(dialog)
+	dialog.confirmed.connect(GameState.confirm_night_return)
+	dialog.close_requested.connect(GameState.confirm_night_return)
+	dialog.popup_centered(Vector2i(520, 220))
 
 
 func _open_map() -> void:

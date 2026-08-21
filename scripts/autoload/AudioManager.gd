@@ -6,7 +6,7 @@ extends Node
 ## 通用环境音，不阻塞场景加载。
 
 const LOCATIONS_PATH := "res://data/locations.json"
-const TITLE_BGM_PATH := "res://assets/audio/All That Follows is True.mp3"
+const TITLE_BGM_PATH := "res://assets/audio/bgm/title_lightless_dawn.ogg"
 ## 地图是导航层，不占用 12 个地点自己的音轨；使用低干扰的户外环境音。
 const MAP_BGM_PATH := "res://assets/audio/bgm/field_path.ogg"
 const FALLBACK_BGM_PATH := "res://assets/audio/bgm/field_path.ogg"
@@ -15,6 +15,9 @@ const BGM_BUS_NAME := &"BGM"
 const SFX_BUS_NAME := &"SFX"
 const BGM_FADE_SECONDS := 1.2
 const BGM_TARGET_DB := -14.0
+## 地图打开时保留当前曲目，线性响度降至原来的 70%。
+const MAP_BGM_DUCK_DB := -3.0980392
+const MAP_BGM_DUCK_SECONDS := 0.2
 const SFX_TARGET_DB := -10.0
 const BGM_PLAYER_COUNT := 2
 const SFX_PLAYER_COUNT := 6
@@ -40,6 +43,8 @@ var _active_bgm_index := 0
 var _current_track_key := ""
 var _current_track_path := ""
 var _bgm_tween: Tween
+var _bgm_bus_tween: Tween
+var _map_bgm_ducked := false
 
 
 func _ready() -> void:
@@ -135,6 +140,27 @@ func play_track(track_id: String) -> void:
 			play_location_bgm(track_id)
 
 
+func set_map_bgm_ducked(ducked: bool, seconds: float = MAP_BGM_DUCK_SECONDS) -> void:
+	if _map_bgm_ducked == ducked:
+		return
+	_map_bgm_ducked = ducked
+	var bus_index := AudioServer.get_bus_index(BGM_BUS_NAME)
+	if bus_index < 0:
+		return
+	if _bgm_bus_tween != null and _bgm_bus_tween.is_valid():
+		_bgm_bus_tween.kill()
+	var target_db := MAP_BGM_DUCK_DB if ducked else 0.0
+	_bgm_bus_tween = create_tween()
+	_bgm_bus_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_bgm_bus_tween.tween_method(_set_bgm_bus_volume, AudioServer.get_bus_volume_db(bus_index), target_db, maxf(seconds, 0.0))
+
+
+func _set_bgm_bus_volume(volume_db: float) -> void:
+	var bus_index := AudioServer.get_bus_index(BGM_BUS_NAME)
+	if bus_index >= 0:
+		AudioServer.set_bus_volume_db(bus_index, volume_db)
+
+
 func play_location_bgm(location_id: String) -> void:
 	var path := String(_location_tracks.get(location_id, ""))
 	if path.is_empty():
@@ -217,6 +243,8 @@ func play_sfx(effect_id: String) -> void:
 	if _sfx_players.is_empty():
 		return
 	var normalized_id := effect_id.strip_edges().to_lower()
+	if normalized_id == "cancel" or normalized_id == "confirm":
+		normalized_id = "click"
 	var stream: AudioStream = _sfx_streams.get(normalized_id) as AudioStream
 	if stream == null and normalized_id != "click":
 		stream = _sfx_streams.get("click") as AudioStream

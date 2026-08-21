@@ -11,6 +11,7 @@ signal closed
 signal group_message_submitted(text: String)
 ## 公聊模式下玩家点击离开，供 GroupChatUI 结束仍在进行的会话。
 signal group_close_requested
+signal fixed_story_event_completed(event_id: String)
 
 enum DialogueState {
 	CLOSED,
@@ -24,7 +25,7 @@ enum DialogueState {
 
 const HISTORY_LIMIT := 20
 const LLM_TIMEOUT_SEC := 30.0
-const FIXED_STORY_TYPEWRITER_INTERVAL := 0.025
+const FIXED_STORY_TYPEWRITER_INTERVAL := 0.12
 const COMPACT_WIDTH := 1050.0
 const OPENING_REQUEST := "请以角色身份自然地先开口打招呼，并生成适合玩家继续交谈的选项。不要提及这条要求。"
 const REGENERATE_REQUEST := "请根据刚才 NPC 的最新回复，只重新生成 2 到 3 个含义不同、可由玩家直接说出口的简短选项。仍按约定的 JSON 格式输出。"
@@ -132,6 +133,7 @@ func _ready() -> void:
 	# 离开按钮独立定位在常驻操作区上方，显示/隐藏不再改变其余三个按钮的位置。
 
 	LLMService.reply_received.connect(_on_llm_reply)
+	LLMService.reply_started.connect(_on_llm_reply_started)
 	LLMService.reply_failed.connect(_on_llm_failed)
 	LLMService.reply_chunk.connect(_on_llm_chunk)
 	LLMService.summary_ready.connect(_on_summary_ready)
@@ -174,7 +176,8 @@ func close_top_ui() -> void:
 	close_dialogue()
 
 func open_dialogue(profile: Dictionary) -> void:
-	if is_open() or GameState.night_rest_required:
+	var night_taoist := String(profile.get("id", "")) == "li_leshui_night"
+	if is_open() or (GameState.night_rest_required and not night_taoist):
 		return
 	_session_id += 1
 	current_npc = profile
@@ -255,6 +258,8 @@ func _show_fixed_story_event_page() -> void:
 		return
 	_fixed_typewriter_generation += 1
 	_fixed_typewriter_running = true
+	var page_text := _fixed_event_pages[_fixed_event_page_index]
+	_apply_mood(MoodPortraitUtil.resolve_mood(String(_active_fixed_event.get("mood", "")), page_text, String(current_npc.get("id", ""))))
 	_append_history("npc", "")
 	_fixed_typewriter_history_index = history.size() - 1
 	_hide_choices()
@@ -329,6 +334,7 @@ func _finish_fixed_story_event() -> void:
 			SceneItemInteractionScript.show_content_added_toast(String((document as Dictionary).get("title", "资料")), "线索册")
 	for item_id in _fixed_event_outcome.get("items_added", []):
 		SceneItemInteractionScript.show_content_added_toast(ItemDB.get_display_name(String(item_id)), "物品栏")
+	var completed_event_id := String(event.get("id", ""))
 	_active_fixed_event = {}
 	_fixed_event_pages = []
 	_fixed_event_page_index = 0
@@ -337,6 +343,15 @@ func _finish_fixed_story_event() -> void:
 	_fixed_typewriter_history_index = -1
 	_change_state(DialogueState.WAITING_PLAYER)
 	_show_choices(choices)
+	var raw_choice_replies: Variant = event.get("choice_replies", {})
+	if raw_choice_replies is Dictionary:
+		var choice_replies: Dictionary = raw_choice_replies
+		for button in choice_buttons:
+			var choice_text := String(button.get_meta("choice_text", ""))
+			var local_reply := String(choice_replies.get(choice_text, "")).strip_edges()
+			if not local_reply.is_empty():
+				button.set_meta("fixed_choice_reply", local_reply)
+	fixed_story_event_completed.emit(completed_event_id)
 	input_edit.grab_focus()
 
 
@@ -609,7 +624,32 @@ func _on_choice_pressed(button: Button) -> void:
 	# 若这是「我没有 / 不出示」的兜底按钮，先清空已挂 token，避免语义冲突
 	if bool(button.get_meta("is_item_deny", false)):
 		_clear_all_item_tokens()
+	if button.has_meta("fixed_choice_reply"):
+		_submit_fixed_choice_reply(String(button.get_meta("choice_text", button.text)), String(button.get_meta("fixed_choice_reply", "")))
+		return
 	_submit_player_text(String(button.get_meta("choice_text", button.text)))
+
+
+func _submit_fixed_choice_reply(choice_text: String, reply_text: String) -> void:
+	if state != DialogueState.WAITING_PLAYER or reply_text.is_empty():
+		return
+	_append_history("user", choice_text)
+	_apply_mood(MoodPortraitUtil.resolve_mood("", reply_text, String(current_npc.get("id", ""))))
+	_append_history("npc", "")
+	var history_index := history.size() - 1
+	_hide_choices()
+	_change_state(DialogueState.STREAMING)
+	for visible_characters in range(1, reply_text.length() + 1):
+		await get_tree().create_timer(FIXED_STORY_TYPEWRITER_INTERVAL).timeout
+		if state == DialogueState.CLOSED or history_index >= history.size():
+			return
+		history[history_index]["text"] = reply_text.substr(0, visible_characters)
+		_redraw_history()
+	MemoryStore.append_turn(String(current_npc.get("id", "")), choice_text, reply_text, [])
+	TimeSystem.on_dialogue_turn_completed()
+	GameState.save_game(GameState.AUTO_SAVE_PATH, false)
+	_change_state(DialogueState.WAITING_PLAYER)
+	input_edit.grab_focus()
 
 
 func _submit_player_text(raw_text: String) -> void:
@@ -845,6 +885,12 @@ func _matches_current(request_id: int, session_id: int, npc_id: String) -> bool:
 		and npc_id == String(current_npc.get("id", ""))
 		and state != DialogueState.CLOSED
 	)
+
+
+func _on_llm_reply_started(request_id: int, session_id: int, npc_id: String, mood: String, full_text: String) -> void:
+	if not _matches_current(request_id, session_id, npc_id):
+		return
+	_apply_mood(MoodPortraitUtil.resolve_mood(mood, full_text, npc_id))
 
 
 func _on_llm_chunk(request_id: int, session_id: int, npc_id: String, accumulated: String) -> void:
@@ -1131,6 +1177,7 @@ func _show_choices(raw_choices: Variant) -> void:
 			continue
 		var full_text := choices[index]
 		button.remove_meta("fixed_event_advance")
+		button.remove_meta("fixed_choice_reply")
 		button.remove_meta("offer_decision")
 		button.remove_meta("is_item_deny")
 		button.remove_meta("is_item_choice")
@@ -1197,8 +1244,12 @@ func _advance_dialogue_clock(_npc_id: String, raw_npc_text: String, allow_rest_l
 func _lock_for_night_rest() -> void:
 	_hide_choices()
 	_clear_all_item_tokens()
-	_append_history("system", "（已经到了晚上，请先回临时宿舍休息。今晚不能再继续交谈或调查。）")
-	input_edit.placeholder_text = "请先回临时宿舍休息"
+	if TimeSystem.is_rest_lock_time():
+		_append_history("system", "（已经 22:00，请回临时宿舍休息。今晚的调查到此结束。）")
+		input_edit.placeholder_text = "请回宿舍休息"
+	else:
+		_append_history("system", "（已经 19:00，请先返回临时宿舍。若持有灯笼，随后可在夜间前往村长家或道观。）")
+		input_edit.placeholder_text = "请先返回临时宿舍"
 	_change_state(DialogueState.REST_LOCKED)
 
 

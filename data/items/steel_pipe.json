@@ -1,0 +1,13 @@
+{
+  "id": "steel_pipe",
+  "display_name": "废弃钢管",
+  "short_desc": "一截从旧工地材料堆里取出的钢管，沉重结实，可作为临时钝器。",
+  "tags": ["武器", "工具", "工地", "钝器"],
+  "attack_difficulty_reduction": 5,
+  "usable_in_dialogue": false,
+  "consumable": false,
+  "inspectable": false,
+  "icon_path": "",
+  "inspect_image_path": "",
+  "usage_hints": ["可在攻击技能中作为临时钝器使用，使力量检定难度降低 5。"]
+}

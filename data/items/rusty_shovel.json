@@ -1,0 +1,12 @@
+{
+  "id": "rusty_shovel",
+  "display_name": "锈蚀铲子",
+  "short_desc": "刃口虽旧但仍能翻开板结泥土，适合挖掘被掩埋的东西。",
+  "tags": ["工具", "挖掘"],
+  "usable_in_dialogue": false,
+  "consumable": false,
+  "inspectable": false,
+  "icon_path": "",
+  "inspect_image_path": "",
+  "usage_hints": ["可降低挖掘土堆等场景交互的力量检定难度。"]
+}

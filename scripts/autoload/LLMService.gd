@@ -9,6 +9,7 @@ extends Node
 ## Provider 只负责生成 text，返回时 LLMService 会在 emit 之前合并 meta。
 
 signal reply_received(request_id: int, session_id: int, npc_id: String, reply: Dictionary)
+signal reply_started(request_id: int, session_id: int, npc_id: String, mood: String, full_text: String)
 signal reply_failed(request_id: int, session_id: int, npc_id: String, error: String)
 signal reply_chunk(request_id: int, session_id: int, npc_id: String, accumulated_text: String)
 signal request_cancelled(request_id: int, session_id: int, npc_id: String)
@@ -102,6 +103,15 @@ func deliver_reply(request_id: int, npc_id: String, reply: Dictionary) -> void:
 		logger.call("log_chat_final_reply", request_id, ctx, reply)
 	reply_received.emit(request_id, int(ctx.get("session_id", 0)), npc_id, reply)
 
+
+
+func deliver_reply_started(request_id: int, npc_id: String, mood: String, full_text: String) -> void:
+	if not _inflight.has(request_id):
+		return
+	var ctx: Dictionary = _inflight[request_id]
+	if String(ctx.get("npc_id", "")) != npc_id:
+		return
+	reply_started.emit(request_id, int(ctx.get("session_id", 0)), npc_id, mood, full_text)
 
 
 func deliver_chunk(request_id: int, npc_id: String, accumulated_text: String) -> void:

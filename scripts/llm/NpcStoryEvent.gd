@@ -127,6 +127,10 @@ static func apply_event(event: Dictionary) -> Dictionary:
 				if not clue_id.is_empty() and not GameState.has_clue(clue_id):
 					GameState.trigger_clue(clue_id)
 					(result["clues_added"] as Array).append(clue_id)
+		var removed_items: Variant = data.get("remove_items", [])
+		if removed_items is Array:
+			for raw_item in removed_items:
+				GameState.remove_item(String(raw_item).strip_edges())
 		var items: Variant = data.get("add_items", [])
 		if items is Array:
 			for raw_item in items:

@@ -36,12 +36,16 @@ var _selection_mode: String = "dialogue"
 
 func _ready() -> void:
 	close_btn.pressed.connect(_on_close_pressed)
+	_apply_shared_panel_style()
 
 
 ## 打开弹窗；inventory 是玩家背包 id 数组；disabled_ids 是已经插入过输入区、要变灰的 id
-func open_ui(inventory: Array, disabled_ids: Array) -> void:
+func open_ui(inventory: Array, disabled_ids: Array, allow_use: bool = true) -> void:
 	visible = true
-	_selection_mode = "dialogue"
+	add_to_group("investigation_ui")
+	_selection_mode = "dialogue" if allow_use else "browse"
+	title_label.text = "打开背包 · 使用或检视物品" if allow_use else "背包"
+	hint_label.text = "提示：使用可把道具加入当前对话；检视可查看详细说明。" if allow_use else "查看当前持有的全部物品。"
 	_disabled_ids.clear()
 	for id_variant in disabled_ids:
 		_disabled_ids[String(id_variant)] = true
@@ -172,19 +176,32 @@ func _build_row(item_id: String) -> Control:
 		inspect_btn.pressed.connect(_on_inspect_pressed.bind(item_id))
 		btn_box.add_child(inspect_btn)
 
-	var use_btn := Button.new()
-	use_btn.text = "作为武器" if _selection_mode == "weapon" else "使用"
-	use_btn.tooltip_text = "将该物品作为攻击武器" if _selection_mode == "weapon" else "在对话输入区插入「使用道具」标签"
-	use_btn.custom_minimum_size = Vector2(BTN_WIDTH, BTN_HEIGHT)
-	use_btn.disabled = _disabled_ids.has(item_id)
-	use_btn.pressed.connect(_on_use_pressed.bind(item_id))
-	btn_box.add_child(use_btn)
-	_use_buttons_by_id[item_id] = use_btn
+	if _selection_mode != "browse":
+		var use_btn := Button.new()
+		use_btn.text = "作为武器" if _selection_mode == "weapon" else "使用"
+		use_btn.tooltip_text = "将该物品作为攻击武器" if _selection_mode == "weapon" else "在对话输入区插入「使用道具」标签"
+		use_btn.custom_minimum_size = Vector2(BTN_WIDTH, BTN_HEIGHT)
+		use_btn.disabled = _disabled_ids.has(item_id)
+		use_btn.pressed.connect(_on_use_pressed.bind(item_id))
+		btn_box.add_child(use_btn)
+		_use_buttons_by_id[item_id] = use_btn
 
 	return row
 
 
 ## 外部（DialogueUI）在弹窗打开期间改变了 "已选" 状态时刷新按钮启用/禁用
+func _apply_shared_panel_style() -> void:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color("f8f1df")
+	style.border_color = Color("7b5a38")
+	style.set_border_width_all(3)
+	style.set_corner_radius_all(10)
+	style.set_content_margin_all(18)
+	root_panel.add_theme_stylebox_override("panel", style)
+	title_label.add_theme_color_override("font_color", Color("432f20"))
+	hint_label.add_theme_color_override("font_color", Color("6a5038"))
+
+
 func set_disabled_ids(disabled_ids: Array) -> void:
 	_disabled_ids.clear()
 	for id_variant in disabled_ids:

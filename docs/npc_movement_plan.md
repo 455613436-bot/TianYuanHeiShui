@@ -130,15 +130,15 @@
 ```json
 [
   {
-    "id": "wu_flee_when_bribe_ledger_shown",
-    "trigger": { "type": "clue_triggered", "clue_id": "bribe_ledger" },
+    "id": "example_temporary_departure",
+    "trigger": { "type": "clue_triggered", "clue_id": "example_clue" },
     "condition": { "affinity_lt": 30 },
     "action": {
       "type": "temp_move",
       "location": "back_mountain",
       "duration_minutes": 240,
-      "reason": "心虚躲避",
-      "log_global_memory": "外来者出示了受贿账本，村长匆忙离开躲进了后山。"
+      "reason": "临时离开",
+      "log_global_memory": "某位 NPC 因剧情事件暂时前往后山。"
     }
   }
 ]

@@ -20,7 +20,7 @@ const DIE_SIDES: int = 20
 const MIN_DIFFICULTY: int = 1
 const MAX_DIFFICULTY: int = 30
 const RAW_DIFFICULTY_MIN: int = 1
-const RAW_DIFFICULTY_MAX: int = 25
+const RAW_DIFFICULTY_MAX: int = 30
 const ATTRIBUTE_ALIASES := {
 	# 中文
 	"力量": "strength",

@@ -12,8 +12,19 @@ const NPC_INTERACTABLE_SCENE := "res://scenes/entities/NpcInteractable.tscn"
 const NPC_SCRIPT := preload("res://scripts/entities/NpcInteractable.gd")
 const MoodPortraitUtil := preload("res://scripts/ui/MoodPortrait.gd")
 
+## 这些地点只允许背景与遮罩交互；无论场景或存档状态如何，都不能生成动态 NPC 立绘。
+const MASK_ONLY_LOCATIONS := {
+	"village_chief_house": true,
+	"lakeside_dock": true,
+	"lakeside_pavilion": true,
+	"back_mountain": true,
+	"taoist_temple": true,
+}
+
 ## 当前地点 id；留空则按 scene path 反查
 @export var location_id: String = ""
+## 关闭后不再生成或刷新任何场景内动态人物立绘。
+@export var spawning_enabled: bool = true
 ## NPC 立绘图层的水平起点与间距（用于多 NPC 水平排列）
 @export var portrait_start_x: float = 0.0
 @export var portrait_spacing: float = 360.0
@@ -25,6 +36,15 @@ var _time_refresh_scheduled := false
 
 
 func _ready() -> void:
+	var location_scene := get_parent()
+	var scene_location_id := String(location_scene.get("location_id")) if location_scene != null else ""
+	if MASK_ONLY_LOCATIONS.has(scene_location_id):
+		spawning_enabled = false
+	elif location_scene != null and location_scene.has_method("should_use_npc_spawner"):
+		spawning_enabled = bool(location_scene.should_use_npc_spawner())
+	if not spawning_enabled:
+		hide()
+		return
 	# 场景切换后 registry 可能还没就绪（autoload 顺序），用 call_deferred 等一帧
 	call_deferred("_spawn_npcs")
 	# 监听位置变化，动态更新（NPC 走了就隐藏节点，新来的就生成）
@@ -35,7 +55,19 @@ func _ready() -> void:
 		TimeSystem.minute_changed.connect(_on_time_changed)
 
 
+func disable_spawning() -> void:
+	spawning_enabled = false
+	location_id = ""
+	hide()
+	for node in _spawned.values():
+		if is_instance_valid(node):
+			(node as Node).queue_free()
+	_spawned.clear()
+
+
 func get_location_id() -> String:
+	if not spawning_enabled:
+		return ""
 	if location_id != "":
 		return location_id
 	# 用当前场景路径反查
@@ -47,6 +79,8 @@ func get_location_id() -> String:
 
 
 func _spawn_npcs() -> void:
+	if not spawning_enabled:
+		return
 	# 清掉旧的
 	for node in _spawned.values():
 		if is_instance_valid(node):
@@ -66,7 +100,7 @@ func _spawn_npcs() -> void:
 
 
 func _on_time_changed(_day: int, _minute_of_day: int) -> void:
-	if _time_refresh_scheduled:
+	if not spawning_enabled or _time_refresh_scheduled:
 		return
 	_time_refresh_scheduled = true
 	call_deferred("_refresh_npcs_for_time")
@@ -74,6 +108,8 @@ func _on_time_changed(_day: int, _minute_of_day: int) -> void:
 
 func _refresh_npcs_for_time() -> void:
 	_time_refresh_scheduled = false
+	if not spawning_enabled:
+		return
 	var loc_id := get_location_id()
 	if loc_id == "":
 		return

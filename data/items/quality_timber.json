@@ -1,0 +1,14 @@
+{
+  "id": "quality_timber",
+  "display_name": "上等木料",
+  "short_desc": "一块纹路顺达、干燥适中的木料，边角仍留着穆江早年的精细处理痕迹。",
+  "tags": ["材料", "木匠工坊"],
+  "usable_in_dialogue": true,
+  "consumable": false,
+  "inspectable": false,
+  "icon_path": "",
+  "inspect_image_path": "",
+  "usage_hints": [
+    "可作为制作木制道具或与穆江交谈时的材料证据。"
+  ]
+}

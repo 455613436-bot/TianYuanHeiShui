@@ -14,7 +14,10 @@ signal day_changed(new_day: int)
 
 const MINUTES_PER_DAY := 1440
 ## 19:00 后在完成当前整轮对话时触发“回宿舍休息”流程；不改变 night 的原有时段定义。
-const REST_LOCK_START_MINUTE := 19 * 60
+const NIGHT_OUTING_START_MINUTE := 19 * 60
+const NIGHT_OUTING_END_MINUTE := 22 * 60
+const NIGHT_WRAP_UP_MINUTE := 18 * 60 + 50
+const REST_LOCK_START_MINUTE := NIGHT_OUTING_END_MINUTE
 ## night 不在表里：>= 1320 或 < 360 都视为 night（22:00 - 次日 06:00）
 const PERIODS := [
 	{"id": "morning", "start": 360, "end": 660}, # 06:00-11:00
@@ -90,6 +93,14 @@ func on_location_changed() -> void:
 
 func is_rest_lock_time() -> bool:
 	return minute_of_day >= REST_LOCK_START_MINUTE
+
+
+func is_night_outing_time() -> bool:
+	return minute_of_day >= NIGHT_OUTING_START_MINUTE and minute_of_day < NIGHT_OUTING_END_MINUTE
+
+
+func is_night_wrap_up_time() -> bool:
+	return minute_of_day >= NIGHT_WRAP_UP_MINUTE and minute_of_day < NIGHT_OUTING_START_MINUTE
 
 
 func current_period() -> String:

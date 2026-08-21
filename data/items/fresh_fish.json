@@ -1,0 +1,9 @@
+{
+  "id": "fresh_fish",
+  "display_name": "鱼",
+  "short_desc": "从湖边鱼塘捕到的鲜鱼，鳞片上有一层难以忽略的冷光。",
+  "tags": ["食材", "水域", "证物"],
+  "usable_in_dialogue": true,
+  "consumable": false,
+  "usage_hints": ["来自思源湖鱼塘，可用于向熟悉水域的人询问鱼类异常。"]
+}

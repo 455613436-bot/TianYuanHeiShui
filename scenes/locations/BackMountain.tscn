@@ -1,7 +1,7 @@
 [gd_scene load_steps=4 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/locations/LocationBase.tscn" id="1_base"]
-[ext_resource type="Texture2D" path="res://assets/scenes/back_mountain_front.png" id="2_front"]
+[ext_resource type="Texture2D" path="res://assets/scenes/cave_front.png" id="2_front"]
 [ext_resource type="Texture2D" path="res://assets/scenes/back_mountain_rear.png" id="3_rear"]
 
 [node name="BackMountain" instance=ExtResource("1_base")]
@@ -9,6 +9,7 @@ location_number = "8"
 location_name = "后山"
 location_id = "back_mountain"
 location_description = "通往山洞深处的山路，两端都透着令人不安的静谧。"
+use_npc_spawner = false
 accent_color = Color(0.25, 0.38, 0.22, 1)
 background_texture = ExtResource("2_front")
 alternate_background_texture = ExtResource("3_rear")

@@ -1,0 +1,12 @@
+{
+  "id": "climbing_rope",
+  "display_name": "长绳子",
+  "short_desc": "结实的登山绳，纤维磨损不多，适合固定在山洞陡坡边缘。",
+  "tags": ["工具", "绳子", "攀爬"],
+  "usable_in_dialogue": false,
+  "consumable": false,
+  "inspectable": false,
+  "icon_path": "",
+  "inspect_image_path": "",
+  "usage_hints": ["可降低进入山洞后方时的敏捷检定难度。"]
+}

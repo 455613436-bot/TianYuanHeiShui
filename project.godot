@@ -31,6 +31,7 @@ NpcRegistry="*res://scripts/autoload/NpcRegistry.gd"
 SettingsMenu="*res://scenes/ui/SettingsMenu.tscn"
 ClueDB="*res://scripts/autoload/ClueDB.gd"
 SkillSystem="*res://scripts/autoload/SkillSystem.gd"
+EndingController="*res://scripts/autoload/EndingController.gd"
 
 [display]
 

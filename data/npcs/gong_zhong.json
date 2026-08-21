@@ -55,28 +55,24 @@
       "choices": ["问问工具箱的事", "询问废弃工地的情况"],
       "effects": {
         "set_quest_stage": {"id": "gong_toolbox", "stage": 1},
-        "trigger_clues": ["gong_toolbox_lead"],
-        "document_clue": {
-          "id": "gong_toolbox_missing",
-          "title": "龚忠的工具箱遗失",
-          "summary": "老龚在废弃工地遗失了一个深绿色铁皮工具箱，里面装着不能丢的施工记录和重要物件。",
-          "pages": [
-            "龚忠的工具箱遗失了。工具箱为深绿色铁皮、两层卡扣，约半米长；他称最后一次确认它还在，是上周傍晚收工后。",
-            "若要追问或帮忙寻找，可询问老龚工具箱的具体去向。他会说明可能遗落在村道、村委会附近或运料途中，并要求把箱子和其中物品完整带回。"
-          ]
-        }
+        "trigger_clues": ["gong_toolbox_lead"]
       }
     },
     {
       "id": "gong_toolbox_completed",
-      "when": "manual",
+      "when": "dialogue_open",
       "once": true,
       "all_of": [
-        {"type": "quest_stage", "id": "gong_toolbox", "min": 2}
+        {"type": "item", "id": "gong_toolbox"}
       ],
-      "text": "（逐件核对箱里的东西，合上卡扣。）一件没少。你这人做事有数，算我欠你个人情。工厂进驻前水就不对，撤走也不是因为生意差；龚泽那年的事故，我还得继续查。",
+      "pages": [
+        "（逐件核对箱里的东西，合上卡扣。）一件没少。你这人做事有数，算我欠你个人情。",
+        "我之所以要找这工具箱，正是因为里面的重要物件。这青铜碎片，是2000年的事故留下来的，我兄弟龚泽就在这场事故中去世。我来这就是想继续调查，你有线索可以分享给我。"
+      ],
       "choices": ["问问水质异常", "询问 2000 年的事故"],
       "effects": {
+        "set_quest_stage": {"id": "gong_toolbox", "stage": 3},
+        "remove_items": ["gong_toolbox"],
         "trigger_clues": ["gong_accident_investigation_opened"],
         "add_items": ["bronze_fragment"]
       }
@@ -92,7 +88,7 @@
         {"type": "clue", "id": "gong_bronze_sample_suspected"},
         {"type": "clue", "id": "gong_rumor_was_planted"}
       ],
-      "text": "龚泽电话里提过，带路的那个人连洞里有几道岔路都说得准。那人不是田原村的，熟悉洞里结构；事故以后附近还有人见过他。姓名我不知道，别急着给谁定罪。",
+      "text": "龚泽电话里提过，带路的那个人连洞里有几道岔路都说得准。那人不是田原村的，熟悉洞里结构；事故以后附近还有人见过他，好像有个老大爷提供了目击线索。",
       "choices": ["追问带路者的特征", "询问山洞里的岔路"],
       "effects": {
         "trigger_clues": ["gong_guided_stranger_revealed"]
@@ -137,8 +133,9 @@
       "min_disclosure_level": 1
     }
   ],
-  "home_location": "back_mountain",
-  "current_location": "back_mountain",
+  "home_location": "construction_site",
+  "current_location": "construction_site",
+  "scene_hotspot": true,
   "portrait_small": "",
   "importance": "main",
   "sort_priority": 25,

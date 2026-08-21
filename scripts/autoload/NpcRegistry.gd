@@ -224,6 +224,12 @@ func get_interactable_npcs_at(location_id: String) -> Array[String]:
 
 
 func _is_li_leshui_active(npc_id: String) -> bool:
+	# 封印成功后，道士永久以夜间人格出现，表示已恢复对身体的完全掌控。
+	if String(GameState.get_investigation_state("altar_resolution", "")) == "sealed":
+		if npc_id == "li_leshui_day":
+			return false
+		if npc_id == "li_leshui_night":
+			return true
 	if npc_id == "li_leshui_day":
 		return TimeSystem.minute_of_day >= 6 * 60 and TimeSystem.minute_of_day < 19 * 60
 	if npc_id == "li_leshui_night":
@@ -235,7 +241,7 @@ func is_mysterious_hermit_road_time() -> bool:
 	return (
 		TimeSystem.current_day >= 3
 		and TimeSystem.minute_of_day >= 16 * 60 + 50
-		and TimeSystem.minute_of_day < 18 * 60
+		and TimeSystem.minute_of_day < 19 * 60
 	)
 
 
@@ -299,7 +305,13 @@ func kill_npc(npc_id: String, reason: String = "被玩家攻击致死") -> bool:
 		return false
 	_killed_npcs[npc_id] = {"location": from_location, "reason": reason.strip_edges(), "day": TimeSystem.current_day, "minute": TimeSystem.minute_of_day}
 	npc_moved.emit(npc_id, from_location, "", reason)
+	if is_instance_valid(EndingController):
+		EndingController.on_npc_killed(npc_id)
 	return true
+
+
+func is_npc_killed(npc_id: String) -> bool:
+	return _killed_npcs.has(npc_id)
 
 
 func mark_npc_hostile(npc_id: String, reason: String = "攻击失败") -> bool:
@@ -374,9 +386,11 @@ func get_dialogue_profile(npc_id: String) -> Dictionary:
 		# 没有 md 就纯用 json（json 自带 system_prompt/triggers 的旧格式）
 		persona = base
 	else:
-		# md 赢人设字段；json 补位置/日程字段
+		# Markdown 优先定义人设；解析器生成的空容器不应覆盖 JSON 中的剧情、触发器和披露配置。
 		for key in base:
-			if not persona.has(key):
+			var md_value: Variant = persona.get(key)
+			var md_is_empty_container := (md_value is Array and (md_value as Array).is_empty()) or (md_value is Dictionary and (md_value as Dictionary).is_empty())
+			if not persona.has(key) or md_is_empty_container:
 				persona[key] = base[key]
 	persona["id"] = npc_id
 	_profile_cache[npc_id] = persona

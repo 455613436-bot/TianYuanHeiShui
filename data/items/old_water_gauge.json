@@ -1,0 +1,12 @@
+{
+  "id": "old_water_gauge",
+  "display_name": "旧青铜水尺",
+  "short_desc": "刻度密集的青铜水尺，边缘附着干涸盐渍与暗绿铜锈，记录着异常水位的变化。",
+  "tags": ["关键物品", "水尺", "封印"],
+  "usable_in_dialogue": true,
+  "consumable": false,
+  "inspectable": false,
+  "icon_path": "",
+  "inspect_image_path": "",
+  "usage_hints": ["青铜尺身可嵌入祭坛的矩形凹槽，尝试进行原始加固仪式。"]
+}

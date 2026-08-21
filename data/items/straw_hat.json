@@ -1,0 +1,9 @@
+{
+  "id": "straw_hat",
+  "display_name": "草帽",
+  "short_desc": "一顶边缘磨旧的草帽，带着晒过的稻草气味。",
+  "tags": ["衣物", "农田"],
+  "usable_in_dialogue": true,
+  "consumable": false,
+  "usage_hints": ["牛岚山常戴的草帽，适合在农田的烈日下遮阳。"]
+}

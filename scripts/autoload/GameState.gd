@@ -11,11 +11,12 @@ signal load_completed(path: String)
 signal load_failed(path: String, reason: String)
 signal attributes_changed()
 signal morning_report_ready(report: Dictionary)
+signal night_return_required(message: String)
 
 const MAX_POLLUTION := 6
-const SAVE_VERSION := 4
-## 可读取的历史存档版本；v4 新增饮水接触与每日属性结算状态。
-const READABLE_SAVE_VERSIONS := [1, 2, 3, 4]
+const SAVE_VERSION := 5
+## 可读取的历史存档版本；v5 新增祭坛供奉、结局和重置属性状态。
+const READABLE_SAVE_VERSIONS := [1, 2, 3, 4, 5]
 const VILLAGE_MAP_ITEM_ID := "village_map"
 const MANUAL_SAVE_SLOT_COUNT := 5
 const SAVE_PATH := "user://save_01.json"
@@ -26,9 +27,8 @@ const DEFAULT_MAP_RETURN_SCENE := "res://scenes/locations/VillageChiefHouse.tscn
 const TEMP_DORM_LOCATION_ID := "temporary_dorm"
 const TEMP_DORM_SCENE := "res://scenes/locations/TemporaryDorm.tscn"
 
-## 开发调试期间默认发放村庄手绘地图，便于直接切换和测试各地点场景。
-## 正式流程恢复时移除 "village_map"，由村长剧情发放。
-const INITIAL_INVENTORY: Array[String] = ["camera", "village_map"]
+## 玩家初始仅携带相机；村庄手绘地图需在村长家由村长发放。
+const INITIAL_INVENTORY: Array[String] = ["camera"]
 
 ## 玩家属性系统：4 维，每维 0-5，总分固定 10
 const ATTRIBUTE_KEYS := ["strength", "agility", "intellect", "charisma"]
@@ -60,6 +60,9 @@ var daily_attribute_bonuses: Dictionary = {}
 var water_contact_count: int = 0
 var water_contact_days: Dictionary = {}
 var showered_days: Dictionary = {}
+## 祭坛供奉：当天供奉会在次日提供全属性增益，同时永久提高相关检定难度。
+var ritual_offering_days: Dictionary = {}
+var ritual_offering_count: int = 0
 var _latest_morning_report: Dictionary = {}
 
 var map_return_scene_path: String = DEFAULT_MAP_RETURN_SCENE
@@ -104,6 +107,8 @@ func reset_for_new_game() -> void:
 	water_contact_count = 0
 	water_contact_days = {}
 	showered_days = {}
+	ritual_offering_days = {}
+	ritual_offering_count = 0
 	_latest_morning_report = {}
 	unlocked_locations = {DEFAULT_MAP_RETURN_SCENE: true}
 	visited_locations = {}
@@ -131,7 +136,7 @@ func get_attribute(key: String) -> int:
 	var base := int(attributes.get(key, 0))
 	var adjustment := int(attribute_adjustments.get(key, 0))
 	var daily_bonus := int(daily_attribute_bonuses.get(key, 0))
-	return clampi(base + adjustment + daily_bonus, ATTRIBUTE_MIN, ATTRIBUTE_MAX)
+	return maxi(ATTRIBUTE_MIN, base + adjustment + daily_bonus)
 
 
 func attributes_allocated() -> bool:
@@ -139,7 +144,7 @@ func attributes_allocated() -> bool:
 		return false
 	var total := 0
 	for key in ATTRIBUTE_KEYS:
-		total += get_attribute(key)
+		total += int(attributes.get(key, 0))
 	return total == ATTRIBUTE_TOTAL_POINTS
 
 
@@ -173,15 +178,13 @@ func attributes_summary_text() -> String:
 	return "  ".join(parts)
 
 
-## 为任务奖励等永久成长提供统一入口；奖励不会突破基础属性上限。
+## 为任务奖励等永久成长提供统一入口；永久成长允许突破初始分配上限。
 func grant_permanent_attribute(attribute: String, amount: int = 1) -> int:
 	var key := attribute.strip_edges().to_lower()
 	if not ATTRIBUTE_KEYS.has(key) or amount <= 0:
 		return 0
 	var previous := int(attributes.get(key, ATTRIBUTE_MIN))
-	var updated := clampi(previous + amount, ATTRIBUTE_MIN, ATTRIBUTE_MAX)
-	if updated == previous:
-		return 0
+	var updated := previous + amount
 	attributes[key] = updated
 	attributes_changed.emit()
 	return updated - previous
@@ -222,16 +225,50 @@ func shower_today() -> bool:
 	return true
 
 
+func offer_ritual_fish() -> bool:
+	var day_key := str(TimeSystem.current_day)
+	if not has_item("ritual_fish") or bool(ritual_offering_days.get(day_key, false)):
+		return false
+	remove_item("ritual_fish")
+	ritual_offering_days[day_key] = true
+	ritual_offering_count += 1
+	save_game(AUTO_SAVE_PATH, false)
+	return true
+
+
+func get_ritual_offering_penalty() -> int:
+	return ritual_offering_count
+
+
 func get_latest_morning_report() -> Dictionary:
 	return _latest_morning_report.duplicate(true)
 
 
 func add_pollution(amount: int = 1) -> void:
+	if is_game_ended():
+		return
 	pollution = clampi(pollution + amount, 0, MAX_POLLUTION)
 	pollution_changed.emit(pollution)
 	if pollution >= MAX_POLLUTION:
 		trigger_event("ending_mituu")
 		clue_triggered.emit("ending_mituu")
+
+
+func is_game_ended() -> bool:
+	return bool(get_investigation_state("game_ended", false))
+
+
+func get_ending_id() -> String:
+	return String(get_investigation_state("ending_id", ""))
+
+
+func finish_game(ending_id: String) -> void:
+	if ending_id.is_empty() or is_game_ended():
+		return
+	set_investigation_state("game_ended", true)
+	set_investigation_state("ending_id", ending_id)
+	trigger_event("ending:%s" % ending_id)
+	save_game(AUTO_SAVE_PATH, false)
 
 
 func add_affinity(npc_id: String, amount: int = 1) -> void:
@@ -486,21 +523,58 @@ func restore_current_scene() -> void:
 			node.restore_scene_state(node_states[persistent_id])
 
 
+func is_night_outing_time() -> bool:
+	return TimeSystem.is_night_outing_time()
+
+
+func can_night_travel() -> bool:
+	return has_item("lantern")
+
+
 func can_enter_location(location_id: String) -> bool:
-	return not night_rest_required or location_id == TEMP_DORM_LOCATION_ID
+	if night_rest_required:
+		return location_id == TEMP_DORM_LOCATION_ID
+	if is_night_outing_time():
+		return can_night_travel() and location_id in [TEMP_DORM_LOCATION_ID, "village_chief_house", "taoist_temple"]
+	return true
 
 
 func can_enter_scene(scene_path: String) -> bool:
-	return not night_rest_required or scene_path == MAP_SCENE or scene_path == TEMP_DORM_SCENE
+	if night_rest_required:
+		return scene_path == TEMP_DORM_SCENE
+	if scene_path == MAP_SCENE:
+		return not is_night_outing_time() or can_night_travel()
+	if is_night_outing_time():
+		if scene_path == TEMP_DORM_SCENE:
+			return true
+		return can_night_travel() and scene_path in ["res://scenes/locations/VillageChiefHouse.tscn", "res://scenes/locations/TaoistTemple.tscn"]
+	return true
 
 
-## 完成玩家提出问题并收到 NPC 回复的一整轮后调用；达到 19:00 时锁定至回宿舍休息。
+## 完成玩家提出问题并收到 NPC 回复的一整轮后调用；19:00 返回宿舍，22:00 后必须休息。
 func complete_player_dialogue_round() -> bool:
 	TimeSystem.on_dialogue_turn_completed()
-	if not night_rest_required and TimeSystem.is_rest_lock_time():
+	if TimeSystem.is_rest_lock_time():
 		night_rest_required = true
+		call_deferred("_force_return_to_dorm")
 		save_game(AUTO_SAVE_PATH, false)
-	return night_rest_required
+		return true
+	if is_night_outing_time():
+		night_rest_required = true
+		night_return_required.emit("天黑了。请先回临时宿舍休整，明早再继续调查。")
+		save_game(AUTO_SAVE_PATH, false)
+		return true
+	return false
+
+
+func confirm_night_return() -> void:
+	_force_return_to_dorm()
+
+
+func _force_return_to_dorm() -> void:
+	if current_scene_path == TEMP_DORM_SCENE:
+		return
+	change_scene(TEMP_DORM_SCENE, false, true)
 
 
 ## 只有位于临时宿舍时才能休息到次日九点并解除夜间锁定。
@@ -533,6 +607,14 @@ func _apply_morning_status(completed_day: int) -> Dictionary:
 		"title": "清晨",
 		"pages": [],
 	}
+	var offering_gained: PackedStringArray = []
+	if bool(ritual_offering_days.get(str(completed_day), false)):
+		for key in ATTRIBUTE_KEYS:
+			if _grant_daily_attribute_bonus(key):
+				offering_gained.append("%s +1" % ATTRIBUTE_LABELS.get(key, key))
+		if not offering_gained.is_empty():
+			report["show"] = true
+			report["pages"] = ["昨夜祭台上的供品似乎仍在回应你。\n\n[color=sea_green]今日增益：%s[/color]" % "、".join(offering_gained)]
 	if not has_contacted_water_on_day(completed_day):
 		attributes_changed.emit()
 		return report
@@ -655,8 +737,11 @@ func enter_location(scene_path: String) -> Error:
 		return change_error
 	if is_location_change:
 		TimeSystem.on_location_changed()
-		if not night_rest_required and TimeSystem.is_rest_lock_time():
+		if TimeSystem.is_rest_lock_time():
 			night_rest_required = true
+			call_deferred("_force_return_to_dorm")
+		elif is_night_outing_time():
+			call_deferred("_force_return_to_dorm")
 	save_game(AUTO_SAVE_PATH, false)
 	return OK
 
@@ -703,6 +788,8 @@ func save_game(path: String = SAVE_PATH, capture_scene: bool = true) -> Error:
 		"water_contact_count": water_contact_count,
 		"water_contact_days": water_contact_days.duplicate(true),
 		"showered_days": showered_days.duplicate(true),
+		"ritual_offering_days": ritual_offering_days.duplicate(true),
+		"ritual_offering_count": ritual_offering_count,
 	}
 	file.store_string(JSON.stringify(_json_safe(data), "\t"))
 	file.close()
@@ -739,8 +826,14 @@ func load_game(path: String = SAVE_PATH, switch_scene: bool = true) -> Error:
 	pollution = clampi(_safe_int(data.get("pollution", 0), 0), 0, MAX_POLLUTION)
 	affinity = _int_dictionary(data.get("affinity", {}))
 	inventory = _string_array(data.get("inventory", []))
+	# 历史版本曾把农田草帽的场景拾取标记加入背包；该标记不是可用物品。
+	inventory.erase("farmland_straw_hat")
 	clues = _bool_dictionary(data.get("clues", {}))
 	document_clues = _sanitize_document_clues(data.get("document_clues", []))
+	# 兼容旧存档：删除已废弃的重复工具箱资料，只保留线索 gong_toolbox_lead。
+	for i in range(document_clues.size() - 1, -1, -1):
+		if String(document_clues[i].get("id", "")) == "gong_toolbox_missing":
+			document_clues.remove_at(i)
 	# Backward-compatible migration: old saves kept visible documents and story
 	# clue ids in separate containers. Make every restored document presentable.
 	for document in document_clues:
@@ -754,6 +847,9 @@ func load_game(path: String = SAVE_PATH, switch_scene: bool = true) -> Error:
 	visited_locations = _bool_dictionary(data.get("visited_locations", {}))
 	quest_stages = _int_dictionary(data.get("quest_stages", {}))
 	investigation_states = _dictionary_copy(data.get("investigation_states", {}))
+	if bool(data.get("game_ended", false)) and not String(data.get("ending_id", "")).is_empty():
+		investigation_states["game_ended"] = true
+		investigation_states["ending_id"] = String(data.get("ending_id", ""))
 	npc_dialogue_stages = _int_dictionary(data.get("npc_dialogue_stages", {}))
 	triggered_events = _bool_dictionary(data.get("triggered_events", {}))
 	one_shot_items = _bool_dictionary(data.get("one_shot_items", {}))
@@ -767,7 +863,9 @@ func load_game(path: String = SAVE_PATH, switch_scene: bool = true) -> Error:
 		data.get("daily_attribute_bonuses", {}),
 		data.get("water_contact_count", 0),
 		data.get("water_contact_days", {}),
-		data.get("showered_days", {})
+		data.get("showered_days", {}),
+		data.get("ritual_offering_days", {}),
+		data.get("ritual_offering_count", 0)
 	)
 	# 旧存档没有时间与 NPC 状态时，仍按 JSON 固定地点初始化。
 	if save_version == 1:
@@ -999,12 +1097,14 @@ func _sanitize_scene_states(value: Variant) -> Dictionary:
 	return result
 
 
-func _load_attribute_runtime_state(adjustments_value: Variant, bonuses_value: Variant, water_count_value: Variant, contact_days_value: Variant, shower_days_value: Variant) -> void:
+func _load_attribute_runtime_state(adjustments_value: Variant, bonuses_value: Variant, water_count_value: Variant, contact_days_value: Variant, shower_days_value: Variant, offering_days_value: Variant = {}, offering_count_value: Variant = 0) -> void:
 	attribute_adjustments = _attribute_delta_dictionary(adjustments_value)
 	daily_attribute_bonuses = _attribute_delta_dictionary(bonuses_value, 0, 1)
 	water_contact_count = clampi(_safe_int(water_count_value, 0), 0, 9999)
 	water_contact_days = _bool_dictionary(contact_days_value)
 	showered_days = _bool_dictionary(shower_days_value)
+	ritual_offering_days = _bool_dictionary(offering_days_value)
+	ritual_offering_count = clampi(_safe_int(offering_count_value, 0), 0, 99)
 	_latest_morning_report = {}
 
 

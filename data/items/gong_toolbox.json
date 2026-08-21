@@ -1,0 +1,12 @@
+{
+  "id": "gong_toolbox",
+  "display_name": "工头的工具箱",
+  "short_desc": "深绿色铁皮工具箱，两层卡扣，约半米长，沾满泥土。里面装着施工记录和不能丢的旧物。",
+  "tags": ["关键物品", "工地", "老龚"],
+  "usable_in_dialogue": true,
+  "consumable": false,
+  "inspectable": false,
+  "icon_path": "",
+  "inspect_image_path": "",
+  "usage_hints": ["可交还给龚忠，推进旧工地相关剧情。"]
+}

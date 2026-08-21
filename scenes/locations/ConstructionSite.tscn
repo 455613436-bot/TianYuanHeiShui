@@ -1,8 +1,7 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/locations/LocationBase.tscn" id="1_base"]
 [ext_resource type="Texture2D" path="res://assets/scenes/bg_construction_site.png" id="2_bg"]
-[ext_resource type="Texture2D" path="res://assets/scenes/construction_site_empty.png" id="3_empty"]
 
 [node name="ConstructionSite" instance=ExtResource("1_base")]
 location_number = "4"
@@ -11,4 +10,3 @@ location_id = "construction_site"
 location_description = "停工多年的施工区域，事故留下的痕迹仍未消失。"
 accent_color = Color(0.72, 0.53, 0.2, 1)
 background_texture = ExtResource("2_bg")
-empty_background_texture = ExtResource("3_empty")

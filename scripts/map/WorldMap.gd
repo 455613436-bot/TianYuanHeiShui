@@ -33,7 +33,7 @@ var _mask_hotspots: Array[Dictionary] = []
 func _ready() -> void:
 	add_to_group("world_map")
 	GameState.restore_current_scene()
-	AudioManager.play_map_bgm()
+	AudioManager.set_map_bgm_ducked(true)
 	_load_locations()
 	for raw_location: Variant in _locations:
 		var location: Dictionary = raw_location as Dictionary
@@ -41,11 +41,19 @@ func _ready() -> void:
 	resized.connect(_on_resized)
 	call_deferred("_on_resized")
 	if GameState.night_rest_required:
-		subtitle_label.text = "夜深了，只能回临时宿舍休息"
-		location_label.text = "请前往临时宿舍"
-		hint_label.text = "完成休息后，明天才能继续调查。"
+		subtitle_label.text = "已经 22:00，必须回宿舍休息"
+		location_label.text = "今晚的调查结束了"
+		hint_label.text = "请回临时宿舍休息，明早 09:00 再继续调查。"
+	elif GameState.is_night_outing_time():
+		subtitle_label.text = "夜间活动：仅可前往村长家或道观"
+		location_label.text = "夜路昏暗，请携带灯笼"
+		hint_label.text = "除村长家、道观和临时宿舍外，其余地点均已锁上。"
 	else:
 		_reset_location_hint()
+
+
+func _exit_tree() -> void:
+	AudioManager.set_map_bgm_ducked(false)
 
 
 func _load_locations() -> void:
@@ -152,7 +160,10 @@ func _on_mask_entered(highlight: MaskInteractionHighlight, location: Dictionary)
 	highlight.show_highlight()
 	location_label.text = String(location.get("name", ""))
 	if not GameState.can_enter_location(String(location.get("id", ""))):
-		hint_label.text = "天色已晚，请先回临时宿舍休息。"
+		if GameState.is_night_outing_time() and not GameState.can_night_travel():
+			hint_label.text = "路太黑了，现在还不具备夜间出门的能力。先取得灯笼。"
+		else:
+			hint_label.text = "这个地点锁上了。"
 		return
 	hint_label.text = String(location.get("description", ""))
 
@@ -160,8 +171,11 @@ func _on_mask_entered(highlight: MaskInteractionHighlight, location: Dictionary)
 func _on_mask_exited(highlight: MaskInteractionHighlight) -> void:
 	highlight.hide_highlight()
 	if GameState.night_rest_required:
-		location_label.text = "请前往临时宿舍"
-		hint_label.text = "完成休息后，明天才能继续调查。"
+		location_label.text = "今晚的调查结束了"
+		hint_label.text = "请回临时宿舍休息。"
+	elif GameState.is_night_outing_time():
+		location_label.text = "夜间仅开放村长家和道观"
+		hint_label.text = "其余地点已经锁上。"
 	else:
 		_reset_location_hint()
 
@@ -190,7 +204,10 @@ func _enter_location(location: Dictionary) -> void:
 	var location_id: String = String(location.get("id", ""))
 	if not GameState.can_enter_location(location_id):
 		location_label.text = "今晚不能前往这里"
-		hint_label.text = "请先回临时宿舍休息。"
+		if GameState.is_night_outing_time() and not GameState.can_night_travel():
+			hint_label.text = "路太黑了，现在还不具备夜间出门的能力。"
+		else:
+			hint_label.text = "这个地点锁上了。"
 		return
 	var scene_path: String = String(location.get("scene", ""))
 	var error: Error = GameState.enter_location(scene_path)

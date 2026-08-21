@@ -58,6 +58,8 @@ func is_skill_available_for_npc(skill_id: String, npc_id: String) -> bool:
 		return NpcRegistry.is_npc_present_at(npc_id, NpcRegistry.get_location_of(npc_id)) and NpcRegistry.can_interact_with_npc(npc_id)
 	if skill_id == "medical_exam":
 		return is_medical_exam_unlocked()
+	if skill_id == "dismiss":
+		return bool(GameState.get_investigation_state("skill_unlocked_dismiss", false))
 	if skill_id == "persuade_ally":
 		return (
 			(
@@ -126,11 +128,17 @@ func perform_trust_check(reason: String) -> Dictionary:
 
 func get_attack_preview(npc_id: String, weapon_id: String = "") -> Dictionary:
 	var base_difficulty := CheckSystem.RAW_DIFFICULTY_MAX if npc_id in ["li_leshui_day", "li_leshui_night", "mysterious_hermit"] else 18
+	var offering_penalty := GameState.get_ritual_offering_penalty() if npc_id in ["li_leshui_day", "li_leshui_night"] else 0
+	base_difficulty += offering_penalty
+	var seal_reduction := 5 if npc_id == "mysterious_hermit" and String(GameState.get_investigation_state("altar_resolution", "")) == "sealed" else 0
+	base_difficulty = maxi(CheckSystem.RAW_DIFFICULTY_MIN, base_difficulty - seal_reduction)
 	var reduction := _attack_weapon_reduction(weapon_id)
 	var attribute := GameState.get_attribute("strength")
 	var final_difficulty := clampi(base_difficulty - attribute - reduction, CheckSystem.MIN_DIFFICULTY, CheckSystem.MAX_DIFFICULTY)
 	return {
 		"base_difficulty": base_difficulty,
+		"offering_penalty": offering_penalty,
+		"seal_reduction": seal_reduction,
 		"weapon_reduction": reduction,
 		"weapon_id": weapon_id,
 		"weapon_name": "徒手" if weapon_id.is_empty() else ItemDB.get_display_name(weapon_id),
@@ -141,11 +149,15 @@ func get_attack_preview(npc_id: String, weapon_id: String = "") -> Dictionary:
 
 func perform_attack_check(npc_id: String, weapon_id: String = "") -> Dictionary:
 	var preview := get_attack_preview(npc_id, weapon_id)
+	var offering_penalty := int(preview.get("offering_penalty", 0))
+	var reason := "攻击%s；武器：%s" % [NpcRegistry.get_short_name(npc_id), String(preview.get("weapon_name", "徒手"))]
+	if offering_penalty > 0:
+		reason += "；供奉%d次难度+%d" % [offering_penalty, offering_penalty]
 	var result := CheckSystem.perform_check(
 		"strength",
 		int(preview.get("base_difficulty", 18)),
 		int(preview.get("weapon_reduction", 0)),
-		"攻击%s；武器：%s" % [NpcRegistry.get_short_name(npc_id), String(preview.get("weapon_name", "徒手"))]
+		reason
 	)
 	result["weapon_id"] = weapon_id
 	result["weapon_name"] = String(preview.get("weapon_name", "徒手"))

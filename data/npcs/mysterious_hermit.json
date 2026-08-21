@@ -82,6 +82,19 @@
         "set_quest_stage": {"id": "hermit_pollution_investigation", "stage": 2},
         "trigger_clues": ["hermit_accepts_pollution_evidence", "hermit_reveals_altar_plan"]
       }
+    },
+    {
+      "id": "hermit_seal_success_presented",
+      "when": "clue_presented",
+      "once": true,
+      "presented_clues": ["seal_success"],
+      "all_of": [{"type": "investigation_state", "id": "altar_resolution", "value": "sealed"}],
+      "pages": [
+        "（神秘人的脸色瞬间灰下去，像是连站立都变得困难。）你做了什么？那股力量……不该这样衰弱。",
+        "你拿封印成功来向我证明什么？你背叛了我们。你以为把它压回去，村子就能得救？"
+      ],
+      "choices": ["询问神秘人为何如此愤怒", "离开"],
+      "effects": {"trigger_clues": ["hermit_weakened_by_seal"]}
     }
   ],
   "triggers": [

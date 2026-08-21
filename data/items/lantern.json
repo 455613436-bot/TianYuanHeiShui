@@ -1,0 +1,9 @@
+{
+  "id": "lantern",
+  "display_name": "灯笼",
+  "short_desc": "于乐送的旧灯笼，灯芯被仔细修过，适合在昏暗处照路、看清浮漂。",
+  "tags": ["工具", "照明", "捕鱼"],
+  "usable_in_dialogue": true,
+  "consumable": false,
+  "usage_hints": ["于乐说，带着灯能更好地观察夜间水面与浮漂。"]
+}

@@ -1,0 +1,14 @@
+{
+  "id": "straw_scarecrow",
+  "display_name": "稻草人",
+  "short_desc": "完成两次木工练习后做出的稻草人，结构扎实，细节透着练习留下的耐心。",
+  "tags": ["木工作品", "奖励"],
+  "usable_in_dialogue": true,
+  "consumable": false,
+  "inspectable": false,
+  "icon_path": "",
+  "inspect_image_path": "",
+  "usage_hints": [
+    "木匠工坊练习完成两次后的纪念物，可在后续场景互动中使用。"
+  ]
+}

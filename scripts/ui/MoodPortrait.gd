@@ -219,7 +219,8 @@ static func load_or_generate(npc_id: String, mood: String, size: Vector2i = Vect
 		canonical = DEFAULT_MOOD
 
 	if npc_id != "":
-		var tex := _try_load_disk("res://assets/portraits/%s_%s.png" % [npc_id, canonical])
+		var portrait_prefix := "fisherman" if npc_id == "yu_le" else npc_id
+		var tex := _try_load_disk("res://assets/portraits/%s_%s.png" % [portrait_prefix, canonical])
 		if tex != null:
 			return tex
 	var tex2 := _try_load_disk("res://assets/portraits/default_%s.png" % canonical)

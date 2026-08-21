@@ -8,7 +8,7 @@ extends Control
 ## - 设置：打开 SettingsMenu autoload
 ## - 退出：quit
 ##
-## 背景音乐 "All That Follows is True.mp3" 循环播放；离开本场景前淡出。
+## 背景音乐 "title_lightless_dawn.ogg" 循环播放；离开本场景前淡出。
 
 const NEW_GAME_SCENE := "res://scenes/ui/AttributeAllocation.tscn"
 const SETTINGS_SCENE_PATH := "res://scenes/ui/SettingsMenu.tscn"  # 兜底：SettingsMenu autoload 缺失时手动打开

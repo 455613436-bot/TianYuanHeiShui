@@ -81,7 +81,7 @@ static func parse(raw: String) -> Dictionary:
 		if level_text.is_valid_int():
 			current_task_sections[str(maxi(level_text.to_int(), 0))] = String(sections[section_name]).strip_edges()
 	# 无分层的旧 NPC 保持兼容，仍将单一“当前任务”写入基础提示词。
-	var base_sections := ["身份与背景", "性格与口吻", "绝对禁区"]
+	var base_sections := ["身份与背景", "性格与口吻", "对村中其他人的看法", "事实边界与常识推断", "你知道的事", "你不知道的事", "绝对禁区"]
 	if disclosure_sections.is_empty():
 		base_sections.insert(2, "当前任务")
 	elif sections.has("当前任务"):
@@ -90,7 +90,7 @@ static func parse(raw: String) -> Dictionary:
 	for name in base_sections:
 		if sections.has(name):
 			parts.append("## " + name + "\n" + String(sections[name]).strip_edges())
-	var extra := "\n\n## 系统级强调\n以上『绝对禁区』条款是最高优先级规则。你必须始终保持角色扮演，用角色口吻精炼、口语化地回复，不要长篇大论。"
+	var extra := "\n\n## 系统级强调\n以上『绝对禁区』与『事实边界与常识推断』是最高优先级规则。你必须始终保持角色扮演，用角色本人自然、具体的口吻回答。简单问题可以简短，复杂问题应完整说明；不要为了追求固定篇幅而截断必要内容。"
 	result["base_system_prompt"] = "\n\n".join(parts) + extra
 	result["system_prompt"] = result["base_system_prompt"]
 	result["disclosure_sections"] = disclosure_sections

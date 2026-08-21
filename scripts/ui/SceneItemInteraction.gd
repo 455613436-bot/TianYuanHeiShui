@@ -5,6 +5,7 @@ class_name SceneItemInteraction
 signal choice_selected(interaction_id: String, choice_id: String, result: Dictionary)
 signal paged_text_completed(interaction_id: String)
 signal document_closed()
+signal code_puzzle_submitted(interaction_id: String, solved: bool)
 
 const DIALOGUE_BACKGROUND := preload("res://assets/ui/dialogue_panel.png")
 const CHOICE_BACKGROUND := preload("res://assets/ui/choice_bg.png")
@@ -32,6 +33,10 @@ var _paged_text_interaction_id := ""
 var _paged_text_archive_entry: Dictionary = {}
 var _document_clue_entry: Dictionary = {}
 var _register_document_clue_on_close := false
+var _puzzle_digits: Array[OptionButton] = []
+var _puzzle_expected_code := ""
+var _puzzle_check: Dictionary = {}
+var _waiting_for_result := false
 
 
 func _ready() -> void:
@@ -85,21 +90,157 @@ func open_document(title: String, image_texture: Texture2D, clue_entry: Dictiona
 	call_deferred("_reset_document_view")
 
 
+func open_code_puzzle(title: String, image_texture: Texture2D, description: String, expected_code: String, check: Dictionary = {}) -> void:
+	_reset_to_choice_layout()
+	_active_interaction_id = String(check.get("interaction_id", "code_puzzle"))
+	_puzzle_expected_code = expected_code.strip_edges()
+	_puzzle_check = check.duplicate(true)
+	_title_label.text = title
+	_body_label.show()
+	_body_label.text = description
+	_input.hide()
+	_status_label.hide()
+	_panel.custom_minimum_size = Vector2(880, 0)
+	_panel.offset_left = -440.0
+	_panel.offset_right = 440.0
+	_panel.offset_top = -300.0
+	_panel.offset_bottom = 300.0
+
+	_document_viewport = Control.new()
+	_document_viewport.name = "PuzzleImageViewport"
+	_document_viewport.custom_minimum_size = Vector2(0, 240)
+	_document_viewport.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_document_viewport.clip_contents = true
+	_document_viewport.mouse_filter = Control.MOUSE_FILTER_STOP
+	_document_viewport.mouse_default_cursor_shape = Control.CURSOR_DRAG
+	_document_viewport.gui_input.connect(_on_document_viewport_input)
+	_document_viewport.resized.connect(_on_document_viewport_resized)
+	_content.add_child(_document_viewport)
+
+	_document_image = TextureRect.new()
+	_document_image.name = "PuzzleImage"
+	_document_image.texture = image_texture
+	_document_image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_document_image.stretch_mode = TextureRect.STRETCH_SCALE
+	_document_image.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_document_viewport.add_child(_document_image)
+
+	var digit_row := HBoxContainer.new()
+	digit_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	digit_row.add_theme_constant_override("separation", 8)
+	for _index in range(4):
+		var selector := OptionButton.new()
+		selector.custom_minimum_size = Vector2(56, 42)
+		selector.add_theme_font_size_override("font_size", 20)
+		for digit in range(10):
+			selector.add_item(str(digit))
+		digit_row.add_child(selector)
+		_puzzle_digits.append(selector)
+	_choice_row.add_child(digit_row)
+
+	var submit_button := Button.new()
+	submit_button.text = "确认密码"
+	submit_button.custom_minimum_size = Vector2(150, 42)
+	submit_button.add_theme_font_size_override("font_size", 19)
+	submit_button.add_theme_stylebox_override("normal", _choice_style(CHOICE_BACKGROUND))
+	submit_button.add_theme_stylebox_override("hover", _choice_style(CHOICE_HOVER_BACKGROUND))
+	submit_button.add_theme_stylebox_override("pressed", _choice_style(CHOICE_BACKGROUND))
+	submit_button.pressed.connect(_submit_code_puzzle)
+	_choice_row.add_child(submit_button)
+	if not _puzzle_check.is_empty():
+		var check_button := Button.new()
+		check_button.text = String(_puzzle_check.get("label", "尝试推理（智力检定）"))
+		check_button.custom_minimum_size = Vector2(190, 42)
+		check_button.add_theme_font_size_override("font_size", 19)
+		check_button.add_theme_stylebox_override("normal", _choice_style(CHOICE_BACKGROUND))
+		check_button.add_theme_stylebox_override("hover", _choice_style(CHOICE_HOVER_BACKGROUND))
+		check_button.add_theme_stylebox_override("pressed", _choice_style(CHOICE_BACKGROUND))
+		check_button.pressed.connect(func() -> void:
+			_run_daily_check(_puzzle_check)
+		)
+		_choice_row.add_child(check_button)
+	_show()
+	call_deferred("_reset_document_view")
+
+
+func _submit_code_puzzle() -> void:
+	var entered := ""
+	for selector in _puzzle_digits:
+		entered += selector.get_item_text(selector.selected)
+	var solved := not _puzzle_expected_code.is_empty() and entered == _puzzle_expected_code
+	if solved:
+		code_puzzle_submitted.emit(_active_interaction_id, true)
+	else:
+		_show_status("[color=indian_red]木雕的机关没有打开。再核对生日提示和图案上的字。[/color]")
+
+
 func open_choice(config: Dictionary) -> void:
+	_waiting_for_result = false
 	_reset_to_choice_layout()
 	_active_interaction_id = String(config.get("id", ""))
 	_title_label.text = String(config.get("title", "交互"))
 	_body_label.show()
 	_body_label.text = String(config.get("description", ""))
+	var choice_image_texture := config.get("image_texture") as Texture2D
+	if choice_image_texture != null:
+		_document_zoom = 1.0
+		_document_pan = Vector2.ZERO
+		_document_dragging = false
+		_document_viewport = Control.new()
+		_document_viewport.name = "ChoiceImageViewport"
+		_document_viewport.custom_minimum_size = Vector2(0, 300)
+		_document_viewport.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_document_viewport.clip_contents = true
+		_document_viewport.mouse_filter = Control.MOUSE_FILTER_STOP
+		_document_viewport.mouse_default_cursor_shape = Control.CURSOR_DRAG
+		_document_viewport.gui_input.connect(_on_document_viewport_input)
+		_document_viewport.resized.connect(_on_document_viewport_resized)
+		_content.add_child(_document_viewport)
+		_content.move_child(_document_viewport, _content.get_children().find(_input))
+		_document_image = TextureRect.new()
+		_document_image.name = "ChoiceImage"
+		_document_image.texture = choice_image_texture
+		_document_image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		_document_image.stretch_mode = TextureRect.STRETCH_SCALE
+		_document_image.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_document_viewport.add_child(_document_image)
 	_input.placeholder_text = String(config.get("input_placeholder", ""))
 	_input.visible = bool(config.get("allow_input", false))
+	var raw_suggestions: Variant = config.get("input_suggestions", [])
+	if raw_suggestions is Array and not (raw_suggestions as Array).is_empty():
+		var suggestion_label := Label.new()
+		suggestion_label.name = "InputSuggestionsLabel"
+		suggestion_label.text = "可选用的物品（点击填入方案）："
+		suggestion_label.add_theme_font_size_override("font_size", 15)
+		_content.add_child(suggestion_label)
+		_content.move_child(suggestion_label, _content.get_children().find(_input))
+		var suggestion_row := FlowContainer.new()
+		suggestion_row.name = "InputSuggestions"
+		suggestion_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_content.add_child(suggestion_row)
+		_content.move_child(suggestion_row, _content.get_children().find(_input))
+		for raw_suggestion in raw_suggestions:
+			var suggestion := String(raw_suggestion).strip_edges()
+			if suggestion.is_empty():
+				continue
+			var suggestion_button := Button.new()
+			suggestion_button.text = suggestion
+			suggestion_button.tooltip_text = "填入方案"
+			suggestion_button.pressed.connect(func() -> void:
+				var current := _input.text.strip_edges()
+				_input.text = suggestion if current.is_empty() else "%s、%s" % [current, suggestion]
+			)
+			suggestion_row.add_child(suggestion_button)
 	for raw_choice in config.get("choices", []):
 		if raw_choice is Dictionary:
 			_add_choice_button(raw_choice)
 	_show()
+	if choice_image_texture != null:
+		call_deferred("_reset_document_view")
 
 
 func open_paged_text(title: String, pages: Array[String], interaction_id: String = "", archive_entry: Dictionary = {}) -> void:
+	_waiting_for_result = false
 	_reset_to_choice_layout()
 	if pages.is_empty():
 		return
@@ -148,6 +289,8 @@ func _advance_paged_text() -> void:
 
 
 func close_interaction() -> void:
+	if _waiting_for_result:
+		return
 	var closing_document := _document_viewport != null
 	var deferred_clue_entry := _document_clue_entry.duplicate(true)
 	var should_register := _register_document_clue_on_close
@@ -273,10 +416,14 @@ func _build_shell() -> void:
 
 	_status_label = RichTextLabel.new()
 	_status_label.bbcode_enabled = true
-	_status_label.fit_content = true
+	_status_label.fit_content = false
+	_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_status_label.scroll_active = true
 	_status_label.visible = false
-	_status_label.custom_minimum_size = Vector2(0, 52)
-	_status_label.add_theme_font_size_override("normal_font_size", 17)
+	_status_label.custom_minimum_size = Vector2(0, 86)
+	_status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_status_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_status_label.add_theme_font_size_override("normal_font_size", 14)
 	_content.add_child(_status_label)
 
 	_close_button = Button.new()
@@ -300,6 +447,9 @@ func _reset_to_choice_layout() -> void:
 	_paged_text_archive_entry = {}
 	_document_clue_entry = {}
 	_register_document_clue_on_close = false
+	_puzzle_digits = []
+	_puzzle_expected_code = ""
+	_puzzle_check = {}
 	if _document_viewport != null:
 		_document_viewport.queue_free()
 		_document_viewport = null
@@ -307,6 +457,13 @@ func _reset_to_choice_layout() -> void:
 		_document_base_size = Vector2.ZERO
 		_document_pan = Vector2.ZERO
 		_document_dragging = false
+	var choice_image := _content.get_node_or_null("ChoiceImage")
+	if choice_image != null:
+		choice_image.queue_free()
+	for node_name in ["InputSuggestionsLabel", "InputSuggestions"]:
+		var input_suggestions := _content.get_node_or_null(node_name)
+		if input_suggestions != null:
+			input_suggestions.queue_free()
 	for child in _choice_row.get_children():
 		child.queue_free()
 	_panel.custom_minimum_size = Vector2.ZERO
@@ -451,7 +608,22 @@ func _show_status(message: String) -> void:
 	_status_label.show()
 
 
+func show_waiting(message: String = "正在评估你的方案，请稍候……") -> void:
+	_waiting_for_result = true
+	_reset_to_choice_layout()
+	_waiting_for_result = true
+	_active_interaction_id = "waiting"
+	_title_label.text = "正在处理"
+	_body_label.show()
+	_body_label.text = message
+	_input.hide()
+	_status_label.hide()
+	_close_button.disabled = true
+	_show()
+
+
 func _show() -> void:
+	_close_button.disabled = false if not _waiting_for_result else true
 	_overlay.show()
 
 
