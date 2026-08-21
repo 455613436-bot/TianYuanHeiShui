@@ -111,6 +111,7 @@ var _cave_front_nodes: Array[CanvasItem] = []
 var _cave_back_nodes: Array[CanvasItem] = []
 var _uses_taoist_temple_cycle := false
 var _uses_village_chief_night_state := false
+var _night_return_dialog_open := false
 var _taoist_in_rear_room := false
 var _village_chief_nodes: Dictionary = {}
 var _taoist_front_nodes: Array[CanvasItem] = []
@@ -150,20 +151,20 @@ func _ready() -> void:
 	_uses_road_hermit_schedule = location_id == "field_path" and scheduled_background_texture != null
 	_uses_taoist_temple_cycle = location_id == "taoist_temple"
 	_uses_village_chief_night_state = location_id == "village_chief_house"
-	if _uses_time_based_background or _uses_taoist_temple_cycle or _uses_village_chief_night_state:
+	if not TimeSystem.minute_changed.is_connected(_on_time_changed):
 		TimeSystem.minute_changed.connect(_on_time_changed)
+	if _uses_time_based_background or _uses_taoist_temple_cycle or _uses_village_chief_night_state:
 		_refresh_time_based_background()
 		_refresh_taoist_temple_state()
 	elif alternate_background_texture != null:
 		_create_view_toggle_button()
-	if _uses_road_hermit_schedule:
-		TimeSystem.minute_changed.connect(_on_time_changed)
 	_move_map_button_to_hud_layer()
 	return_button.pressed.connect(_open_map)
 	if not GameState.night_return_required.is_connected(_on_night_return_required):
 		GameState.night_return_required.connect(_on_night_return_required)
 	GameState.item_added.connect(_on_item_added)
 	_refresh_map_access()
+	call_deferred("_enforce_night_location_return")
 	return_button.grab_focus()
 	# 使用场景遮罩人物交互的地点，不生成动态全身立绘。
 	if not use_npc_spawner:
@@ -258,7 +259,20 @@ func _refresh_map_access() -> void:
 		return_button.text = "打开地图  M / Esc"
 
 
+func _enforce_night_location_return() -> void:
+	if TimeSystem.minute_of_day < TimeSystem.NIGHT_OUTING_START_MINUTE:
+		return
+	if location_id in [GameState.TEMP_DORM_LOCATION_ID, "village_chief_house", "taoist_temple"]:
+		return
+	if TimeSystem.is_rest_lock_time():
+		GameState.night_rest_required = true
+	_on_night_return_required("天色已晚，当前地点不能继续停留。请立即返回临时宿舍。")
+
+
 func _on_night_return_required(message: String) -> void:
+	if _night_return_dialog_open:
+		return
+	_night_return_dialog_open = true
 	var dialog := AcceptDialog.new()
 	dialog.title = "夜间休整"
 	dialog.dialog_text = message
@@ -272,7 +286,7 @@ func _on_night_return_required(message: String) -> void:
 
 func _open_map() -> void:
 	if GameState.is_night_outing_time() and not GameState.can_night_travel():
-		_show_scene_message("夜路太黑", "路太黑了，现在还不具备夜间出门的能力。先取得灯笼。")
+		_show_scene_message("夜路太黑", "路太黑了，现在还不具备夜间出门的能力。")
 		return
 	if GameState.can_open_world_map():
 		InputManager.request_open_map()
@@ -957,12 +971,11 @@ func _on_attack_weapon_picked(weapon_id: String, npc_id: String) -> void:
 func _open_attack_confirmation(npc_id: String, weapon_id: String, ui: SceneItemInteraction) -> void:
 	var preview := SkillSystem.get_attack_preview(npc_id, weapon_id)
 	ui.choice_selected.connect(_on_attack_confirmation_selected.bind(ui, npc_id, weapon_id), CONNECT_ONE_SHOT)
-	var offering_note := "；供奉%d次难度+%d" % [int(preview.get("offering_penalty", 0)), int(preview.get("offering_penalty", 0))] if int(preview.get("offering_penalty", 0)) > 0 else ""
 	var seal_note := "；封印成功难度-5" if int(preview.get("seal_reduction", 0)) > 0 else ""
 	ui.open_choice({
 		"id": "attack_confirm::%s" % npc_id,
 		"title": "确认攻击：%s" % NpcRegistry.get_short_name(npc_id),
-		"description": "武器：%s\n基础难度：%d%s%s；力量：%d；武器减难度：%d。\n本次力量检定最终难度为：%d。\n攻击成功会永久杀死目标；失败后目标将永久拒绝与你交互，且所有人都会知道这次攻击。" % [String(preview.get("weapon_name", "徒手")), int(preview.get("base_difficulty", 18)) - int(preview.get("offering_penalty", 0)) + int(preview.get("seal_reduction", 0)), offering_note, seal_note, int(preview.get("strength", 0)), int(preview.get("weapon_reduction", 0)), int(preview.get("final_difficulty", 18))],
+		"description": "武器：%s\n基础难度：%d%s；力量：%d；武器减难度：%d。\n本次力量检定最终难度为：%d。\n攻击成功会永久杀死目标；失败后目标将永久拒绝与你交互，且所有人都会知道这次攻击。" % [String(preview.get("weapon_name", "徒手")), int(preview.get("base_difficulty", 18)), seal_note, int(preview.get("strength", 0)), int(preview.get("weapon_reduction", 0)), int(preview.get("final_difficulty", 18))],
 		"choices": [{"id": "confirm", "label": "发动攻击"}, {"id": "leave", "label": "取消", "close": true}],
 	})
 
@@ -1013,7 +1026,19 @@ func _on_skill_ui_choice(interaction_id: String, choice_id: String, result: Dict
 	_resolve_social_skill(String(interaction_parts[1]), String(interaction_parts[2]), reason, ui, dialogue_ui)
 
 
+func _dismiss_attempt_state_key() -> String:
+	return "skill:dismiss_attempt:%s" % location_id
+
+
+func _dismiss_attempted_today() -> bool:
+	var state: Variant = GameState.get_investigation_state(_dismiss_attempt_state_key(), {})
+	return state is Dictionary and int((state as Dictionary).get("day", -1)) == TimeSystem.current_day
+
+
 func _open_social_reason(skill_id: String, npc_id: String, ui: SceneItemInteraction) -> void:
+	if skill_id == "dismiss" and _dismiss_attempted_today():
+		ui.open_paged_text("今天已经使用过劝离", ["同一场景每天只能进行一次劝离检定。你可以明天再尝试。"])
+		return
 	var title := "劝离" if skill_id == "dismiss" else "说服同阵营"
 	var description := "输入你的理由。检定会综合魅力、好感度、披露等级以及理由是否具体合理。"
 	var placeholder := "输入你的说服理由……"
@@ -1035,6 +1060,9 @@ func _resolve_social_skill(skill_id: String, npc_id: String, reason: String, ui:
 	if profile.is_empty() or not NpcRegistry.can_be_persuaded(npc_id):
 		ui.open_paged_text("技能无法使用", ["当前人物已经离开，或不接受这种形式的说服。"])
 		return
+	if skill_id == "dismiss" and _dismiss_attempted_today():
+		ui.open_paged_text("今天已经使用过劝离", ["同一场景每天只能进行一次劝离检定。你可以明天再尝试。"])
+		return
 	if skill_id == "persuade_ally" and bool(GameState.get_investigation_state("altar_ally_%s" % npc_id, false)):
 		ui.open_paged_text("已经加入阵营", ["%s已经答应与你共同摧毁祭坛，无需再次检定。" % NpcRegistry.get_short_name(npc_id)])
 		return
@@ -1042,6 +1070,9 @@ func _resolve_social_skill(skill_id: String, npc_id: String, reason: String, ui:
 		ui.open_paged_text("机会已经用过", ["你已经尝试拉拢过%s。无论上次结果如何，都不能再次进行这项检定。" % NpcRegistry.get_short_name(npc_id)])
 		return
 	var check_result := SkillSystem.perform_social_check(profile, skill_id, reason)
+	if skill_id == "dismiss":
+		GameState.set_investigation_state(_dismiss_attempt_state_key(), {"day": TimeSystem.current_day, "npc_id": npc_id})
+		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
 	if skill_id == "persuade_ally":
 		GameState.set_investigation_state("altar_ally_attempted_%s" % npc_id, true)
 		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
@@ -1153,8 +1184,8 @@ func _refresh_cave_view() -> void:
 func _open_cave_offering(highlight: MaskInteractionHighlight, ui: SceneItemInteraction) -> void:
 	highlight.hide_highlight()
 	var choices: Array[Dictionary] = [{"id": "leave", "label": "离开", "close": true}]
-	if GameState.has_item("ritual_fish") and not bool(GameState.ritual_offering_days.get(str(TimeSystem.current_day), false)):
-		choices.push_front({"id": "offer_fish", "label": "供奉祭鱼"})
+	if GameState.has_item("fresh_fish") and not bool(GameState.ritual_offering_days.get(str(TimeSystem.current_day), false)):
+		choices.push_front({"id": "offer_fish", "label": "供奉鱼"})
 	ui.open_choice({
 		"id": "cave_offering_table",
 		"title": "村民供奉的祭台",
@@ -1170,7 +1201,7 @@ func _on_cave_offering_choice(interaction_id: String, choice_id: String, _result
 		GameState.set_investigation_state("cave_offered_today", true)
 		ui.open_paged_text("供奉完成", ["你把鱼放到石台上。湿冷的气息沿着手腕爬过，随即又消失。明日醒来时，你会感到某种力量短暂回应了你。"])
 	else:
-		ui.open_paged_text("无法供奉", ["今天已经供奉过，或你没有可以放上的祭鱼。"])
+		ui.open_paged_text("无法供奉", ["今天已经供奉过，或你没有可以放上的鱼。"])
 
 
 func _open_cave_dirt(highlight: MaskInteractionHighlight, ui: SceneItemInteraction) -> void:
@@ -1192,7 +1223,7 @@ func _on_cave_dirt_choice(interaction_id: String, choice_id: String, result: Dic
 		return
 	if GameState.collect_one_shot_item("gong_toolbox"):
 		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
-		SceneItemInteraction.show_content_added_toast("工头的工具箱", "物品栏")
+		SceneItemInteraction.show_content_added_toast("深绿色工具箱", "物品栏")
 		ui.open_paged_text("挖出工具箱", ["你从湿土里拖出一只深绿色铁皮工具箱。两层卡扣沾满泥，但箱体仍然完好。"])
 	else:
 		ui.open_paged_text("土堆", ["土堆里已经没有别的东西了。"])
@@ -1297,8 +1328,8 @@ func _on_cave_ritual_choice(interaction_id: String, choice_id: String, result: D
 		ui.open_choice({
 			"id": "cave_seal_ritual",
 			"title": "原始加固仪式",
-			"description": "你踩着水靠近祭坛。石面中央有一个矩形凹槽。" + ("供奉%d次使仪式难度 +%d。" % [penalty, penalty] if penalty > 0 else ""),
-			"choices": [{"id": "seal", "label": "使用旧水尺加固封印（智力检定）", "type": "check", "attribute": "智力", "difficulty": 5 + penalty, "reason": "使用旧水尺加固洞内祭坛封印" + ("；供奉%d次难度+%d" % [penalty, penalty] if penalty > 0 else ""), "success_text": "水尺嵌入凹槽，封印纹路开始闭合。", "failure_text": "水尺在凹槽边缘震动，仪式今天无法继续。"}, {"id": "leave", "label": "离开", "close": true}],
+			"description": "你踩着水靠近祭坛。石面中央有一个矩形凹槽。",
+			"choices": [{"id": "seal", "label": "使用旧水尺加固封印（智力检定）", "type": "check", "attribute": "智力", "difficulty": 5 + penalty, "reason": "使用旧水尺加固洞内祭坛封印", "success_text": "水尺嵌入凹槽，封印纹路开始闭合。", "failure_text": "水尺在凹槽边缘震动，仪式今天无法继续。"}, {"id": "leave", "label": "离开", "close": true}],
 		})
 	elif interaction_id == "cave_seal_ritual" and choice_id == "seal":
 		pass
@@ -1384,13 +1415,13 @@ func _open_mu_jiang_dialogue(highlight: MaskInteractionHighlight) -> void:
 
 func _open_carpenter_practice(highlight: MaskInteractionHighlight, ui: SceneItemInteraction) -> void:
 	highlight.hide_highlight()
-	if TimeSystem.minute_of_day + 240 > TimeSystem.REST_LOCK_START_MINUTE:
+	if TimeSystem.minute_of_day + 240 > TimeSystem.NIGHT_OUTING_START_MINUTE:
 		ui.open_paged_text("木工练习", ["距离 19:00 已不足四小时。穆江没有开口，只把锯子按回桌面，示意你明天再来。"])
 		return
 	ui.open_choice({
 		"id": "carpenter_woodwork_practice",
 		"title": "木工练习",
-		"description": "你可以在穆江的默许下练习锯切、修边和榫口处理。完整练习需要四小时。",
+		"description": "你可以在穆江的默许下练习锯切、修边和榫口处理。完整练习需要四小时。成功完成一定次数的练习可能会获得意外的收获。",
 		"choices": [
 			{"id": "practice", "label": "开始练习（消耗 4 小时）"},
 			{"id": "leave", "label": "暂时离开", "close": true},
@@ -1402,7 +1433,7 @@ func _on_carpenter_practice_choice(interaction_id: String, choice_id: String, _r
 	if interaction_id != "carpenter_woodwork_practice" or choice_id != "practice":
 		return
 	var completed := int(GameState.get_investigation_state("carpenter_woodwork_practice_count", 0))
-	if TimeSystem.minute_of_day + 240 > TimeSystem.REST_LOCK_START_MINUTE:
+	if not _can_finish_before_rest_lock(240, ui):
 		return
 	TimeSystem.advance_minutes(240)
 	var gained := GameState.grant_permanent_attribute("strength", 1)
@@ -1748,23 +1779,19 @@ func _open_dock_fisherman_dialogue() -> void:
 
 
 func _can_finish_before_rest_lock(duration_minutes: int, interaction_ui: SceneItemInteraction) -> bool:
-	if TimeSystem.minute_of_day + duration_minutes <= TimeSystem.REST_LOCK_START_MINUTE:
+	if TimeSystem.minute_of_day + duration_minutes <= 19 * 60:
 		return true
 	interaction_ui.open_paged_text("时间不足", ["这项活动需要 %d 分钟，现在开始会超过 19:00。请先回宿舍休息，明天再来。" % duration_minutes])
 	return false
 
 
 func _open_dock_fishing(interaction_ui: SceneItemInteraction) -> void:
-	var has_fished := bool(GameState.get_investigation_state("lakeside_dock:fishing_completed", false))
-	var description := "在于乐的鱼塘里捕鱼会消耗 4 小时。无论是否捕到鱼，都会与湖水接触，使污染计数 +1；首次尝试还会永久获得敏捷 +1，并进行一次难度 10 的敏捷检定。"
-	if has_fished:
-		description = "你已经完成过一次完整的捕鱼练习。湖水在网线间泛着冷光。"
 	interaction_ui.open_choice({
 		"id": "lakeside_dock_fishing",
 		"title": "鱼塘捕鱼",
-		"description": description,
+		"description": "在于乐的鱼塘里捕鱼会消耗 4 小时。捉到了鱼，于乐或许会对你刮目相看。",
 		"choices": [
-			{"id": "fish", "label": "开始捕鱼（消耗 4 小时）"} if not has_fished else {"id": "leave", "label": "离开", "close": true},
+			{"id": "fish", "label": "开始捕鱼（消耗 4 小时）"},
 			{"id": "leave", "label": "离开", "close": true},
 		],
 	})
@@ -1773,19 +1800,22 @@ func _open_dock_fishing(interaction_ui: SceneItemInteraction) -> void:
 func _on_dock_fishing_choice(interaction_id: String, choice_id: String, _result: Dictionary, interaction_ui: SceneItemInteraction) -> void:
 	if interaction_id != "lakeside_dock_fishing" or choice_id != "fish":
 		return
-	if bool(GameState.get_investigation_state("lakeside_dock:fishing_completed", false)):
-		return
 	if not _can_finish_before_rest_lock(240, interaction_ui):
 		return
 	TimeSystem.advance_minutes(240)
+	GameState.set_investigation_state("lakeside_dock:fishing_completed", true)
 	GameState.record_water_contact("lakeside_dock_fishing")
+	var pollution_day := int(GameState.get_investigation_state("lakeside_dock:fishing_pollution_day", 0))
+	if pollution_day != TimeSystem.current_day:
+		GameState.add_pollution(1)
+		GameState.set_investigation_state("lakeside_dock:fishing_pollution_day", TimeSystem.current_day)
 	var agility_gained := GameState.grant_permanent_attribute("agility", 1)
 	var check_result := CheckSystem.perform_check("敏捷", 10, 0, "在湖边鱼塘收网捕鱼")
 	var caught_fish := bool(check_result.get("passed", false))
-	GameState.set_investigation_state("lakeside_dock:fishing_completed", true)
-	GameState.set_investigation_state("lakeside_dock:fishing_success", 1 if caught_fish else 0)
 	if caught_fish:
-		GameState.add_item("fresh_fish")
+		GameState.set_investigation_state("lakeside_dock:fishing_success", 1)
+		if not GameState.has_item("fresh_fish"):
+			GameState.add_item("fresh_fish")
 	GameState.save_game(GameState.AUTO_SAVE_PATH, false)
 	var pages: Array[String] = ["四小时过去，你的身上沾满湿冷的湖水。"]
 	if agility_gained > 0:
@@ -1794,7 +1824,7 @@ func _on_dock_fishing_choice(interaction_id: String, choice_id: String, _result:
 	if caught_fish:
 		outcome += "\n[color=sea_green]你成功收网，获得物品：鱼。[/color]"
 	else:
-		outcome += "\n鱼从网眼间滑走了；捕鱼成功标记未被设置。"
+		outcome += "\n鱼从网眼间滑走了。"
 	pages.append(outcome)
 	interaction_ui.open_paged_text("鱼塘捕鱼", pages)
 
@@ -1937,7 +1967,8 @@ func _on_lindeshan_diary_submitted(result: Dictionary, interaction_ui: PhotoMatc
 		GameState.trigger_clue("lin_diary_first_revelation")
 		GameState.trigger_clue("lin_diary_second_revelation")
 		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
-		interaction_ui.set_result_note("林德山有新的信息想要分享。日记中的六段以上已经对上电波，去和他谈谈。")
+		interaction_ui.close_interaction()
+		call_deferred("_open_lindeshan_dialogue")
 		return
 	if correct >= 3 and level < 1:
 		GameState.set_investigation_state("lin_deshan:diary_level", 1)
@@ -1945,7 +1976,8 @@ func _on_lindeshan_diary_submitted(result: Dictionary, interaction_ui: PhotoMatc
 		GameState.set_investigation_state("skill_unlocked_dismiss", true)
 		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
 		SceneItemInteraction.show_content_added_toast("劝离", "技能列表")
-		interaction_ui.set_result_note("林德山有新的信息想要分享。日记中的三段已经对上电波，去和他谈谈；你也从他的提醒中学会了“劝离”。")
+		interaction_ui.close_interaction()
+		call_deferred("_open_lindeshan_dialogue")
 
 
 func _create_taoist_temple_hotspots() -> void:
@@ -2162,8 +2194,12 @@ func _refresh_farmland_bird_hotspot() -> void:
 
 
 func _resolve_farmland_bird_task() -> void:
-	# 旧版本遗留的延后结算标记不能直接视为通过；恢复为可重新提交的状态。
-	if bool(GameState.get_investigation_state("farmland:bird_task_pending", false)) and not bool(GameState.get_investigation_state("farmland:birds_driven_away", false)):
+	# 仅清理存档里没有对应活动请求的旧 pending；真实检定进行中不得被点击农夫打断。
+	if (
+		_farmland_bird_judge_request_id == 0
+		and bool(GameState.get_investigation_state("farmland:bird_task_pending", false))
+		and not bool(GameState.get_investigation_state("farmland:birds_driven_away", false))
+	):
 		GameState.set_investigation_state("farmland:bird_task_pending", false)
 		GameState.set_investigation_state("farmland:bird_attempt", {})
 		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
@@ -2171,6 +2207,10 @@ func _resolve_farmland_bird_task() -> void:
 
 func _open_farmland_farmer_dialogue() -> void:
 	_resolve_farmland_bird_task()
+	# 点击过农夫人物 mask 即开放驱鸟交互，不再依赖固定对话是否完整播放。
+	if not bool(GameState.get_investigation_state("farmland:birds_driven_away", false)):
+		GameState.set_investigation_state("farmland:bird_task_offered", true)
+		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
 	_refresh_farmland_bird_hotspot()
 	if not NpcRegistry.can_interact_with_npc("niu_lanshan"):
 		return
@@ -2238,6 +2278,22 @@ func _farmland_solution_suggestions() -> Array[String]:
 	return suggestions
 
 
+func _farmland_solution_missing_requirement(solution: String) -> String:
+	var compact := solution.replace(" ", "").replace("\n", "")
+	if (compact.contains("稻草人") or compact.contains("草人")) and not GameState.has_item("straw_scarecrow"):
+		return "方案需要实际布置稻草人，但你的背包里没有稻草人，也没有可核验的完整制作材料。"
+	var required_items := {
+		"草帽": "straw_hat",
+		"钢管": "steel_pipe",
+		"铲子": "rusty_shovel",
+		"灯笼": "lantern",
+	}
+	for keyword in required_items:
+		if compact.contains(String(keyword)) and not GameState.has_item(String(required_items[keyword])):
+			return "方案声称要使用“%s”，但你的背包中并没有这件物品。" % keyword
+	return ""
+
+
 func _on_farmland_bird_choice(interaction_id: String, choice_id: String, result: Dictionary) -> void:
 	if interaction_id != "farmland_bird_solution" or choice_id != "submit":
 		return
@@ -2249,10 +2305,15 @@ func _on_farmland_bird_choice(interaction_id: String, choice_id: String, result:
 	GameState.set_investigation_state("farmland:bird_attempt", {"day": TimeSystem.current_day, "solution": solution})
 	GameState.set_investigation_state("farmland:bird_task_pending", true)
 	GameState.save_game(GameState.AUTO_SAVE_PATH, false)
+	_farmland_bird_ui.show_waiting("正在根据你的真实物品和方案进行驱鸟检定，请稍候……")
+	var missing_requirement := _farmland_solution_missing_requirement(solution)
+	if not missing_requirement.is_empty():
+		call_deferred("_finish_farmland_bird_judgement", false, "FAIL：%s" % missing_requirement)
+		return
 	var judge_profile := {
 		"id": "farmland_bird_judge",
 		"display_name": "农田方案评估",
-		"system_prompt": "你是农田驱鸟方案评估器。只判断玩家提出的方案能否实际减少麻雀啄食稻谷。玩家当前真实持有的物品只有：%s。若方案明确声称使用未在清单中的具体制成品或工具，必须 FAIL；徒手可完成的常见动作和可就地取得的稻草、树枝、石子等基础材料不受此限。方案还必须可执行且不伤害鸟类；稻草人、反光带/光盘、防鸟网、风车、铃铛、定向驱鸟声、气味驱避等合理办法可通过；空泛、伤害鸟类、与驱鸟无关或无法实施的方案不通过。回复必须以 PASS 或 FAIL 开头，随后只用一句中文说明理由。" % ["、".join(inventory_names) if not inventory_names.is_empty() else "（没有任何背包物品）"],
+		"system_prompt": "你是农田驱鸟方案评估器。只判断玩家提出的方案能否实际减少麻雀啄食稻谷。玩家当前真实持有的物品只有：%s。严禁假设玩家拥有清单外的任何制成品、工具或制作材料；凡方案依赖清单外物品，必须 FAIL。只有不依赖背包物品的徒手动作，以及现场明确存在的普通石子、树枝才可视为可就地取得。方案还必须可执行且不伤害鸟类；空泛、伤害鸟类、与驱鸟无关或无法实施的方案不通过。回复必须以 PASS 或 FAIL 开头，随后只用一句中文说明理由。" % ["、".join(inventory_names) if not inventory_names.is_empty() else "（没有任何背包物品）"],
 		"fallback_lines": ["FAIL：方案评估未返回有效结果。"]
 	}
 	# 回复到达即在本轮结算，不再按天延后。
@@ -2352,7 +2413,7 @@ func _leave_temporary_dorm(highlight: MaskInteractionHighlight) -> void:
 	highlight.hide_highlight()
 	if GameState.is_night_outing_time():
 		if not GameState.can_night_travel():
-			_show_scene_message("夜路太黑", "路太黑了，现在还不具备夜间出门的能力。先取得灯笼。")
+			_show_scene_message("夜路太黑", "路太黑了，现在还不具备夜间出门的能力。")
 			return
 		GameState.open_world_map()
 		return
@@ -2516,6 +2577,7 @@ func _on_time_changed(_day: int, _minute_of_day: int) -> void:
 	_refresh_road_hermit_schedule()
 	_refresh_taoist_temple_state()
 	_refresh_village_chief_night_state()
+	_enforce_night_location_return()
 
 
 func _refresh_time_based_background() -> void:

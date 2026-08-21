@@ -14,7 +14,7 @@
 | `usable_in_dialogue` | bool |  | 默认 `true`。为 `false` 时"打开背包"里不显示；LLM 也不能声明 `item_used` |
 | `consumable` | bool |  | 默认 `false`。仅当为 `true`，LLM 声明 `consumed: true` 时才会真的从背包移除 |
 | `inspectable` | bool |  | 默认 `false`。为 `true` 时物品栏行右侧多出「检视」按钮，点击弹出大图窗；用于藏有文字/图像细节的证物、字条、照片、地图之类 |
-| `icon_path` | string |  | 缩略图资源路径（如 `res://assets/items/village_map_icon.png`）；空则显示占位符 `?` |
+| `icon_path` | string |  | 缩略图资源路径；为空时自动按物品 `id` 匹配 `res://assets/items/<id>.png`，仍找不到才显示占位符 `?` |
 | `inspect_image_path` | string |  | 检视大图路径；空时回退到 `icon_path`；两者都空则显示"暂无图像"占位 |
 | `usage_hints` | string[] |  | 仅注入 LLM prompt 的自然语言使用提示，说明物品适用场景；每条建议 30~80 字，不在玩家 UI 展示。 |
 

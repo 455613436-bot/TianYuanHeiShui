@@ -34,7 +34,7 @@ const OpenAILLMScript := preload("res://scripts/llm/OpenAILLM.gd")
 const PRESETS := {
 	"deepseek": {"base_url": "https://api.deepseek.com/v1",                       "model": "deepseek-chat"},
 	"openai":   {"base_url": "https://api.openai.com/v1",                         "model": "gpt-4o-mini"},
-	"qwen":     {"base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1", "model": "qwen3.5-flash"},
+	"qwen":     {"base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1", "model": "qwen-flash"},
 	"glm":      {"base_url": "https://open.bigmodel.cn/api/paas/v4",              "model": "glm-4-flash"},
 	"moonshot": {"base_url": "https://api.moonshot.cn/v1",                        "model": "moonshot-v1-8k"},
 	"ollama":   {"base_url": "http://localhost:11434/v1",                         "model": "qwen2.5:7b"},

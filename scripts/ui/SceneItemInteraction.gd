@@ -182,14 +182,29 @@ func open_choice(config: Dictionary) -> void:
 	_body_label.show()
 	_body_label.text = String(config.get("description", ""))
 	var choice_image_texture := config.get("image_texture") as Texture2D
+	var has_extended_input := bool(config.get("allow_input", false)) or not Array(config.get("input_suggestions", [])).is_empty()
 	if choice_image_texture != null:
+		# 带图片的选择框使用与资料预览相同的固定视口；图片仅在视口内缩放和拖拽。
+		_panel.custom_minimum_size = Vector2(920, 0)
+		_panel.offset_left = -460.0
+		_panel.offset_right = 460.0
+		_panel.offset_top = -330.0
+		_panel.offset_bottom = 290.0
 		_document_zoom = 1.0
+	elif has_extended_input:
+		# 驱鸟等“说明 + 方案快捷项 + 输入框 + 按钮”弹窗需要额外高度，避免底部操作区被裁切。
+		_panel.custom_minimum_size = Vector2(920, 0)
+		_panel.offset_left = -460.0
+		_panel.offset_right = 460.0
+		_panel.offset_top = -300.0
+		_panel.offset_bottom = 300.0
 		_document_pan = Vector2.ZERO
 		_document_dragging = false
 		_document_viewport = Control.new()
 		_document_viewport.name = "ChoiceImageViewport"
-		_document_viewport.custom_minimum_size = Vector2(0, 300)
+		_document_viewport.custom_minimum_size = Vector2(0, 240)
 		_document_viewport.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_document_viewport.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		_document_viewport.clip_contents = true
 		_document_viewport.mouse_filter = Control.MOUSE_FILTER_STOP
 		_document_viewport.mouse_default_cursor_shape = Control.CURSOR_DRAG

@@ -49,7 +49,8 @@
       "when": "dialogue_open",
       "once": true,
       "all_of": [
-        {"type": "quest_stage", "id": "gong_toolbox", "min": 0}
+        {"type": "quest_stage", "id": "gong_toolbox", "min": 0},
+        {"type": "not_item", "id": "gong_toolbox"}
       ],
       "text": "（龚忠正焦急地在材料堆和工棚里翻找。）我的工具箱怎么不见了……上周还在这儿。抱歉，没注意到有人。你从村道过来？路上见没见一个深绿色铁皮工具箱，两层卡扣，约半米长？",
       "choices": ["问问工具箱的事", "询问废弃工地的情况"],
@@ -66,6 +67,7 @@
         {"type": "item", "id": "gong_toolbox"}
       ],
       "pages": [
+        "你找到了我的工具箱？我真的找好久了。",
         "（逐件核对箱里的东西，合上卡扣。）一件没少。你这人做事有数，算我欠你个人情。",
         "我之所以要找这工具箱，正是因为里面的重要物件。这青铜碎片，是2000年的事故留下来的，我兄弟龚泽就在这场事故中去世。我来这就是想继续调查，你有线索可以分享给我。"
       ],
@@ -73,8 +75,7 @@
       "effects": {
         "set_quest_stage": {"id": "gong_toolbox", "stage": 3},
         "remove_items": ["gong_toolbox"],
-        "trigger_clues": ["gong_accident_investigation_opened"],
-        "add_items": ["bronze_fragment"]
+        "trigger_clues": ["gong_accident_investigation_opened"]
       }
     },
     {

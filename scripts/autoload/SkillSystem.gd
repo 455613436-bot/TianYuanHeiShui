@@ -149,10 +149,7 @@ func get_attack_preview(npc_id: String, weapon_id: String = "") -> Dictionary:
 
 func perform_attack_check(npc_id: String, weapon_id: String = "") -> Dictionary:
 	var preview := get_attack_preview(npc_id, weapon_id)
-	var offering_penalty := int(preview.get("offering_penalty", 0))
 	var reason := "攻击%s；武器：%s" % [NpcRegistry.get_short_name(npc_id), String(preview.get("weapon_name", "徒手"))]
-	if offering_penalty > 0:
-		reason += "；供奉%d次难度+%d" % [offering_penalty, offering_penalty]
 	var result := CheckSystem.perform_check(
 		"strength",
 		int(preview.get("base_difficulty", 18)),

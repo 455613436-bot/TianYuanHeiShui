@@ -107,12 +107,14 @@ func is_inspectable(id: String) -> bool:
 	return bool((_items[id] as Dictionary).get("inspectable", false))
 
 
-## 获取物品缩略图（Texture2D）；不存在或加载失败则返回 null，UI 用占位图。
+## 获取物品缩略图（Texture2D）；优先使用数据中的显式路径，再按物品 ID 匹配资源文件。
 func get_icon(id: String) -> Texture2D:
 	if not _items.has(id):
 		return null
 	var path: String = String((_items[id] as Dictionary).get("icon_path", "")).strip_edges()
-	if path.is_empty() or not ResourceLoader.exists(path):
+	if path.is_empty():
+		path = "res://assets/items/%s.png" % id
+	if not ResourceLoader.exists(path):
 		return null
 	var res: Resource = load(path)
 	return res as Texture2D

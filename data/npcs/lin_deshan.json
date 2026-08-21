@@ -25,7 +25,7 @@
       "once": true,
       "all_of": [{"type": "investigation_state", "id": "lin_deshan:diary_level", "value": 1}],
       "pages": ["（林德山把日记合上，难得没有发笑。）村子里清醒的人不多，有的话我不敢明着说；幕布后头的耳朵，比台下的还多。", "你已对上几段电波，就继续拆那些疯话。还有，学会把人劝离戏台——有时少一个观众，便少一双被水盯上的眼。"],
-      "choices": ["继续破解日记", "学会劝离"],
+      "choices": ["继续破解日记", "劝离技能有什么用"],
       "effects": {"set_investigation_state": {"id": "skill_unlocked_dismiss", "value": true}, "trigger_clues": ["lin_diary_first_revelation"]}
     },
     {
@@ -33,8 +33,8 @@
       "when": "dialogue_open",
       "once": true,
       "all_of": [{"type": "investigation_state", "id": "lin_deshan:diary_level_two", "value": true}],
-      "pages": ["2000年，青铜鼎裂了。里面的东西出来时，声音不是从耳朵进来的，是从骨头里响起来的；我只沾到一点，身子没被水改坏，脑子却被那一幕撕开了。", "旁边有人在做崇拜的仪式，像是早等着鼎裂开。他披着自己的影子，不肯把真脸给我看。水还要升起，时间不多，灾难快到了。"],
-      "choices": ["询问仪式中的人", "询问水位"],
+      "pages": ["看来你懂得不少，我没必要再装，只不过这话得小声点说。","2000年，青铜鼎裂了。里面的东西出来时，声音不是从耳朵进来的，是从骨头里响起来的；我只沾到一点，身子没被水改坏，脑子却被那一幕撕开了。", "旁边有人在做崇拜的仪式，像是早等着鼎裂开。他披着自己的影子，不肯把真脸给我看。","但我瞥见那眼睛，分明就是村里经常在小路那里晃荡的那个，看不清面容的人……","水还要升起，时间不多，灾难快到了。"],
+      "choices": ["询问仪式中的人", "询问事故"],
       "effects": {"trigger_clues": ["lin_witnessed_bronze_ding_release", "lin_mysterious_stranger_ritual"]}
     }
   ],

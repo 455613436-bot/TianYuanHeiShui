@@ -9,7 +9,7 @@ const SuggestionGuard = preload("res://scripts/llm/SuggestionGuard.gd")
 @export var api_key: String = ""
 @export var base_url: String = "https://api.deepseek.com/v1"
 @export var model_name: String = "deepseek-chat"
-@export var request_timeout: float = 30.0
+@export var request_timeout: float = 90.0
 @export var http_max_body_bytes: int = 4 * 1024 * 1024
 var _active_http: Dictionary = {}
 ## 可选：外部（如调试 CLI）注入一个 tracer，用于记录本 provider 实际发出去的 payload / 原始响应。
@@ -93,11 +93,13 @@ func _on_completed(result: int, response_code: int, body: PackedByteArray, reque
 
 	if result != HTTPRequest.RESULT_SUCCESS:
 		var err_names := {
-			2: "连接失败",
-			3: "TLS握手失败",
-			4: "无响应",
-			5: "body超限",
-			6: "请求超时",
+			HTTPRequest.RESULT_CANT_CONNECT: "连接失败",
+			HTTPRequest.RESULT_CANT_RESOLVE: "DNS 解析失败",
+			HTTPRequest.RESULT_CONNECTION_ERROR: "连接中断",
+			HTTPRequest.RESULT_TLS_HANDSHAKE_ERROR: "TLS 握手失败",
+			HTTPRequest.RESULT_NO_RESPONSE: "服务未响应",
+			HTTPRequest.RESULT_BODY_SIZE_LIMIT_EXCEEDED: "响应体超限",
+			HTTPRequest.RESULT_TIMEOUT: "请求超时",
 		}
 		var desc: String = err_names.get(result, "网络错误")
 		service.deliver_failure(request_id, npc_id, "%s (result=%d)" % [desc, result])
@@ -167,7 +169,7 @@ func _emit_typewriter_stable(request_id: int, npc_id: String, reply: Dictionary,
 	var chunk_size := 1
 	# 每 chunk 间隔时间。原本 0.04s（约 200 字/秒），现减半到 0.08s（约 100 字/秒），
 	# 更接近正常朗读节奏，也让玩家有时间阅读。
-	var chunk_interval := 0.12
+	var chunk_interval := 0.08
 	var total := content.length()
 	if total == 0:
 		content = "……"
@@ -314,6 +316,9 @@ func _build_messages(profile: Dictionary, history: Array, user_text: String) -> 
 	var system_prompt := String(profile.get("system_prompt", ""))
 	if system_prompt == "":
 		system_prompt = "你是 %s，请始终保持角色扮演，用角色本人的自然口吻回答；篇幅按问题需要决定，复杂问题要完整说明。" % profile.get("display_name", "?")
+	# 在请求出口统一注入真实背包，覆盖私聊、公聊和专用 LLM 请求，避免上层遗漏。
+	if not system_prompt.contains("【玩家当前持有】"):
+		system_prompt += "\n\n" + ItemDB.build_inventory_prompt_block(GameState.inventory)
 	system_prompt += """
 
 ## 内心 OS 与外在表达分离（**最高优先级**）
@@ -326,10 +331,7 @@ func _build_messages(profile: Dictionary, history: Array, user_text: String) -> 
   "有些事……"之类的**暗示手法**说出来。
 - **表层伪装原则**：陌生玩家在没有出示铁证之前，NPC 应该表现得**跟一个完全没有秘密的普通村民一样**
   ——热情、坦然、装糊涂、反问玩家。**不流露一丝疑虑**。
-- 检查自己：如果你的 text 会让玩家想"这个 NPC 好像知道什么"，那就写得太露了——重写成
-  一个"真的觉得没事"的人会说的话。
-- **只有当玩家出示铁证**（水质报告、关键照片、说出关键人名、明确的物证）后，NPC 才可以叹气、
-  才可以说"所以我才劝你们走啊"、才可以承认自己知道。**没有铁证前，一律装作不知道且不在意**。
+
 
 ## 事实诚实约束（最高优先级）
 - 你只能陈述角色已知、当前披露等级已允许披露，或村中公开可核对的事实。
@@ -499,7 +501,7 @@ NPC 是活人，不是"信息发放机"。玩家问什么就答什么、把秘�
   offer_request 是 NPC **已经拿定主意要提议**，不是还在权衡——权衡请走 check_request 或不发起 offer。
 - **禁止**在 text 里替玩家决定：不写"你收下了"、"你接过了"、"你答应了"，把动作停在"NPC 递出/说出请求"那一刻。
 - text 建议 15~40 字，包含一个明确的动作 + 一句短提议，句末不用省略号。
-- mood 通常不是 "thinking"（那是犹豫）；give_item 送东西时用 "happy"，request_action 请求时按语气选 "happy" 或 "surprised"。
+- mood 通常不是 "normal"（那是犹豫或观察）；give_item 送东西时用 "happy"，request_action 请求时按语气选 "happy" 或 "angry"。
 - 玩家的下一轮 user 消息就是你 offer 里的 accept_text / decline_text（会被系统加上
   `【接受提议】` 或 `【拒绝提议】` 前缀）。见下面「玩家应答规则」。
 
@@ -550,13 +552,13 @@ NPC 是活人，不是"信息发放机"。玩家问什么就答什么、把秘�
 - 建议应简短、自然、含义不同，不能替玩家决定行动结果，也不能重复历史建议。
 
 ## 表情差分 mood 字段（必填）
-在每次输出的 JSON 里**必须**包含一个 mood 字段，从下列值中选**最贴合本次 NPC 当下情绪**的一个：
+在每次输出的 JSON 里**必须**包含一个 mood 字段，只能从下列值中选**最贴合本次 NPC 当下情绪**的一个：
+- "normal"：平静、犹豫、权衡、沉思、含糊、不确定、游离低语；**触发 check_request 时必须选这个**
 - "happy"：友好、亲切、欢迎、愉快、赞同、寒暄招呼、掩饰笑意
-- "thinking"：犹豫、权衡、沉思、含糊、不确定、游离低语；**触发 check_request 时必须选这个**
-- "surprised"：吃惊、震惊、意外、被戳中痛处、语气突然强烈、清醒警觉
-- "weary"：忧惧、疲惫、憔悴、力竭、叹息（仅部分 NPC 可用，以 system prompt 里"可输出的 mood 值"列表为准）
+- "angry"：警觉、不满、质问、被戳中痛处、语气突然强烈、震惊或意外
+- "sad"：忧惧、疲惫、憔悴、力竭、叹息、无奈或低落
 
-若 system prompt 里列出的该 NPC 可用 mood 不含 weary，则只能从前 3 个里选。只允许英文小写值；不要输出中文。
+所有 NPC 都使用这四种统一值。只允许英文小写值；不要输出中文。
 
 ## text 字段（最重要，必填非空）
 **text 是玩家在屏幕上唯一能读到的 NPC 对白，绝对不能缺失、也不能是空字符串。**
@@ -598,19 +600,19 @@ NPC 是活人，不是"信息发放机"。玩家问什么就答什么、把秘�
 再写 text，然后 mood，接着可选的 item_used / item_request，最后 mentions / choices：
 
 需要检定时：
-{"check_request":{"attribute":"力量","difficulty":21,"reason":"玩家用暴力威胁要看保险柜","kind":"general","repeat_key":"force_open_safe","affinity_on_success":0,"affinity_on_failure":-1,"affinity_reason":"暴力威胁明显侵犯安全与隐私"},"text":"（老吴脸色一僵，粗声吸了口气，手指下意识攥紧烟斗……）","mood":"thinking","mentions":[],"choices":[{"text":"...","kind":"response","grounded_in":""}]}
+{"check_request":{"attribute":"力量","difficulty":21,"reason":"玩家用暴力威胁要看保险柜","kind":"general","repeat_key":"force_open_safe","affinity_on_success":0,"affinity_on_failure":-1,"affinity_reason":"暴力威胁明显侵犯安全与隐私"},"text":"（老吴脸色一僵，粗声吸了口气，手指下意识攥紧烟斗……）","mood":"normal","mentions":[],"choices":[{"text":"...","kind":"response","grounded_in":""}]}
 
 玩家正在用医学证据说服 NPC 相信水源有问题时：
-{"check_request":{"attribute":"智力","difficulty":16,"reason":"玩家用医学检查结果论证当地水源正在损害村民健康","kind":"belief","belief_claim":"当地水源可能正在导致村民的身体异常","repeat_key":"belief_water_pollution","affinity_on_success":1,"affinity_on_failure":0,"affinity_reason":"有证据的善意提醒成功时能建立专业信任"},"text":"（对方低头看着检查结果，神色逐渐凝重起来……）","mood":"thinking","mentions":[],"choices":[]}
+{"check_request":{"attribute":"智力","difficulty":16,"reason":"玩家用医学检查结果论证当地水源正在损害村民健康","kind":"belief","belief_claim":"当地水源可能正在导致村民的身体异常","repeat_key":"belief_water_pollution","affinity_on_success":1,"affinity_on_failure":0,"affinity_reason":"有证据的善意提醒成功时能建立专业信任"},"text":"（对方低头看着检查结果，神色逐渐凝重起来……）","mood":"normal","mentions":[],"choices":[]}
 
 不需要检定时（省略 check_request）：
 {"text":"NPC 正文","mood":"happy","mentions":[...],"choices":[...]}
 
 玩家用【使用道具】出示地图，你顺势用它检定：
-{"check_request":{"attribute":"智力","difficulty":13,"reason":"玩家用地图指认后山位置"},"text":"（老吴凑近，眯眼盯着地图边角……）","mood":"thinking","item_used":{"item_id":"village_map","action":"show","target":"wu_zhiyuan","consumed":false},"mentions":[],"choices":[]}
+{"check_request":{"attribute":"智力","difficulty":13,"reason":"玩家用地图指认后山位置"},"text":"（老吴凑近，眯眼盯着地图边角……）","mood":"normal","item_used":{"item_id":"village_map","action":"show","target":"wu_zhiyuan","consumed":false},"mentions":[],"choices":[]}
 
 你想让玩家出示地图作为路引，但不确定他有没有（不同时检定）：
-{"text":"你说的那条道我给你比划不清。你身上带地图不？","mood":"thinking","item_request":{"candidates":["village_map"],"reason":"需要玩家用图指认位置"},"mentions":[],"choices":[{"text":"能画一下大概方向吗？","kind":"response","grounded_in":""}]}
+{"text":"你说的那条道我给你比划不清。你身上带地图不？","mood":"normal","item_request":{"candidates":["village_map"],"reason":"需要玩家用图指认位置"},"mentions":[],"choices":[{"text":"能画一下大概方向吗？","kind":"response","grounded_in":""}]}
 
 你主动想把手绘地图递给玩家（走"接受/拒绝"按钮，不假定玩家收下）：
 {"text":"（老吴翻出一张卷了角的手绘地图，压平了推过来。）拿去吧，别在村里迷路。","mood":"happy","offer_request":{"kind":"give_item","item_id":"village_map","prompt":"老吴要把手绘地图递给你，收下吗？","accept_label":"收下","decline_label":"婉拒","accept_text":"谢谢老吴，我收好了。","decline_text":"不必了，我认得路。"},"mentions":[],"choices":[]}
@@ -621,8 +623,6 @@ NPC 是活人，不是"信息发放机"。玩家问什么就答什么、把秘�
 - "唔——这个嘛……老头子得想想。"
 - "（顿住脚步，眯起眼上下打量了对方一眼。）"
 
-## 固定地点规则
-NPC 目前不会跟随、移动或因谈话离开自己的固定地点。不要输出 `action` 字段；玩家提出同行、带路或离开请求时，只在 text 中按角色立场回应。
 """
 
 	messages.append({"role": "system", "content": system_prompt})

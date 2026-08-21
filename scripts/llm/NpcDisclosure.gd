@@ -112,6 +112,8 @@ static func _condition_matches(raw_condition: Variant, npc_id: String) -> bool:
 			return GameState.has_clue(String(condition.get("id", "")))
 		"item":
 			return GameState.has_item(String(condition.get("id", "")))
+		"not_item":
+			return not GameState.has_item(String(condition.get("id", "")))
 		"affinity":
 			var owner := String(condition.get("npc_id", npc_id))
 			return GameState.get_affinity(owner) >= int(condition.get("min", 1))

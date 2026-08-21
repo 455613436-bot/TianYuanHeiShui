@@ -2,22 +2,35 @@ extends RefCounted
 class_name MoodPortrait
 ## MoodPortrait
 ## NPC 表情差分工具。
-## - normalize_mood(): 把 LLM 或本地启发式给出的字符串归一化为 3 种 canonical mood
+## - normalize_mood(): 把 LLM 或本地启发式给出的字符串归一化为表情文件名
 ## - detect_mood_from_text(): 关键词/标点启发式，用于 LLM 未输出 mood 时兜底
-## - get_placeholder_texture(): 生成一张写着"开心/思考/惊讶"字样的占位贴图；
-##   等真正的立绘 PNG 画好之后，直接换用 get_texture_for_npc() 从磁盘读取即可。
+## - LLM 统一输出 normal/happy/angry/sad；NPC 的 mood_map 负责兼容旧立绘后缀。
 
+const MOOD_NORMAL := "normal"
 const MOOD_HAPPY := "happy"
-const MOOD_THINKING := "thinking"
-const MOOD_SURPRISED := "surprised"
-const MOOD_WEARY := "weary"
-const DEFAULT_MOOD := MOOD_HAPPY
+const MOOD_ANGRY := "angry"
+const MOOD_SAD := "sad"
+const DEFAULT_MOOD := MOOD_NORMAL
 
-## 全局 3 种 canonical mood（兜底用）；NPC 可通过数据文件 mood_map 扩展
-const GLOBAL_CANONICAL_MOODS: Array[String] = [MOOD_HAPPY, MOOD_THINKING, MOOD_SURPRISED]
+## LLM 统一使用的 4 种 canonical mood。
+const GLOBAL_CANONICAL_MOODS: Array[String] = [MOOD_NORMAL, MOOD_HAPPY, MOOD_ANGRY, MOOD_SAD]
 
 ## LLM 输出 mood 的中文/英文别名（全局兜底）
 const _ALIASES := {
+	"normal": MOOD_NORMAL,
+	"neutral": MOOD_NORMAL,
+	"calm": MOOD_NORMAL,
+	"thinking": MOOD_NORMAL,
+	"pondering": MOOD_NORMAL,
+	"contemplative": MOOD_NORMAL,
+	"hesitant": MOOD_NORMAL,
+	"思考": MOOD_NORMAL,
+	"沉思": MOOD_NORMAL,
+	"犹豫": MOOD_NORMAL,
+	"迟疑": MOOD_NORMAL,
+	"平静": MOOD_NORMAL,
+	"游离": MOOD_NORMAL,
+
 	"happy": MOOD_HAPPY,
 	"joy": MOOD_HAPPY,
 	"joyful": MOOD_HAPPY,
@@ -32,44 +45,37 @@ const _ALIASES := {
 	"喜悦": MOOD_HAPPY,
 	"友好": MOOD_HAPPY,
 
-	"thinking": MOOD_THINKING,
-	"pondering": MOOD_THINKING,
-	"contemplative": MOOD_THINKING,
-	"hesitant": MOOD_THINKING,
-	"neutral": MOOD_THINKING,
-	"calm": MOOD_THINKING,
-	"思考": MOOD_THINKING,
-	"沉思": MOOD_THINKING,
-	"犹豫": MOOD_THINKING,
-	"迟疑": MOOD_THINKING,
-	"平静": MOOD_THINKING,
+	"angry": MOOD_ANGRY,
+	"surprised": MOOD_ANGRY,
+	"shocked": MOOD_ANGRY,
+	"astonished": MOOD_ANGRY,
+	"startled": MOOD_ANGRY,
+	"惊讶": MOOD_ANGRY,
+	"震惊": MOOD_ANGRY,
+	"吃惊": MOOD_ANGRY,
+	"意外": MOOD_ANGRY,
+	"愕然": MOOD_ANGRY,
+	"生气": MOOD_ANGRY,
+	"愤怒": MOOD_ANGRY,
+	"警觉": MOOD_ANGRY,
 
-	"surprised": MOOD_SURPRISED,
-	"shocked": MOOD_SURPRISED,
-	"astonished": MOOD_SURPRISED,
-	"startled": MOOD_SURPRISED,
-	"惊讶": MOOD_SURPRISED,
-	"震惊": MOOD_SURPRISED,
-	"吃惊": MOOD_SURPRISED,
-	"意外": MOOD_SURPRISED,
-	"愕然": MOOD_SURPRISED,
-
-	"weary": MOOD_WEARY,
-	"exhausted": MOOD_WEARY,
-	"tired": MOOD_WEARY,
-	"忧惧": MOOD_WEARY,
-	"疲惫": MOOD_WEARY,
-	"忧虑": MOOD_WEARY,
-	"憔悴": MOOD_WEARY,
+	"sad": MOOD_SAD,
+	"weary": MOOD_SAD,
+	"exhausted": MOOD_SAD,
+	"tired": MOOD_SAD,
+	"忧惧": MOOD_SAD,
+	"疲惫": MOOD_SAD,
+	"忧虑": MOOD_SAD,
+	"憔悴": MOOD_SAD,
 }
 
 ## 关键词到 mood 的映射，用于本地兜底判定
 const _KEYWORD_HINTS := {
-	MOOD_SURPRISED: [
+	MOOD_ANGRY: [
 		"！", "?！", "！？", "咦", "哎呀", "天哪", "老天", "什么？", "什么?！",
 		"竟然", "居然", "怎么会", "不会吧", "真的假的", "真的吗", "警觉",
 	],
-	MOOD_THINKING: [
+	MOOD_NORMAL: [
 		"……", "唔", "嗯——", "让我想想", "这个嘛", "或许", "也许", "似乎",
 		"我想想", "得想想", "怎么说", "不好说", "难说", "让我看看", "掂量",
 		"(", "（", "沉思", "犹豫", "游离", "低语",
@@ -78,7 +84,7 @@ const _KEYWORD_HINTS := {
 		"哈哈", "呵呵", "嘿嘿", "哟", "欢迎", "好啊", "太好了", "真好",
 		"客气", "请坐", "自便", "尽管", "掩饰", "笑意",
 	],
-	MOOD_WEARY: [
+	MOOD_SAD: [
 		"叹", "累", "疲惫", "忧惧", "憔悴", "力竭", "撑不住", "苍老",
 		"叹息", "唉", "罢了",
 	],
@@ -91,17 +97,11 @@ static var _npc_mood_lists: Dictionary = {}
 
 
 static func canonical_moods() -> Array[String]:
-	return [MOOD_HAPPY, MOOD_THINKING, MOOD_SURPRISED, MOOD_WEARY]
+	return GLOBAL_CANONICAL_MOODS.duplicate()
 
 
-## 返回某 NPC 可用的 mood 列表：优先 NPC 数据里的 mood_map 的 values，
-## 没有则返回全局 3 种。
-static func moods_for_npc(npc_id: String) -> Array[String]:
-	if npc_id == "":
-		return GLOBAL_CANONICAL_MOODS.duplicate()
-	_ensure_npc_mood_map_loaded(npc_id)
-	if _npc_mood_lists.has(npc_id):
-		return (_npc_mood_lists[npc_id] as Array[String]).duplicate()
+## 返回提供给 LLM 的统一 mood 列表；NPC mood_map 只处理立绘文件名兼容，不能暴露给模型。
+static func moods_for_npc(_npc_id: String) -> Array[String]:
 	return GLOBAL_CANONICAL_MOODS.duplicate()
 
 
@@ -134,15 +134,11 @@ static func normalize_mood(raw: String, npc_id: String = "") -> String:
 
 
 ## 根据 NPC 正文做启发式匹配；若都不命中，返回 DEFAULT_MOOD。
-## npc_id 用于决定该 NPC 可用的 mood 集合（如林德山有 weary）
-static func detect_mood_from_text(text: String, npc_id: String = "") -> String:
+static func detect_mood_from_text(text: String, _npc_id: String = "") -> String:
 	if text == null or text.strip_edges() == "":
 		return DEFAULT_MOOD
-	# 优先级：surprised > weary > thinking > happy（强烈情绪先判）
-	var ordered: Array[String] = [MOOD_SURPRISED, MOOD_WEARY, MOOD_THINKING, MOOD_HAPPY]
-	# 若该 NPC 不支持 weary，跳过
-	if npc_id != "" and not moods_for_npc(npc_id).has(MOOD_WEARY):
-		ordered.erase(MOOD_WEARY)
+	# 优先级：angry > sad > normal > happy（强烈情绪先判）
+	var ordered: Array[String] = [MOOD_ANGRY, MOOD_SAD, MOOD_NORMAL, MOOD_HAPPY]
 	for mood in ordered:
 		var keywords: Array = _KEYWORD_HINTS.get(mood, [])
 		for kw in keywords:
@@ -168,9 +164,9 @@ static var _disk_cache: Dictionary = {}
 ## 每个 mood 都有一个"色相偏移"数组，不同 NPC 会走到不同的偏移，使得视觉上能区分 NPC
 const _PLACEHOLDER_STYLE := {
 	MOOD_HAPPY:     {"bg": Color(0.98, 0.76, 0.35), "fg": Color(0.15, 0.08, 0.02), "label": "开心"},
-	MOOD_THINKING:  {"bg": Color(0.42, 0.55, 0.72), "fg": Color(0.95, 0.95, 0.98), "label": "思考"},
-	MOOD_SURPRISED: {"bg": Color(0.88, 0.42, 0.55), "fg": Color(0.98, 0.96, 0.90), "label": "惊讶"},
-	MOOD_WEARY:     {"bg": Color(0.45, 0.40, 0.35), "fg": Color(0.92, 0.88, 0.80), "label": "疲惫"},
+	MOOD_NORMAL:  {"bg": Color(0.42, 0.55, 0.72), "fg": Color(0.95, 0.95, 0.98), "label": "思考"},
+	MOOD_ANGRY: {"bg": Color(0.88, 0.42, 0.55), "fg": Color(0.98, 0.96, 0.90), "label": "惊讶"},
+	MOOD_SAD:     {"bg": Color(0.45, 0.40, 0.35), "fg": Color(0.92, 0.88, 0.80), "label": "疲惫"},
 }
 
 
@@ -214,15 +210,25 @@ static func _ensure_npc_mood_map_loaded(npc_id: String) -> void:
 ##   2. res://assets/portraits/default_<mood>.png    ← 全局差分
 ##   3. 动态生成的占位（按 npc_id hash 分色调）
 static func load_or_generate(npc_id: String, mood: String, size: Vector2i = Vector2i(200, 240)) -> Texture2D:
+	var requested_mood := mood.strip_edges().to_lower()
+	var portrait_prefix := "fisherman" if npc_id == "yu_le" else npc_id
+	# resolve_mood() 可能已经把 canonical mood 映射成旧版文件后缀；优先直接加载，避免二次映射。
+	if npc_id != "" and not requested_mood.is_empty():
+		var requested_tex := _try_load_disk("res://assets/portraits/%s_%s.png" % [portrait_prefix, requested_mood])
+		if requested_tex != null:
+			return requested_tex
 	var canonical := normalize_mood(mood, npc_id)
 	if canonical == "":
 		canonical = DEFAULT_MOOD
 
 	if npc_id != "":
-		var portrait_prefix := "fisherman" if npc_id == "yu_le" else npc_id
 		var tex := _try_load_disk("res://assets/portraits/%s_%s.png" % [portrait_prefix, canonical])
 		if tex != null:
 			return tex
+		if canonical == DEFAULT_MOOD:
+			tex = _try_load_disk("res://assets/portraits/%s.png" % portrait_prefix)
+			if tex != null:
+				return tex
 	var tex2 := _try_load_disk("res://assets/portraits/default_%s.png" % canonical)
 
 

@@ -4,7 +4,7 @@
   "short_desc": "一截从旧工地材料堆里取出的钢管，沉重结实，可作为临时钝器。",
   "tags": ["武器", "工具", "工地", "钝器"],
   "attack_difficulty_reduction": 5,
-  "usable_in_dialogue": false,
+  "usable_in_dialogue": true,
   "consumable": false,
   "inspectable": false,
   "icon_path": "",

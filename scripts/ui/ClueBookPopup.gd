@@ -9,6 +9,7 @@ signal closed
 
 const ROW_MIN_HEIGHT := 112.0
 const THUMBNAIL_SIZE := Vector2(112, 82)
+const TEXT_CLUE_THUMBNAIL_PATH := "res://assets/documents/files.png"
 
 var _overlay: Control
 var _list_box: VBoxContainer
@@ -173,6 +174,9 @@ func _build_row(entry: Dictionary) -> Control:
 	hbox.add_child(thumbnail_box)
 	var image_path := String(entry.get("image_path", ""))
 	var texture := load(image_path) as Texture2D if not image_path.is_empty() else null
+	var entry_type := String(entry.get("entry_type", ""))
+	if texture == null and entry_type in ["text_pages", "story_clue"]:
+		texture = load(TEXT_CLUE_THUMBNAIL_PATH) as Texture2D
 	if texture != null:
 		var thumbnail := TextureRect.new()
 		thumbnail.texture = texture

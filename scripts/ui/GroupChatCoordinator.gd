@@ -12,7 +12,7 @@ signal npc_spoke(npc_id: String, text: String, round: int, mood: String)
 
 const MAX_ROUNDS := 6
 const MAX_TIME_MINUTES := 30
-const LLM_TIMEOUT_SEC := 40.0
+const LLM_TIMEOUT_SEC := 90.0
 
 var _active := false
 var _loc_id := ""

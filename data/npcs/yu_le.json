@@ -36,8 +36,11 @@
     {
       "id": "yu_le_reward_fishing_lantern",
       "when": "dialogue_open",
-      "once": true,
-      "all_of": [{"type": "investigation_state", "id": "lakeside_dock:fishing_success", "value": 1}],
+      "once": false,
+      "all_of": [
+        {"type": "item", "id": "fresh_fish"},
+        {"type": "not_item", "id": "lantern"}
+      ],
       "pages": [
         "（于乐瞧见你收网的手势，咧嘴笑了。）行啊，这一下收得稳，鱼没从网眼里溜掉。看来我那点诀窍你真听进去了。",
         "拿着这个旧灯笼。水边天一暗，光比力气管用；有灯照着浮漂和水纹，能更好捕鱼。别嫌旧，灯芯我刚给你换过。"

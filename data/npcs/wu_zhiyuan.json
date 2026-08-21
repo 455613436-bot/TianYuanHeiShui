@@ -37,8 +37,33 @@
       "pages": [
         "（村长放下茶杯，和气地点点头。）外乡人，远道辛苦了。村里山路难走，天黑前最好早些下山。"
       ],
-      "choices": ["询问水污染", "询问村里的医院"],
+      "choices": ["能给我一张地图吗", "村里最近有什么事情吗"],
+      "choice_effects": {
+        "能给我一张地图吗": {
+          "add_items": ["village_map"],
+          "trigger_clues": ["got_village_map"]
+        }
+      },
+      "choice_replies": {
+        "能给我一张地图吗": "（村长从抽屉里取出一张边角微卷的手绘地图，摊平后递到你面前。）拿着吧。老井、村委会、码头和几处山道都标了；山里岔路多，别只顾看风景走错了。"
+      },
       "effects": {"set_quest_stage": {"id": "chief_pollution_truth", "stage": 1}}
+    },
+    {
+      "id": "wu_zhiyuan_map_followup",
+      "when": "dialogue_open",
+      "once": true,
+      "all_of": [
+        {"type": "event", "id": "wu_zhiyuan_first_meeting"},
+        {"type": "not_item", "id": "village_map"}
+      ],
+      "pages": [
+        "（村长像是忽然想起了什么，叫住正要离开的你，从抽屉里取出一张边角微卷的手绘地图。）等等，这个你拿着。村里山道和岔路多，老井、村委会、码头都在上面标了，别走错路。"
+      ],
+      "effects": {
+        "add_items": ["village_map"],
+        "trigger_clues": ["got_village_map"]
+      }
     },
     {
       "id": "wu_zhiyuan_factory_withdrawal_presented",
@@ -73,5 +98,21 @@
   "current_location": "village_chief_house",
   "scene_hotspot": true,
   "importance": "main",
-  "sort_priority": 10
+  "sort_priority": 10,
+  "mood_map": {
+    "平静": "normal",
+    "neutral": "normal",
+    "normal": "normal",
+    "thinking": "normal",
+    "信任": "happy",
+    "happy": "happy",
+    "怀疑": "angry",
+    "生气": "angry",
+    "angry": "angry",
+    "surprised": "angry",
+    "疲惫": "sad",
+    "悲伤": "sad",
+    "sad": "sad",
+    "weary": "sad"
+  }
 }

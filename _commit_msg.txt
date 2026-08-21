@@ -1,0 +1,8 @@
+feat: 统一 NPC mood 语义为 normal/happy/angry/sad，修复 LLM 超时与 qwen base_url
+
+- 将 LLM/立绘 mood 契约统一为 normal/happy/angry/sad，旧 thinking/surprised/weary 仍兼容映射
+- LLM 请求超时由 30s 提升至 90s（HTTP/对话/多人），修正 result=13 显示为“请求超时”
+- 修复 qwen 预设 base_url 缺少 /v1 导致的 404
+- NPC 人设、线索、物品与立绘资源同步更新，移除误提交的大 PDF
+
+Co-Authored-By: CodeBuddy <noreply@codebuddy.ai>

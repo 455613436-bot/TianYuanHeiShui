@@ -19,7 +19,7 @@
       "id": "niu_lanshan_first_meeting",
       "when": "dialogue_open",
       "once": true,
-      "pages": ["（牛岚山拍着裤脚上的泥，望向田里。）可算来人了！最近麻雀多得邪乎，成群啄稻谷，我赶都赶不及。", "劳烦你去农田里看看，想个法子把鸟儿驱走。稻草人、味儿冲的草、响动、反光……只要能护住粮食，都成。"],
+      "pages": ["（牛岚山拍着裤脚上的泥，望向田里。）可算来人了！最近麻雀多得邪乎，成群啄稻谷，我赶都赶不及。", "劳烦你去农田里看看，想个法子把鸟儿驱走，怎样都成。"],
       "choices": ["答应帮忙驱鸟", "先看看农田"],
       "choice_replies": {
         "答应帮忙驱鸟": "好，有劳了！麻雀就在田中央那一片闹得最凶，你先去瞧瞧。",
@@ -65,7 +65,10 @@
   "importance": "main",
   "sort_priority": 45,
   "mood_map": {
+    "normal": "thinking",
     "happy": "happy",
+    "angry": "surprised",
+    "sad": "weary",
     "thinking": "thinking",
     "surprised": "surprised",
     "weary": "weary",

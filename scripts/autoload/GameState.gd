@@ -171,6 +171,29 @@ func set_attributes(values: Dictionary, lock_in: bool = true) -> bool:
 	return true
 
 
+## 水潭重置保留当前基础属性与永久成长的总点数，不清除每日临时状态。
+func respec_attributes(values: Dictionary) -> bool:
+	var expected_total := 0
+	for key in ATTRIBUTE_KEYS:
+		expected_total += int(attributes.get(key, ATTRIBUTE_MIN))
+	var normalized: Dictionary = {}
+	for key in ATTRIBUTE_KEYS:
+		var raw: Variant = values.get(key, ATTRIBUTE_MIN)
+		if not (raw is int or raw is float):
+			return false
+		var value := clampi(int(raw), ATTRIBUTE_MIN, expected_total)
+		if value != int(raw):
+			return false
+		normalized[key] = value
+	if expected_total <= 0 or normalized.values().reduce(func(total: int, value: Variant) -> int: return total + int(value), 0) != expected_total:
+		return false
+	attributes = normalized
+	attributes_locked_in = true
+	attributes_changed.emit()
+	save_game(AUTO_SAVE_PATH, false)
+	return true
+
+
 func attributes_summary_text() -> String:
 	var parts: PackedStringArray = []
 	for key in ATTRIBUTE_KEYS:
@@ -227,9 +250,9 @@ func shower_today() -> bool:
 
 func offer_ritual_fish() -> bool:
 	var day_key := str(TimeSystem.current_day)
-	if not has_item("ritual_fish") or bool(ritual_offering_days.get(day_key, false)):
+	if not has_item("fresh_fish") or bool(ritual_offering_days.get(day_key, false)):
 		return false
-	remove_item("ritual_fish")
+	remove_item("fresh_fish")
 	ritual_offering_days[day_key] = true
 	ritual_offering_count += 1
 	save_game(AUTO_SAVE_PATH, false)
@@ -560,8 +583,7 @@ func complete_player_dialogue_round() -> bool:
 		save_game(AUTO_SAVE_PATH, false)
 		return true
 	if is_night_outing_time():
-		night_rest_required = true
-		night_return_required.emit("天黑了。请先回临时宿舍休整，明早再继续调查。")
+		night_return_required.emit("天黑了。请先回临时宿舍；持有灯笼时，之后仍可前往村长家或道观进行夜间调查。")
 		save_game(AUTO_SAVE_PATH, false)
 		return true
 	return false
@@ -740,8 +762,6 @@ func enter_location(scene_path: String) -> Error:
 		if TimeSystem.is_rest_lock_time():
 			night_rest_required = true
 			call_deferred("_force_return_to_dorm")
-		elif is_night_outing_time():
-			call_deferred("_force_return_to_dorm")
 	save_game(AUTO_SAVE_PATH, false)
 	return OK
 
@@ -826,8 +846,9 @@ func load_game(path: String = SAVE_PATH, switch_scene: bool = true) -> Error:
 	pollution = clampi(_safe_int(data.get("pollution", 0), 0), 0, MAX_POLLUTION)
 	affinity = _int_dictionary(data.get("affinity", {}))
 	inventory = _string_array(data.get("inventory", []))
-	# 历史版本曾把农田草帽的场景拾取标记加入背包；该标记不是可用物品。
+	# 清理已废弃物品；拾取物品的旧存档恢复在 one_shot_items 载入后执行。
 	inventory.erase("farmland_straw_hat")
+	inventory.erase("bronze_fragment")
 	clues = _bool_dictionary(data.get("clues", {}))
 	document_clues = _sanitize_document_clues(data.get("document_clues", []))
 	# 兼容旧存档：删除已废弃的重复工具箱资料，只保留线索 gong_toolbox_lead。
@@ -853,6 +874,10 @@ func load_game(path: String = SAVE_PATH, switch_scene: bool = true) -> Error:
 	npc_dialogue_stages = _int_dictionary(data.get("npc_dialogue_stages", {}))
 	triggered_events = _bool_dictionary(data.get("triggered_events", {}))
 	one_shot_items = _bool_dictionary(data.get("one_shot_items", {}))
+	if bool(triggered_events.get("niu_lanshan_bird_task_reward", false)) and not inventory.has("rusty_shovel"):
+		inventory.append("rusty_shovel")
+	if bool(one_shot_items.get("steel_pipe", false)) and not inventory.has("steel_pipe"):
+		inventory.append("steel_pipe")
 	var rest_lock_raw: Variant = data.get("night_rest_required", false)
 	night_rest_required = bool(rest_lock_raw) if rest_lock_raw is bool else false
 	scene_states = _sanitize_scene_states(data.get("scene_states", {}))
@@ -874,6 +899,9 @@ func load_game(path: String = SAVE_PATH, switch_scene: bool = true) -> Error:
 	else:
 		TimeSystem.load_from_dict(data.get("time_system", {}))
 		NpcRegistry.load_from_dict(data.get("npc_registry", {}))
+	# 兼容旧版本在 19:00 就写入的整夜锁定；19:00–22:00 持灯笼仍可夜间出行。
+	if night_rest_required and not TimeSystem.is_rest_lock_time():
+		night_rest_required = false
 	if night_rest_required and loaded_scene != MAP_SCENE and loaded_scene != TEMP_DORM_SCENE:
 		loaded_scene = TEMP_DORM_SCENE
 	current_scene_path = loaded_scene

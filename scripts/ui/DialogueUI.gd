@@ -24,7 +24,7 @@ enum DialogueState {
 }
 
 const HISTORY_LIMIT := 20
-const LLM_TIMEOUT_SEC := 30.0
+const LLM_TIMEOUT_SEC := 90.0
 const FIXED_STORY_TYPEWRITER_INTERVAL := 0.12
 const COMPACT_WIDTH := 1050.0
 const OPENING_REQUEST := "请以角色身份自然地先开口打招呼，并生成适合玩家继续交谈的选项。不要提及这条要求。"
@@ -344,13 +344,17 @@ func _finish_fixed_story_event() -> void:
 	_change_state(DialogueState.WAITING_PLAYER)
 	_show_choices(choices)
 	var raw_choice_replies: Variant = event.get("choice_replies", {})
-	if raw_choice_replies is Dictionary:
-		var choice_replies: Dictionary = raw_choice_replies
-		for button in choice_buttons:
-			var choice_text := String(button.get_meta("choice_text", ""))
-			var local_reply := String(choice_replies.get(choice_text, "")).strip_edges()
-			if not local_reply.is_empty():
-				button.set_meta("fixed_choice_reply", local_reply)
+	var choice_replies: Dictionary = raw_choice_replies if raw_choice_replies is Dictionary else {}
+	var raw_choice_effects: Variant = event.get("choice_effects", {})
+	var choice_effects: Dictionary = raw_choice_effects if raw_choice_effects is Dictionary else {}
+	for button in choice_buttons:
+		var choice_text := String(button.get_meta("choice_text", ""))
+		var local_reply := String(choice_replies.get(choice_text, "")).strip_edges()
+		if not local_reply.is_empty():
+			button.set_meta("fixed_choice_reply", local_reply)
+		var local_effects: Variant = choice_effects.get(choice_text, {})
+		if local_effects is Dictionary and not (local_effects as Dictionary).is_empty():
+			button.set_meta("fixed_choice_effects", (local_effects as Dictionary).duplicate(true))
 	fixed_story_event_completed.emit(completed_event_id)
 	input_edit.grab_focus()
 
@@ -387,13 +391,13 @@ func open_group_chat(participant_ids: Array[String]) -> bool:
 func begin_group_npc_turn(npc_id: String) -> void:
 	if not _group_mode:
 		return
-	_set_group_speaker(npc_id, MoodPortraitUtil.MOOD_THINKING)
+	_set_group_speaker(npc_id, MoodPortraitUtil.MOOD_NORMAL)
 
 
 func update_group_npc_speech(npc_id: String, accumulated_text: String) -> void:
 	if not _group_mode:
 		return
-	_set_group_speaker(npc_id, MoodPortraitUtil.MOOD_THINKING)
+	_set_group_speaker(npc_id, MoodPortraitUtil.MOOD_NORMAL)
 	var stream_index := _find_group_stream_index(npc_id)
 	if stream_index >= 0:
 		history[stream_index]["text"] = accumulated_text
@@ -587,10 +591,10 @@ func _apply_mood(mood_raw: String) -> void:
 
 func _mood_badge_text(mood: String) -> String:
 	match mood:
+		MoodPortraitUtil.MOOD_NORMAL, "thinking": return "平静"
 		MoodPortraitUtil.MOOD_HAPPY: return "开心"
-		MoodPortraitUtil.MOOD_THINKING: return "思考"
-		MoodPortraitUtil.MOOD_SURPRISED: return "惊讶"
-		MoodPortraitUtil.MOOD_WEARY: return "疲惫"
+		MoodPortraitUtil.MOOD_ANGRY, "surprised": return "警觉"
+		MoodPortraitUtil.MOOD_SAD, "weary": return "低落"
 	return ""
 
 
@@ -624,10 +628,42 @@ func _on_choice_pressed(button: Button) -> void:
 	# 若这是「我没有 / 不出示」的兜底按钮，先清空已挂 token，避免语义冲突
 	if bool(button.get_meta("is_item_deny", false)):
 		_clear_all_item_tokens()
+	if button.has_meta("fixed_choice_effects"):
+		_apply_fixed_choice_effects(button.get_meta("fixed_choice_effects", {}))
 	if button.has_meta("fixed_choice_reply"):
 		_submit_fixed_choice_reply(String(button.get_meta("choice_text", button.text)), String(button.get_meta("fixed_choice_reply", "")))
 		return
 	_submit_player_text(String(button.get_meta("choice_text", button.text)))
+
+
+func _apply_fixed_choice_effects(raw_effects: Variant) -> void:
+	if not raw_effects is Dictionary:
+		return
+	var effects: Dictionary = raw_effects
+	var quest: Variant = effects.get("set_quest_stage", {})
+	if quest is Dictionary:
+		var quest_id := String((quest as Dictionary).get("id", "")).strip_edges()
+		if not quest_id.is_empty():
+			GameState.set_quest_stage(quest_id, int((quest as Dictionary).get("stage", 0)))
+	var investigation: Variant = effects.get("set_investigation_state", {})
+	if investigation is Dictionary:
+		var state_id := String((investigation as Dictionary).get("id", "")).strip_edges()
+		if not state_id.is_empty():
+			GameState.set_investigation_state(state_id, (investigation as Dictionary).get("value", true))
+	var clues: Variant = effects.get("trigger_clues", [])
+	if clues is Array:
+		for raw_clue in clues:
+			var clue_id := String(raw_clue).strip_edges()
+			if not clue_id.is_empty() and not GameState.has_clue(clue_id):
+				GameState.trigger_clue(clue_id)
+	var items: Variant = effects.get("add_items", [])
+	if items is Array:
+		for raw_item in items:
+			var item_id := String(raw_item).strip_edges()
+			if not item_id.is_empty() and not GameState.has_item(item_id):
+				GameState.add_item(item_id)
+				SceneItemInteractionScript.show_content_added_toast(ItemDB.get_display_name(item_id), "物品栏")
+	GameState.save_game(GameState.AUTO_SAVE_PATH, false)
 
 
 func _submit_fixed_choice_reply(choice_text: String, reply_text: String) -> void:
@@ -1248,7 +1284,7 @@ func _lock_for_night_rest() -> void:
 		_append_history("system", "（已经 22:00，请回临时宿舍休息。今晚的调查到此结束。）")
 		input_edit.placeholder_text = "请回宿舍休息"
 	else:
-		_append_history("system", "（已经 19:00，请先返回临时宿舍。若持有灯笼，随后可在夜间前往村长家或道观。）")
+		_append_history("system", "（天黑了，请先返回临时宿舍休整。）")
 		input_edit.placeholder_text = "请先返回临时宿舍"
 	_change_state(DialogueState.REST_LOCKED)
 
@@ -1361,7 +1397,7 @@ func _run_check_flow(check_request: Dictionary) -> void:
 	_redraw_history()
 
 	# 掷骰结果一出，NPC 立即切到"思考"状态；下一轮 check_followup 会根据结果重新解析 mood
-	_apply_mood(MoodPortraitUtil.MOOD_THINKING)
+	_apply_mood(MoodPortraitUtil.MOOD_NORMAL)
 
 	# 关键叙事事件写入全局记忆；骰子过程本身不再单独写 NPC 历史
 	# （NPC 后续 check_followup 的反应会被 _persist_turn_to_memory 正常记录）

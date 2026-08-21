@@ -126,7 +126,7 @@ func _spent() -> int:
 
 func _adjust(key: String, delta: int) -> void:
 	var current := int(_values.get(key, 0))
-	var target := clampi(current + delta, GameState.ATTRIBUTE_MIN, GameState.ATTRIBUTE_MAX)
+	var target := clampi(current + delta, GameState.ATTRIBUTE_MIN, _total_points)
 	if target == current:
 		return
 	if delta > 0 and _spent() + 1 > _total_points:
@@ -143,7 +143,7 @@ func _refresh() -> void:
 		var value := int(_values.get(key, 0))
 		(row["value"] as Label).text = str(value)
 		(row["minus"] as Button).disabled = value <= GameState.ATTRIBUTE_MIN
-		(row["plus"] as Button).disabled = value >= GameState.ATTRIBUTE_MAX or remaining <= 0
+		(row["plus"] as Button).disabled = value >= _total_points or remaining <= 0
 	_tip_label.text = "点数分配完毕后才能确认。" if remaining != 0 else "水面映出另一种可能的你。"
 
 
