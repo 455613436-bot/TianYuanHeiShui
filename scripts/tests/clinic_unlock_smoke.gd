@@ -51,8 +51,14 @@ func _run() -> void:
 
 	var equipment_ui: SceneItemInteraction = clinic.get_node("ClinicEquipmentInteraction") as SceneItemInteraction
 	clinic.call("_learn_medical_exam", clinic.get_node("ClinicEquipmentHighlight"), equipment_ui)
-	if not SkillSystem.is_medical_exam_unlocked() or not _skill_list_contains("medical_exam"):
+	if not SkillSystem.is_medical_exam_unlocked():
 		_fail("Clinic equipment did not unlock medical exam")
+		return
+	if _skill_list_contains("medical_exam"):
+		_fail("Water-only medical exam incorrectly appeared for an NPC outside the dorm")
+		return
+	if not _dorm_skill_list_contains("medical_exam"):
+		_fail("Water-only medical exam did not appear in the temporary dorm")
 		return
 
 	clinic.queue_free()
@@ -70,6 +76,13 @@ func _run() -> void:
 
 func _skill_list_contains(skill_id: String) -> bool:
 	for skill in SkillSystem.skills_for_target(true, "village_committee"):
+		if String(skill.get("id", "")) == skill_id:
+			return true
+	return false
+
+
+func _dorm_skill_list_contains(skill_id: String) -> bool:
+	for skill in SkillSystem.skills_for_target(false, "temporary_dorm"):
 		if String(skill.get("id", "")) == skill_id:
 			return true
 	return false

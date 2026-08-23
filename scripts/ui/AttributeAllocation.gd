@@ -1,90 +1,121 @@
 extends Control
-## 属性分配界面：把 ATTRIBUTE_TOTAL_POINTS 点分配到四维，每维 0-5。
-## 按下"开始冒险"后写入 GameState 并切到首场景。
+## 属性分配界面：使用调查员档案素材，把 10 点分配到四项属性。
 
 const NEXT_SCENE_PATH := "res://scenes/locations/TemporaryDorm.tscn"
+const ROW_SIZE := Vector2(441, 71)
+const ROW_STEP := 72.0
+const ROW_TEXTURES := {
+	"strength": preload("res://assets/ui/attribute_allocation/row_strength.png"),
+	"agility": preload("res://assets/ui/attribute_allocation/row_agility.png"),
+	"intellect": preload("res://assets/ui/attribute_allocation/row_intellect.png"),
+	"charisma": preload("res://assets/ui/attribute_allocation/row_charisma.png"),
+}
+const MINUS_TEXTURE := preload("res://assets/ui/attribute_allocation/button_minus.png")
+const PLUS_TEXTURE := preload("res://assets/ui/attribute_allocation/button_plus.png")
+const UI_FONT := preload("res://assets/fonts/SourceHanSerifSC-SemiBold.otf")
 
-@onready var remaining_label: Label = $Panel/VBox/HeaderRow/RemainingLabel
-@onready var start_btn: Button = $Panel/VBox/Footer/StartBtn
-@onready var rows_container: VBoxContainer = $Panel/VBox/Rows
-@onready var reset_btn: Button = $Panel/VBox/Footer/ResetBtn
-@onready var tip_label: Label = $Panel/VBox/TipLabel
+@onready var remaining_label: Label = $Paper/Content/RemainingFrame/RemainingLabel
+@onready var start_btn: TextureButton = $Paper/Content/Footer/StartBtn
+@onready var rows_container: Control = $Paper/Content/Rows
+@onready var reset_btn: TextureButton = $Paper/Content/Footer/ResetBtn
+@onready var tip_label: Label = $Paper/Content/TipLabel
 
 var _values: Dictionary = {}
-var _rows: Dictionary = {}  # key -> {label, value_label, minus, plus}
+var _rows: Dictionary = {}
 
 
 func _ready() -> void:
-	# 若已经分配过，直接跳过（避免重复弹出）
 	if GameState.attributes_allocated():
 		call_deferred("_go_next")
 		return
 
-	for key in GameState.ATTRIBUTE_KEYS:
-		_values[key] = 0
-
-	# 建议起手每项 2 或 3（视觉起点更友好）
 	var starter := {"strength": 3, "agility": 3, "intellect": 2, "charisma": 2}
-	if starter.values().reduce(func(a, b): return a + b, 0) == GameState.ATTRIBUTE_TOTAL_POINTS:
-		_values = starter.duplicate(true)
-
 	for key in GameState.ATTRIBUTE_KEYS:
+		_values[key] = int(starter.get(key, 0))
 		_build_row(key)
+
 	start_btn.pressed.connect(_on_start_pressed)
 	reset_btn.pressed.connect(_on_reset_pressed)
+	_configure_large_button(start_btn)
+	_configure_large_button(reset_btn)
 	_refresh_all()
+	start_btn.grab_focus()
 
 
 func _build_row(key: String) -> void:
-	var row := HBoxContainer.new()
-	row.custom_minimum_size = Vector2(0, 56)
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 20)
+	var row_index := _rows.size()
+	var row := Control.new()
+	row.name = "%sRow" % key.capitalize()
+	row.position = Vector2(0, row_index * ROW_STEP)
+	row.size = ROW_SIZE
+	rows_container.add_child(row)
 
-	var label := Label.new()
-	label.text = "%s（%s）" % [GameState.ATTRIBUTE_LABELS.get(key, key), _description_for(key)]
-	label.custom_minimum_size = Vector2(360, 0)
-	label.add_theme_font_size_override("font_size", 22)
-	row.add_child(label)
+	var artwork := TextureRect.new()
+	artwork.name = "Artwork"
+	artwork.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	artwork.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	artwork.texture = ROW_TEXTURES.get(key)
+	artwork.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	artwork.stretch_mode = TextureRect.STRETCH_SCALE
+	row.add_child(artwork)
 
-	var minus_btn := Button.new()
-	minus_btn.text = "−"
-	minus_btn.custom_minimum_size = Vector2(48, 48)
-	minus_btn.add_theme_font_size_override("font_size", 28)
-	minus_btn.pressed.connect(func(): _adjust(key, -1))
+	var minus_btn := _create_adjust_button(MINUS_TEXTURE, Rect2(290, 9, 49, 48))
+	minus_btn.name = "Minus"
+	minus_btn.tooltip_text = "减少%s" % GameState.ATTRIBUTE_LABELS.get(key, key)
+	minus_btn.pressed.connect(_adjust.bind(key, -1))
 	row.add_child(minus_btn)
 
 	var value_label := Label.new()
-	value_label.text = "0"
-	value_label.custom_minimum_size = Vector2(52, 0)
+	value_label.name = "Value"
+	value_label.position = Vector2(340, 4)
+	value_label.size = Vector2(51, 54)
+	value_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	value_label.add_theme_font_size_override("font_size", 32)
-	value_label.add_theme_color_override("font_color", Color(1.0, 0.92, 0.7))
+	value_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	value_label.add_theme_font_override("font", UI_FONT)
+	value_label.add_theme_font_size_override("font_size", 31)
+	value_label.add_theme_color_override("font_color", Color(0.16, 0.09, 0.03, 1.0))
 	row.add_child(value_label)
 
-	var plus_btn := Button.new()
-	plus_btn.text = "+"
-	plus_btn.custom_minimum_size = Vector2(48, 48)
-	plus_btn.add_theme_font_size_override("font_size", 28)
-	plus_btn.pressed.connect(func(): _adjust(key, +1))
+	var plus_btn := _create_adjust_button(PLUS_TEXTURE, Rect2(392, 9, 49, 48))
+	plus_btn.name = "Plus"
+	plus_btn.tooltip_text = "增加%s" % GameState.ATTRIBUTE_LABELS.get(key, key)
+	plus_btn.pressed.connect(_adjust.bind(key, 1))
 	row.add_child(plus_btn)
 
-	rows_container.add_child(row)
 	_rows[key] = {
-		"label": label,
 		"value_label": value_label,
 		"minus": minus_btn,
 		"plus": plus_btn,
 	}
 
 
-func _description_for(key: String) -> String:
-	match key:
-		"strength": return "对抗、威胁、破门等硬碰硬"
-		"agility": return "潜行、扒窃、闪避、快速动作"
-		"intellect": return "观察、推理、专业知识、拆解"
-		"charisma": return "说服、忽悠、恳求、社交周旋"
-	return ""
+func _create_adjust_button(texture: Texture2D, rect: Rect2) -> TextureButton:
+	var button := TextureButton.new()
+	button.position = rect.position
+	button.size = rect.size
+	button.texture_normal = texture
+	button.ignore_texture_size = true
+	button.stretch_mode = TextureButton.STRETCH_SCALE
+	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	button.focus_mode = Control.FOCUS_ALL
+	button.mouse_entered.connect(_set_button_hover.bind(button, true))
+	button.mouse_exited.connect(_set_button_hover.bind(button, false))
+	return button
+
+
+func _configure_large_button(button: TextureButton) -> void:
+	button.mouse_entered.connect(_set_button_hover.bind(button, true))
+	button.mouse_exited.connect(_set_button_hover.bind(button, false))
+	button.focus_entered.connect(_set_button_hover.bind(button, true))
+	button.focus_exited.connect(_set_button_hover.bind(button, false))
+
+
+func _set_button_hover(button: TextureButton, hovered: bool) -> void:
+	if button.disabled:
+		button.modulate = Color(0.66, 0.62, 0.56, 0.72)
+	else:
+		button.modulate = Color(1.08, 1.05, 0.92, 1.0) if hovered else Color.WHITE
 
 
 func _adjust(key: String, delta: int) -> void:
@@ -112,27 +143,27 @@ func _remaining() -> int:
 func _refresh_all() -> void:
 	var remaining := _remaining()
 	remaining_label.text = "剩余点数：%d / %d" % [remaining, GameState.ATTRIBUTE_TOTAL_POINTS]
-	if remaining == 0:
-		remaining_label.add_theme_color_override("font_color", Color(0.6, 1.0, 0.7))
-	else:
-		remaining_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.55))
+	remaining_label.add_theme_color_override(
+		"font_color",
+		Color(0.22, 0.30, 0.16, 1.0) if remaining == 0 else Color(0.38, 0.20, 0.07, 1.0)
+	)
 
 	for key in GameState.ATTRIBUTE_KEYS:
 		var row: Dictionary = _rows.get(key, {})
 		if row.is_empty():
 			continue
-		var v := int(_values.get(key, 0))
-		(row["value_label"] as Label).text = str(v)
-		(row["minus"] as Button).disabled = v <= GameState.ATTRIBUTE_MIN
-		(row["plus"] as Button).disabled = v >= GameState.ATTRIBUTE_MAX or remaining <= 0
+		var value := int(_values.get(key, 0))
+		(row["value_label"] as Label).text = str(value)
+		var minus_button := row["minus"] as TextureButton
+		var plus_button := row["plus"] as TextureButton
+		minus_button.disabled = value <= GameState.ATTRIBUTE_MIN
+		plus_button.disabled = value >= GameState.ATTRIBUTE_MAX or remaining <= 0
+		_set_button_hover(minus_button, false)
+		_set_button_hover(plus_button, false)
 
 	start_btn.disabled = remaining != 0
-	if remaining == 0:
-		tip_label.text = "确认分配后不可更改。"
-		tip_label.add_theme_color_override("font_color", Color(0.75, 1.0, 0.8))
-	else:
-		tip_label.text = "把剩余点数分配完毕后即可开始冒险。"
-		tip_label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85))
+	_set_button_hover(start_btn, false)
+	tip_label.visible = false
 
 
 func _on_reset_pressed() -> void:
@@ -144,10 +175,9 @@ func _on_reset_pressed() -> void:
 func _on_start_pressed() -> void:
 	if _remaining() != 0:
 		return
-	var ok := GameState.set_attributes(_values, true)
-	if not ok:
+	if not GameState.set_attributes(_values, true):
 		tip_label.text = "分配数据不合法，请检查后重试。"
-		tip_label.add_theme_color_override("font_color", Color(1.0, 0.5, 0.5))
+		tip_label.visible = true
 		return
 	_go_next()
 

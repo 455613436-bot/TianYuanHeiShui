@@ -72,17 +72,5 @@ func _on_inventory_requested() -> void:
 	popup.open_ui(GameState.inventory, [], false)
 
 
-func _on_night_return_required(message: String) -> void:
-	var dialog := AcceptDialog.new()
-	dialog.title = "夜间休整"
-	dialog.dialog_text = message
-	dialog.ok_button_text = "返回宿舍"
-	dialog.exclusive = true
-	add_child(dialog)
-	dialog.confirmed.connect(GameState.confirm_night_return)
-	dialog.close_requested.connect(GameState.confirm_night_return)
-	dialog.popup_centered(Vector2i(520, 220))
-
-
 func _open_map() -> void:
 	InputManager.request_open_map()

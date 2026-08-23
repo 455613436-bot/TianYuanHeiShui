@@ -1,82 +1,59 @@
 @tool
-class_name NodeUtils
 extends RefCounted
+class_name MCPNodeUtils
 
-# Get all nodes of a certain type in the scene tree
-static func get_nodes_by_type(root_node: Node, type_name: String) -> Array[Node]:
-	var result: Array[Node] = []
-	
-	if root_node.get_class() == type_name:
-		result.push_back(root_node)
-	
-	for child in root_node.get_children():
-		result.append_array(get_nodes_by_type(child, type_name))
-	
-	return result
-
-# Get a node by its path, or null if not found
-static func find_node_by_path(root_node: Node, path: String) -> Node:
+static func normalize_path(path: String) -> String:
 	if path.is_empty():
-		return null
-	
+		return "."
+	if path.begins_with("res://") or path.begins_with("/root"):
+		return path
 	if path.begins_with("/"):
-		path = path.substr(1)
-	
-	var path_parts = path.split("/")
-	var current_node = root_node
-	
-	for part in path_parts:
-		var found = false
-		for child in current_node.get_children():
-			if child.name == part:
-				current_node = child
-				found = true
-				break
-		
-		if not found:
-			return null
-	
-	return current_node
+		return path.substr(1)
+	return path
 
-# Convert a node to a JSON-compatible dictionary
-static func node_to_dict(node: Node) -> Dictionary:
-	var result = {
-		"name": node.name,
-		"type": node.get_class(),
-		"path": str(node.get_path()),
-		"properties": {}
-	}
-	
-	# Get properties
-	var properties = {}
-	var property_list = node.get_property_list()
-	
-	for prop in property_list:
-		var name = prop["name"]
-		if not name.begins_with("_"): # Skip internal properties
-			result["properties"][name] = node.get(name)
-	
-	# Get children
-	var children = []
-	for child in node.get_children():
-		children.append({
-			"name": child.name,
-			"type": child.get_class(),
-			"path": str(child.get_path())
-		})
-	
-	result["children"] = children
-	
-	return result
 
-# Create a screenshot of a node (only works for CanvasItem nodes)
-static func take_node_screenshot(node: CanvasItem) -> Image:
-	if not node is CanvasItem:
-		push_error("Can only take screenshots of CanvasItem nodes")
+static func resolve_in_tree(root: Node, path: String) -> Node:
+	if root == null:
 		return null
-	
-	var viewport = node.get_viewport()
-	if not viewport:
-		return null
-	
-	return viewport.get_texture().get_image()
+	var p := normalize_path(path)
+	if p == ".":
+		return root
+	return root.get_node_or_null(NodePath(p))
+
+
+static func collect_by_type(root: Node, type_name: String, results: Array, max_count: int = 500) -> void:
+	if results.size() >= max_count or root == null:
+		return
+	if root.get_class() == type_name or root.is_class(type_name):
+		results.append({"path": str(root.get_path()), "name": root.name, "type": root.get_class()})
+	for child in root.get_children():
+		collect_by_type(child, type_name, results, max_count)
+
+
+static func collect_in_group(root: Node, group: String, results: Array) -> void:
+	if root == null:
+		return
+	if root.is_in_group(group):
+		results.append({"path": str(root.get_path()), "name": root.name, "type": root.get_class()})
+	for child in root.get_children():
+		collect_in_group(child, group, results)
+
+
+static func find_by_script(root: Node, script_path: String, results: Array) -> void:
+	if root == null:
+		return
+	var script: Script = root.get_script()
+	if script and script.resource_path == script_path:
+		results.append({"path": str(root.get_path()), "name": root.name})
+	for child in root.get_children():
+		find_by_script(child, script_path, results)
+
+
+static func tree_dict(node: Node, depth: int = 0, max_depth: int = 10) -> Dictionary:
+	var info := {"name": node.name, "type": node.get_class(), "path": str(node.get_path())}
+	if depth < max_depth:
+		var children: Array = []
+		for child in node.get_children():
+			children.append(tree_dict(child, depth + 1, max_depth))
+		info["children"] = children
+	return info

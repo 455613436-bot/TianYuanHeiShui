@@ -1,5 +1,5 @@
 extends Node
-## Headless regression smoke test for day/night NPC refresh and stale-node guards.
+## Headless regression smoke test for the Taoist temple's day/night mask refresh.
 
 
 func _ready() -> void:
@@ -20,33 +20,33 @@ func _run() -> void:
 	get_tree().root.add_child(temple)
 	await _wait_for_refresh()
 
-	var spawner := temple.get_node_or_null("NpcSpawner")
-	if spawner == null:
-		_fail("Taoist temple has no NpcSpawner")
+	var front_nodes: Array = temple.get("_taoist_front_nodes")
+	var rear_nodes: Array = temple.get("_taoist_rear_nodes")
+	if front_nodes.size() < 2 or rear_nodes.size() < 2:
+		_fail("Taoist temple day/night mask nodes were not initialized")
 		return
-	if not _has_npc(spawner, "li_leshui_day") or _has_npc(spawner, "li_leshui_night"):
+	var day_button := front_nodes[0] as Button
+	var night_button := rear_nodes[0] as Button
+	if day_button == null or night_button == null or not day_button.visible or night_button.visible:
 		_fail("Daytime Li Leshui presence was not initialized correctly")
 		return
 
-	var stale_day_node: Node = _find_npc(spawner, "li_leshui_day")
 	TimeSystem.advance_minutes(10)
-	if stale_day_node != null and temple.has_node("DialogueUI"):
-		stale_day_node.call("on_player_interact", temple)
-		var dialogue_ui := temple.get_node("DialogueUI")
-		if dialogue_ui.has_method("is_open") and dialogue_ui.is_open():
-			_fail("Stale daytime NPC opened a dialogue after 19:00")
-			return
 	await _wait_for_refresh()
-
-	if _has_npc(spawner, "li_leshui_day") or not _has_npc(spawner, "li_leshui_night"):
-		_fail("NPC nodes did not switch to the nighttime presence at 19:00")
+	if day_button.visible:
+		_fail("Daytime Taoist mask remained visible after 19:00")
+		return
+	temple.set("_taoist_in_rear_room", true)
+	temple.call("_refresh_taoist_temple_state")
+	if not night_button.visible:
+		_fail("Nighttime Taoist mask was not visible in the unlocked rear room")
 		return
 
-	# 19:00 on day 1 -> 06:00 on day 2.
-	TimeSystem.advance_minutes(11 * 60)
+	# 19:00 on day 1 -> 09:00 on day 2, when the daytime temple state resumes.
+	TimeSystem.advance_minutes(14 * 60)
 	await _wait_for_refresh()
-	if not _has_npc(spawner, "li_leshui_day") or _has_npc(spawner, "li_leshui_night"):
-		_fail("NPC nodes did not switch back to daytime presence at 06:00")
+	if not day_button.visible or night_button.visible:
+		_fail("Taoist masks did not switch back to daytime presence at 09:00")
 		return
 
 	temple.queue_free()
@@ -57,17 +57,6 @@ func _run() -> void:
 func _wait_for_refresh() -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
-
-
-func _find_npc(spawner: Node, npc_id: String) -> Node:
-	for child in spawner.get_children():
-		if String(child.get("npc_id")) == npc_id:
-			return child
-	return null
-
-
-func _has_npc(spawner: Node, npc_id: String) -> bool:
-	return _find_npc(spawner, npc_id) != null
 
 
 func _fail(message: String) -> void:

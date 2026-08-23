@@ -1,313 +1,289 @@
 @tool
-class_name MCPNodeCommands
-extends MCPBaseCommandProcessor
+extends "res://addons/godot_mcp/commands/base_commands.gd"
 
-func process_command(client_id: int, command_type: String, params: Dictionary, command_id: String) -> bool:
-	match command_type:
-		"create_node":
-			_create_node(client_id, params, command_id)
-			return true
-		"delete_node":
-			_delete_node(client_id, params, command_id)
-			return true
-		"update_node_property":
-			_update_node_property(client_id, params, command_id)
-			return true
-		"get_node_properties":
-			_get_node_properties(client_id, params, command_id)
-			return true
-		"list_nodes":
-			_list_nodes(client_id, params, command_id)
-			return true
-	return false  # Command not handled
 
-func _create_node(client_id: int, params: Dictionary, command_id: String) -> void:
-	var parent_path = params.get("parent_path", "/root")
-	var node_type = params.get("node_type", "Node")
-	var node_name = params.get("node_name", "NewNode")
-	
-	# Validation
+func get_commands() -> Dictionary:
+	return {
+		"add_node": _add_node,
+		"delete_node": _delete_node,
+		"duplicate_node": _duplicate_node,
+		"move_node": _move_node,
+		"rename_node": _rename_node,
+		"update_property": _update_property,
+		"get_node_properties": _get_node_properties,
+		"get_signals": _get_signals,
+		"add_resource": _add_resource,
+		"set_anchor_preset": _set_anchor_preset,
+		"connect_signal": _connect_signal,
+		"disconnect_signal": _disconnect_signal,
+		"get_node_groups": _get_node_groups,
+		"set_node_groups": _set_node_groups,
+		"find_nodes_in_group": _find_nodes_in_group,
+	}
+
+
+func _add_node(params: Dictionary) -> Dictionary:
+	var node_type: String = params.get("type", "Node")
+	var node_name: String = params.get("name", "")
+	var parent_path: String = params.get("parent_path", ".")
+	var properties: Dictionary = params.get("properties", {})
+
 	if not ClassDB.class_exists(node_type):
-		return _send_error(client_id, "Invalid node type: %s" % node_type, command_id)
-	
-	# Get editor plugin and interfaces
-	var plugin = Engine.get_meta("GodotMCPPlugin")
-	if not plugin:
-		return _send_error(client_id, "GodotMCPPlugin not found in Engine metadata", command_id)
-	
-	var editor_interface = plugin.get_editor_interface()
-	var edited_scene_root = editor_interface.get_edited_scene_root()
-	
-	if not edited_scene_root:
-		return _send_error(client_id, "No scene is currently being edited", command_id)
-	
-	# Get the parent node using the editor node helper
-	var parent = _get_editor_node(parent_path)
-	if not parent:
-		return _send_error(client_id, "Parent node not found: %s" % parent_path, command_id)
-	
-	# Create the node
-	var node
-	if ClassDB.can_instantiate(node_type):
-		node = ClassDB.instantiate(node_type)
-	else:
-		return _send_error(client_id, "Cannot instantiate node of type: %s" % node_type, command_id)
-	
-	if not node:
-		return _send_error(client_id, "Failed to create node of type: %s" % node_type, command_id)
-	
-	# Set the node name
-	node.name = node_name
-	
-	# Add the node to the parent
-	parent.add_child(node)
-	
-	# Set owner for proper serialization
-	node.owner = edited_scene_root
-	
-	# Mark the scene as modified
-	_mark_scene_modified()
-	
-	_send_success(client_id, {
-		"node_path": parent_path + "/" + node_name
-	}, command_id)
+		return _err("Unknown node type: %s" % node_type)
 
-func _delete_node(client_id: int, params: Dictionary, command_id: String) -> void:
-	var node_path = params.get("node_path", "")
-	
-	# Validation
-	if node_path.is_empty():
-		return _send_error(client_id, "Node path cannot be empty", command_id)
-	
-	# Get editor plugin and interfaces
-	var plugin = Engine.get_meta("GodotMCPPlugin")
-	if not plugin:
-		return _send_error(client_id, "GodotMCPPlugin not found in Engine metadata", command_id)
-	
-	var editor_interface = plugin.get_editor_interface()
-	var edited_scene_root = editor_interface.get_edited_scene_root()
-	
-	if not edited_scene_root:
-		return _send_error(client_id, "No scene is currently being edited", command_id)
-	
-	# Get the node using the editor node helper
-	var node = _get_editor_node(node_path)
-	if not node:
-		return _send_error(client_id, "Node not found: %s" % node_path, command_id)
-	
-	# Cannot delete the root node
-	if node == edited_scene_root:
-		return _send_error(client_id, "Cannot delete the root node", command_id)
-	
-	# Get parent for operation
-	var parent = node.get_parent()
-	if not parent:
-		return _send_error(client_id, "Node has no parent: %s" % node_path, command_id)
-	
-	# Remove the node
-	parent.remove_child(node)
-	node.queue_free()
-	
-	# Mark the scene as modified
-	_mark_scene_modified()
-	
-	_send_success(client_id, {
-		"deleted_node_path": node_path
-	}, command_id)
+	var root := _edited_root()
+	if root == null:
+		return _err("No scene is open")
 
-func _update_node_property(client_id: int, params: Dictionary, command_id: String) -> void:
-	var node_path = params.get("node_path", "")
-	var property_name = params.get("property", "")
-	var property_value = params.get("value")
-	
-	# Validation
-	if node_path.is_empty():
-		return _send_error(client_id, "Node path cannot be empty", command_id)
-	
-	if property_name.is_empty():
-		return _send_error(client_id, "Property name cannot be empty", command_id)
-	
-	if property_value == null:
-		return _send_error(client_id, "Property value cannot be null", command_id)
-	
-	# Get editor plugin and interfaces
-	var plugin = Engine.get_meta("GodotMCPPlugin")
-	if not plugin:
-		return _send_error(client_id, "GodotMCPPlugin not found in Engine metadata", command_id)
-	
-	# Get the node using the editor node helper
-	var node = _get_editor_node(node_path)
-	if not node:
-		return _send_error(client_id, "Node not found: %s" % node_path, command_id)
-	
-	# Check if the property exists
-	if not property_name in node:
-		return _send_error(client_id, "Property %s does not exist on node %s" % [property_name, node_path], command_id)
-	
-	# Get current property value for type inference and undo
-	var old_value = node.get(property_name)
-	var old_type = typeof(old_value)
-	
-	# Parse property value based on target property type
-	var parsed_value = _parse_property_value_with_type_hint(property_value, old_type, old_value)
-	
-	print("[MCP] Updating property '%s' on node '%s'" % [property_name, node_path])
-	print("[MCP] Input value: %s (type: %s)" % [str(property_value), typeof(property_value)])
-	print("[MCP] Parsed value: %s (type: %s)" % [str(parsed_value), typeof(parsed_value)])
-	print("[MCP] Old value: %s (type: %s)" % [str(old_value), old_type])
-	
-	# Get undo/redo system
-	var undo_redo = _get_undo_redo()
-	if not undo_redo:
-		# Fallback method if we can't get undo/redo
-		node.set(property_name, parsed_value)
-		_mark_scene_modified()
-	else:
-		# Use undo/redo for proper editor integration
-		undo_redo.create_action("Update Property: " + property_name)
-		undo_redo.add_do_property(node, property_name, parsed_value)
-		undo_redo.add_undo_property(node, property_name, old_value)
-		undo_redo.commit_action()
-	
-	# Mark the scene as modified
-	_mark_scene_modified()
-	
-	_send_success(client_id, {
-		"node_path": node_path,
-		"property": property_name,
-		"value": property_value,
-		"parsed_value": str(parsed_value),
-		"old_value": str(old_value)
-	}, command_id)
+	var parent := _resolve_node(parent_path)
+	if parent == null:
+		return _err("Parent node not found: %s" % parent_path)
 
-# Parse property value with type hint from the existing property
-func _parse_property_value_with_type_hint(value, target_type: int, old_value) -> Variant:
-	# If value is already the correct type, return it
-	if typeof(value) == target_type:
-		return value
-	
-	# Handle arrays - convert based on target type
-	if typeof(value) == TYPE_ARRAY:
-		var arr = value as Array
-		match target_type:
-			TYPE_VECTOR2:
-				if arr.size() >= 2:
-					return Vector2(arr[0], arr[1])
-			TYPE_VECTOR2I:
-				if arr.size() >= 2:
-					return Vector2i(int(arr[0]), int(arr[1]))
-			TYPE_VECTOR3:
-				if arr.size() >= 3:
-					return Vector3(arr[0], arr[1], arr[2])
-			TYPE_VECTOR3I:
-				if arr.size() >= 3:
-					return Vector3i(int(arr[0]), int(arr[1]), int(arr[2]))
-			TYPE_VECTOR4:
-				if arr.size() >= 4:
-					return Vector4(arr[0], arr[1], arr[2], arr[3])
-			TYPE_VECTOR4I:
-				if arr.size() >= 4:
-					return Vector4i(int(arr[0]), int(arr[1]), int(arr[2]), int(arr[3]))
-			TYPE_COLOR:
-				if arr.size() >= 3:
-					var a = arr[3] if arr.size() >= 4 else 1.0
-					return Color(arr[0], arr[1], arr[2], a)
-			TYPE_QUATERNION:
-				if arr.size() >= 4:
-					return Quaternion(arr[0], arr[1], arr[2], arr[3])
-			TYPE_RECT2:
-				if arr.size() >= 4:
-					return Rect2(arr[0], arr[1], arr[2], arr[3])
-			TYPE_RECT2I:
-				if arr.size() >= 4:
-					return Rect2i(int(arr[0]), int(arr[1]), int(arr[2]), int(arr[3]))
-			TYPE_TRANSFORM2D:
-				if arr.size() >= 6:
-					return Transform2D(Vector2(arr[0], arr[1]), Vector2(arr[2], arr[3]), Vector2(arr[4], arr[5]))
-			TYPE_BASIS:
-				if arr.size() >= 9:
-					return Basis(Vector3(arr[0], arr[1], arr[2]), Vector3(arr[3], arr[4], arr[5]), Vector3(arr[6], arr[7], arr[8]))
-		# Fallback to generic parsing
-		return _parse_property_value(value)
-	
-	# Handle dictionaries
-	if typeof(value) == TYPE_DICTIONARY:
-		var dict = value as Dictionary
-		match target_type:
-			TYPE_VECTOR2:
-				if dict.has("x") and dict.has("y"):
-					return Vector2(dict["x"], dict["y"])
-			TYPE_VECTOR2I:
-				if dict.has("x") and dict.has("y"):
-					return Vector2i(int(dict["x"]), int(dict["y"]))
-			TYPE_VECTOR3:
-				if dict.has("x") and dict.has("y") and dict.has("z"):
-					return Vector3(dict["x"], dict["y"], dict["z"])
-			TYPE_VECTOR3I:
-				if dict.has("x") and dict.has("y") and dict.has("z"):
-					return Vector3i(int(dict["x"]), int(dict["y"]), int(dict["z"]))
-			TYPE_COLOR:
-				if dict.has("r") and dict.has("g") and dict.has("b"):
-					var a = dict.get("a", 1.0)
-					return Color(dict["r"], dict["g"], dict["b"], a)
-			TYPE_QUATERNION:
-				if dict.has("x") and dict.has("y") and dict.has("z") and dict.has("w"):
-					return Quaternion(dict["x"], dict["y"], dict["z"], dict["w"])
-		# Fallback to generic parsing
-		return _parse_property_value(value)
-	
-	# Handle numeric conversions for rotation (degrees to radians)
-	if target_type == TYPE_FLOAT and (typeof(value) == TYPE_INT or typeof(value) == TYPE_FLOAT):
-		# Check if this might be a rotation property and the value seems to be in degrees
-		return float(value)
-	
-	# Use generic parsing as fallback
-	return _parse_property_value(value)
+	var node: Node = ClassDB.instantiate(node_type)
+	if not node_name.is_empty():
+		node.name = node_name
 
-func _get_node_properties(client_id: int, params: Dictionary, command_id: String) -> void:
-	var node_path = params.get("node_path", "")
-	
-	# Validation
-	if node_path.is_empty():
-		return _send_error(client_id, "Node path cannot be empty", command_id)
-	
-	# Get the node using the editor node helper
-	var node = _get_editor_node(node_path)
-	if not node:
-		return _send_error(client_id, "Node not found: %s" % node_path, command_id)
-	
-	# Get all properties
-	var properties = {}
-	var property_list = node.get_property_list()
-	
-	for prop in property_list:
-		var name = prop["name"]
-		if not name.begins_with("_"):  # Skip internal properties
-			properties[name] = node.get(name)
-	
-	_send_success(client_id, {
-		"node_path": node_path,
-		"properties": properties
-	}, command_id)
+	editor_plugin.get_undo_redo().create_action("MCP Add Node")
+	editor_plugin.get_undo_redo().add_do_method(parent, "add_child", node, true)
+	editor_plugin.get_undo_redo().add_do_method(node, "set_owner", root)
+	editor_plugin.get_undo_redo().add_undo_method(parent, "remove_child", node)
+	editor_plugin.get_undo_redo().commit_action()
 
-func _list_nodes(client_id: int, params: Dictionary, command_id: String) -> void:
-	var parent_path = params.get("parent_path", "/root")
-	
-	# Get the parent node using the editor node helper
-	var parent = _get_editor_node(parent_path)
-	if not parent:
-		return _send_error(client_id, "Parent node not found: %s" % parent_path, command_id)
-	
-	# Get children
-	var children = []
-	for child in parent.get_children():
-		children.append({
-			"name": child.name,
-			"type": child.get_class(),
-			"path": str(child.get_path()).replace(str(parent.get_path()), parent_path)
+	for key in properties:
+		node.set(key, TypeParser.parse(str(properties[key])))
+
+	return _ok({
+		"path": str(node.get_path()),
+		"type": node_type,
+		"name": node.name,
+	})
+
+
+func _delete_node(params: Dictionary) -> Dictionary:
+	var node_path: String = params.get("node_path", "")
+	var node := _resolve_node(node_path)
+	if node == null:
+		return _err("Node not found: %s" % node_path)
+	if node == _edited_root():
+		return _err("Cannot delete scene root")
+
+	var parent := node.get_parent()
+	editor_plugin.get_undo_redo().create_action("MCP Delete Node")
+	editor_plugin.get_undo_redo().add_do_method(parent, "remove_child", node)
+	editor_plugin.get_undo_redo().add_undo_method(parent, "add_child", node, true)
+	editor_plugin.get_undo_redo().add_undo_method(node, "set_owner", _edited_root())
+	editor_plugin.get_undo_redo().commit_action()
+
+	return _ok({"deleted": node_path})
+
+
+func _duplicate_node(params: Dictionary) -> Dictionary:
+	var node_path: String = params.get("node_path", "")
+	var node := _resolve_node(node_path)
+	if node == null:
+		return _err("Node not found: %s" % node_path)
+
+	var dup := node.duplicate(Node.DUPLICATE_USE_INSTANTIATION | Node.DUPLICATE_SIGNALS)
+	var parent := node.get_parent()
+	editor_plugin.get_undo_redo().create_action("MCP Duplicate Node")
+	editor_plugin.get_undo_redo().add_do_method(parent, "add_child", dup, true)
+	editor_plugin.get_undo_redo().add_do_method(dup, "set_owner", _edited_root())
+	editor_plugin.get_undo_redo().add_undo_method(parent, "remove_child", dup)
+	editor_plugin.get_undo_redo().commit_action()
+
+	return _ok({"path": str(dup.get_path()), "name": dup.name})
+
+
+func _move_node(params: Dictionary) -> Dictionary:
+	var node_path: String = params.get("node_path", "")
+	var new_parent_path: String = params.get("new_parent_path", ".")
+	var node := _resolve_node(node_path)
+	if node == null:
+		return _err("Node not found: %s" % node_path)
+	var new_parent := _resolve_node(new_parent_path)
+	if new_parent == null:
+		return _err("New parent not found: %s" % new_parent_path)
+
+	var old_parent := node.get_parent()
+	var old_index := node.get_index()
+	editor_plugin.get_undo_redo().create_action("MCP Move Node")
+	editor_plugin.get_undo_redo().add_do_method(old_parent, "remove_child", node)
+	editor_plugin.get_undo_redo().add_do_method(new_parent, "add_child", node, true)
+	editor_plugin.get_undo_redo().add_do_method(node, "set_owner", _edited_root())
+	editor_plugin.get_undo_redo().add_undo_method(new_parent, "remove_child", node)
+	editor_plugin.get_undo_redo().add_undo_method(old_parent, "add_child", node, true)
+	editor_plugin.get_undo_redo().add_undo_method(old_parent, "move_child", node, old_index)
+	editor_plugin.get_undo_redo().commit_action()
+
+	return _ok({"path": str(node.get_path())})
+
+
+func _rename_node(params: Dictionary) -> Dictionary:
+	var node_path: String = params.get("node_path", "")
+	var new_name: String = params.get("new_name", "")
+	var node := _resolve_node(node_path)
+	if node == null:
+		return _err("Node not found: %s" % node_path)
+	if new_name.is_empty():
+		return _err("Missing 'new_name'")
+
+	var old_name := node.name
+	editor_plugin.get_undo_redo().create_action("MCP Rename Node")
+	editor_plugin.get_undo_redo().add_do_property(node, "name", new_name)
+	editor_plugin.get_undo_redo().add_undo_property(node, "name", old_name)
+	editor_plugin.get_undo_redo().commit_action()
+
+	return _ok({"path": str(node.get_path()), "name": new_name})
+
+
+func _update_property(params: Dictionary) -> Dictionary:
+	var node_path: String = params.get("node_path", "")
+	var property: String = params.get("property", "")
+	var value_text: String = str(params.get("value", ""))
+	var node := _resolve_node(node_path)
+	if node == null:
+		return _err("Node not found: %s" % node_path)
+	if property.is_empty():
+		return _err("Missing 'property'")
+
+	var parsed := TypeParser.parse(value_text)
+	var old_value = node.get(property)
+	editor_plugin.get_undo_redo().create_action("MCP Update Property")
+	editor_plugin.get_undo_redo().add_do_property(node, property, parsed)
+	editor_plugin.get_undo_redo().add_undo_property(node, property, old_value)
+	editor_plugin.get_undo_redo().commit_action()
+
+	return _ok({
+		"node_path": str(node.get_path()),
+		"property": property,
+		"value": _serialize_value(parsed),
+	})
+
+
+func _get_node_properties(params: Dictionary) -> Dictionary:
+	var node_path: String = params.get("node_path", "")
+	var node := _resolve_node(node_path)
+	if node == null:
+		return _err("Node not found: %s" % node_path)
+
+	var props := {}
+	for info in node.get_property_list():
+		if info.usage & PROPERTY_USAGE_EDITOR:
+			var name: String = info.name
+			props[name] = _serialize_value(node.get(name))
+	return _ok({"node_path": str(node.get_path()), "type": node.get_class(), "properties": props})
+
+
+func _get_signals(params: Dictionary) -> Dictionary:
+	var node_path: String = params.get("node_path", "")
+	var node := _resolve_node(node_path)
+	if node == null:
+		return _err("Node not found: %s" % node_path)
+
+	var signals_out: Array = []
+	for sig_info in node.get_signal_list():
+		var connections: Array = []
+		for conn in node.get_signal_connection_list(sig_info.name):
+			connections.append({
+				"target": str(conn.callable.get_object()),
+				"method": conn.callable.get_method(),
+			})
+		signals_out.append({
+			"name": sig_info.name,
+			"connections": connections,
 		})
-	
-	_send_success(client_id, {
-		"parent_path": parent_path,
-		"children": children
-	}, command_id)
+	return _ok({"node_path": str(node.get_path()), "signals": signals_out})
+
+
+func _add_resource(params: Dictionary) -> Dictionary:
+	var node_path: String = params.get("node_path", "")
+	var resource_type: String = params.get("resource_type", "")
+	var node := _resolve_node(node_path)
+	if node == null:
+		return _err("Node not found")
+	if not ClassDB.class_exists(resource_type):
+		return _err("Unknown resource type: %s" % resource_type)
+	var res: Resource = ClassDB.instantiate(resource_type)
+	if node is CollisionShape2D and res is Shape2D:
+		node.shape = res
+	elif node is CollisionShape3D and res is Shape3D:
+		node.shape = res
+	elif node is MeshInstance3D and res is Mesh:
+		node.mesh = res
+	elif node is Sprite2D and res is Texture2D:
+		node.texture = res
+	else:
+		return _err("Cannot auto-assign %s to %s" % [resource_type, node.get_class()])
+	return _ok({"node_path": node_path, "resource_type": resource_type})
+
+
+func _set_anchor_preset(params: Dictionary) -> Dictionary:
+	var node_path: String = params.get("node_path", "")
+	var preset_name: String = params.get("preset", "center")
+	var node := _resolve_node(node_path)
+	if node == null or not node is Control:
+		return _err("Control node required")
+	var preset_map := {
+		"top_left": Control.PRESET_TOP_LEFT,
+		"center": Control.PRESET_CENTER,
+		"full_rect": Control.PRESET_FULL_RECT,
+		"bottom_right": Control.PRESET_BOTTOM_RIGHT,
+	}
+	if not preset_map.has(preset_name):
+		return _err("Unknown preset: %s" % preset_name)
+	node.set_anchors_preset(preset_map[preset_name])
+	return _ok({"node_path": node_path, "preset": preset_name})
+
+
+func _connect_signal(params: Dictionary) -> Dictionary:
+	var from_path: String = params.get("from_path", "")
+	var signal_name: String = params.get("signal", "")
+	var to_path: String = params.get("to_path", "")
+	var method_name: String = params.get("method", "")
+	var from_node := _resolve_node(from_path)
+	var to_node := _resolve_node(to_path)
+	if from_node == null or to_node == null:
+		return _err("Source or target node not found")
+	var err := from_node.connect(signal_name, Callable(to_node, method_name))
+	if err != OK:
+		return _err("Connect failed: %d" % err)
+	return _ok({"connected": true})
+
+
+func _disconnect_signal(params: Dictionary) -> Dictionary:
+	var from_path: String = params.get("from_path", "")
+	var signal_name: String = params.get("signal", "")
+	var to_path: String = params.get("to_path", "")
+	var method_name: String = params.get("method", "")
+	var from_node := _resolve_node(from_path)
+	var to_node := _resolve_node(to_path)
+	if from_node == null or to_node == null:
+		return _err("Source or target node not found")
+	from_node.disconnect(signal_name, Callable(to_node, method_name))
+	return _ok({"disconnected": true})
+
+
+func _get_node_groups(params: Dictionary) -> Dictionary:
+	var node := _resolve_node(params.get("node_path", ""))
+	if node == null:
+		return _err("Node not found")
+	return _ok({"groups": node.get_groups()})
+
+
+func _set_node_groups(params: Dictionary) -> Dictionary:
+	var node := _resolve_node(params.get("node_path", ""))
+	if node == null:
+		return _err("Node not found")
+	var groups: Array = params.get("groups", [])
+	for g in node.get_groups():
+		node.remove_from_group(g)
+	for g in groups:
+		node.add_to_group(str(g))
+	return _ok({"groups": groups})
+
+
+func _find_nodes_in_group(params: Dictionary) -> Dictionary:
+	var group: String = params.get("group", "")
+	var results: Array = []
+	NodeUtils.collect_in_group(_edited_root(), group, results)
+	return _ok({"group": group, "nodes": results})

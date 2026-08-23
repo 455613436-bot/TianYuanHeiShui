@@ -45,6 +45,33 @@ static func find_presented_clue_event(profile: Dictionary, clue_ids: Array[Strin
 				break
 		if matches and is_available(profile, event):
 			return event.duplicate(true)
+	# 人物归属线索的普通回应只作为剧情事件之后的兜底。这样同一条线索首次
+	# 出示时仍会优先推进原有任务、发放物品或触发新线索；剧情事件不可用
+	# （例如 once 事件已经触发）时，才使用逐线索编写的立场回应。
+	var response_map: Variant = profile.get("presented_clue_responses", {})
+	if response_map is Dictionary:
+		for clue_id in clue_ids:
+			if not (response_map as Dictionary).has(clue_id):
+				continue
+			var raw_response: Variant = (response_map as Dictionary).get(clue_id)
+			var pages: Array[String] = []
+			if raw_response is Array:
+				for raw_page in raw_response:
+					var page := String(raw_page).strip_edges()
+					if not page.is_empty():
+						pages.append(page)
+			else:
+				var single_page := String(raw_response).strip_edges()
+				if not single_page.is_empty():
+					pages.append(single_page)
+			if not pages.is_empty():
+				return {
+					"id": "%s_presented_response_%s" % [String(profile.get("id", "npc")), clue_id],
+					"when": "clue_presented",
+					"once": false,
+					"presented_clues": [clue_id],
+					"pages": pages,
+				}
 	return {}
 
 

@@ -4,7 +4,7 @@ extends CanvasLayer
 const ENDINGS := {
 	"ancient_released": {
 		"title": "古神释放",
-		"text": "祭坛已被摧毁，道士也已死去。失去最后约束的利库伊从山洞深处扩散，村庄与水脉一同被吞没。"
+		"text": "祭坛已被摧毁，无人再清楚封印的仪式。失去最后约束的利库伊从山洞深处扩散，村庄与水脉被一同吞没。"
 	},
 	"complete_seal": {
 		"title": "彻底封印",
@@ -16,15 +16,17 @@ const ENDINGS := {
 	},
 	"suppression": {
 		"title": "抑制结局",
-		"text": "献祭没有如期完成，祭坛遭到破坏，利库伊的力量受到抑制。它仍在水脉深处等待，未来或许还会卷土重来。"
+		"text": "原始封印重新闭合，献祭没有如期完成，利库伊的力量受到抑制。但神秘人仍然活着，封印未来仍有再次遭到破坏的可能。"
 	},
 	"sacrifice": {
 		"title": "献祭结局",
-		"text": "第八天的夜晚过去，祭坛仍在运转。村民被卷入献祭，山洞深处传来新的潮声——古神回应了召唤。"
+		"text": "第八天的夜晚过去，你没能改变既定的结局。村民被卷入祭仪，山洞深处传来新的潮声——古神回应了召唤。"
 	}
 }
+const TITLE_SCREEN_SCENE := "res://scenes/ui/TitleScreen.tscn"
 
 var _ending_started := false
+var _ending_overlay: Control
 
 
 func _ready() -> void:
@@ -54,6 +56,11 @@ func on_npc_killed(_npc_id: String) -> void:
 	evaluate_endings()
 
 
+func reset_for_new_game() -> void:
+	_remove_ending_overlay()
+	_ending_started = false
+
+
 func evaluate_endings() -> void:
 	if _ending_started or GameState.is_game_ended():
 		return
@@ -70,7 +77,7 @@ func evaluate_endings() -> void:
 		start_ending("complete_seal")
 		return
 	if TimeSystem.current_day >= 9:
-		start_ending("suppression" if altar_state == "destroyed" else "sacrifice")
+		start_ending("suppression" if altar_state == "sealed" else "sacrifice")
 
 
 func start_ending(ending_id: String) -> void:
@@ -85,6 +92,7 @@ func start_ending(ending_id: String) -> void:
 	overlay.name = "EndingOverlay"
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	overlay.process_mode = Node.PROCESS_MODE_ALWAYS
 	var dimmer := ColorRect.new()
 	dimmer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	dimmer.color = Color(0.015, 0.02, 0.025, 0.94)
@@ -125,6 +133,32 @@ func start_ending(ending_id: String) -> void:
 	hint.add_theme_font_size_override("font_size", 18)
 	hint.add_theme_color_override("font_color", Color(0.66, 0.75, 0.78, 1.0))
 	content.add_child(hint)
+	var return_button := Button.new()
+	return_button.text = "返回主菜单"
+	return_button.custom_minimum_size = Vector2(240, 48)
+	return_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	return_button.add_theme_font_size_override("font_size", 20)
+	return_button.process_mode = Node.PROCESS_MODE_ALWAYS
+	return_button.pressed.connect(_return_to_title_screen)
+	content.add_child(return_button)
 	add_child(overlay)
+	_ending_overlay = overlay
 	# 结局弹窗出现后暂停所有地点、对话和地图交互，当前游戏流程到此结束。
 	get_tree().paused = true
+
+
+func _return_to_title_screen() -> void:
+	get_tree().paused = false
+	# EndingController 是 Autoload，切换场景不会销毁它的子节点；必须主动移除结局遮罩。
+	_remove_ending_overlay()
+	get_tree().change_scene_to_file(TITLE_SCREEN_SCENE)
+
+
+func _remove_ending_overlay() -> void:
+	if not is_instance_valid(_ending_overlay):
+		_ending_overlay = null
+		return
+	if _ending_overlay.get_parent() == self:
+		remove_child(_ending_overlay)
+	_ending_overlay.queue_free()
+	_ending_overlay = null

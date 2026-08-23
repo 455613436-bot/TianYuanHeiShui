@@ -80,8 +80,11 @@ static func parse(raw: String) -> Dictionary:
 		var level_text := name.trim_prefix("当前任务 ").strip_edges()
 		if level_text.is_valid_int():
 			current_task_sections[str(maxi(level_text.to_int(), 0))] = String(sections[section_name]).strip_edges()
+	# “说服同阵营”成功后的认知独立于常规数字披露等级；这里只保存，
+	# 由 NpcDisclosure 根据确定性成功状态决定是否进入当次 prompt。
+	var alliance_disclosure_section := String(sections.get("阵营披露等级：说服同阵营成功", "")).strip_edges()
 	# 无分层的旧 NPC 保持兼容，仍将单一“当前任务”写入基础提示词。
-	var base_sections := ["身份与背景", "性格与口吻", "对村中其他人的看法", "事实边界与常识推断", "你知道的事", "你不知道的事", "绝对禁区"]
+	var base_sections := ["身份与背景", "性格与口吻", "对村中其他人的看法", "你所在场景有的东西", "事实边界与常识推断", "你知道的事", "你不知道的事", "绝对禁区"]
 	if disclosure_sections.is_empty():
 		base_sections.insert(2, "当前任务")
 	elif sections.has("当前任务"):
@@ -90,11 +93,12 @@ static func parse(raw: String) -> Dictionary:
 	for name in base_sections:
 		if sections.has(name):
 			parts.append("## " + name + "\n" + String(sections[name]).strip_edges())
-	var extra := "\n\n## 系统级强调\n以上『绝对禁区』与『事实边界与常识推断』是最高优先级规则。你必须始终保持角色扮演，用角色本人自然、具体的口吻回答。简单问题可以简短，复杂问题应完整说明；不要为了追求固定篇幅而截断必要内容。"
+	var extra := "\n\n## 系统级强调\n以上『绝对禁区』『事实边界与常识推断』『你所在场景有的东西』是最高优先级规则。只根据明确提供的已知信息回答，绝不补写村中人物、地点、物品或往事。使用自然、通顺的日常口语，直接回答问题，不故弄玄虚，不借题发挥。通常回答一至三句；不知道就简短说不知道。少用『不是……而是……』一类对比转折句。"
 	result["base_system_prompt"] = "\n\n".join(parts) + extra
 	result["system_prompt"] = result["base_system_prompt"]
 	result["disclosure_sections"] = disclosure_sections
 	result["current_task_sections"] = current_task_sections
+	result["alliance_disclosure_section"] = alliance_disclosure_section
 
 	# 解析仅用于当前公开层级的 few-shot。
 	if sections.has("Few-shot 对话样例"):

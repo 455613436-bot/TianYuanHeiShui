@@ -20,6 +20,13 @@
   },
   "fixed_story_events": [
     {
+      "id": "lin_deshan_strange_letter_presented",
+      "when": "clue_presented",
+      "once": false,
+      "presented_clues": ["onboarding_strange_letter"],
+      "pages": ["不知道，我没见过这封信。"]
+    },
+    {
       "id": "lin_deshan_diary_level_one",
       "when": "dialogue_open",
       "once": true,
@@ -38,6 +45,24 @@
       "effects": {"trigger_clues": ["lin_witnessed_bronze_ding_release", "lin_mysterious_stranger_ritual"]}
     }
   ],
+  "presented_clue_responses": {
+    "lin_altar_record": "祭坛确实在我的话里出现过。那不是随口编的，只是当时我没法把前后说清。",
+    "lin_claims_prophecy": "我说的预兆就是水在变、灾难在靠近。你可以去核对，不必把它当神谕。",
+    "lin_diary_first_revelation": "三段疯话对上以后，我才肯教你劝离。村里有些话，人少时才说得出口。",
+    "lin_diary_riddle_mentioned": "日记里的每段疯话都指向具体的人和事。先把对应关系找全，我不会替你直接报答案。",
+    "lin_diary_second_revelation": "六段都对上了，我才把二〇〇〇年看到的事告诉你。那一层不是新的谜语，是我的证词。",
+    "lin_first_met": "第一次见面时我说得乱，但提醒你的水和旧事都不是凭空捏造。",
+    "lin_mentions_wife": "提到她时，我的记忆会清楚一点。她经历过的事与村里的变化有关，但我只说自己记得的。",
+    "lin_mysterious_stranger_ritual": "鼎裂开时，那个常在小路出现的神秘人就在旁边做仪式。这是我亲眼看见的。",
+    "lin_offers_tea": "那杯茶确实用村里的水泡过。我当时真心劝你喝，现在看，那份热情并不正常。",
+    "lin_praises_water": "我确实把村水说成恩赐。村里很多人都这样讲，我当时也受那些话影响。",
+    "lin_preaches_likuyi": "我念过利库伊，也把它叫作生命之源。那是我脑子混乱时反复冒出来的话。",
+    "lin_water_rising_warning": "我一直警告水位会升高，因为我看见的迹象没有停。时间确实不多。",
+    "lin_witnessed_2000": "二〇〇〇年的事我亲眼见过。事故、青铜遗物和洞里的动静连在一起，不是普通坍塌。",
+    "lin_witnessed_bronze_ding_release": "青铜鼎裂开、利库伊从里面出来，这一幕我记得。我的身体没被彻底改变，神智却从那天坏了。",
+    "lin_worships_taoist": "我以前把道士的话当成预言和救命办法，确实近乎盲从。现在不能只凭崇拜判断他做得对不对。",
+    "medical_exam_lin_deshan": "检查说我的神经和代谢异常，不只是年老或疯病。这和我从二〇〇〇年以后一直承受的变化对得上。"
+  },
   "triggers": [
     {"keywords": ["疯话日记", "日记", "关公", "曹操", "甲虫", "火光"], "lines": ["天机不可泄露，不可多说。纸上的字会自己换座位，先把该坐在一起的影子认出来。"], "clue_id": "lin_diary_riddle_mentioned"},
     {"keywords": ["水", "水位", "涨水", "灾难", "时间"], "lines": ["水要升起，升到戏台第三层；锣鼓一响，来不及下场的人都要湿鞋。时间不多喽。"], "clue_id": "lin_water_rising_warning"},

@@ -103,7 +103,7 @@
     "id": "farmland",
     "number": "11",
     "name": "农田",
-    "description": "村北的农田仍使用占位背景，等待补充正式场景 CG。",
+    "description": "村南的大片农田，作物长势喜人。",
     "map_position": [0.840, 0.180],
     "scene": "res://scenes/locations/Farmland.tscn",
     "bgm": "res://assets/audio/bgm/farmland.ogg",

@@ -1,6 +1,8 @@
 extends Node
 ## Central keyboard routing. Only the highest-priority open UI handles a key.
 
+const SCENE_ITEM_INTERACTION_SCRIPT := preload("res://scripts/ui/SceneItemInteraction.gd")
+
 signal journal_requested
 signal inventory_requested
 
@@ -52,10 +54,11 @@ func _handle_cancel() -> void:
 func _handle_map() -> void:
 	if not GameState.can_open_world_map():
 		return
+	if GameState.night_rest_required:
+		_show_map_blocked_message("今晚的调查已经结束，请留在临时宿舍休息，明早 09:00 再继续。")
+		return
 	if TimeSystem.is_night_outing_time() and not GameState.has_item("lantern"):
-		var scene := get_tree().current_scene
-		if scene != null and scene.has_method("_show_scene_message"):
-			scene.call("_show_scene_message", "夜路太黑", "路太黑了，现在还不具备夜间出门的能力。")
+		_show_map_blocked_message("路太黑了，现在还不具备夜间出门的能力。", "夜路太黑")
 		return
 	var top_ui := _top_open_ui()
 	if top_ui != null:
@@ -64,6 +67,20 @@ func _handle_map() -> void:
 		# Other overlays own the keyboard while open; M is consumed without opening a map.
 		return
 	GameState.open_world_map()
+
+
+func _show_map_blocked_message(message: String, title: String = "今晚必须休息") -> void:
+	var scene := get_tree().current_scene
+	if scene != null and scene.has_method("_show_scene_message"):
+		scene.call("_show_scene_message", title, message)
+		return
+	if scene == null:
+		return
+	var interaction := SCENE_ITEM_INTERACTION_SCRIPT.new()
+	interaction.name = "MapBlockedInteraction"
+	scene.add_child(interaction)
+	var pages: Array[String] = [message]
+	interaction.open_paged_text(title, pages)
 
 
 func _open_settings() -> void:

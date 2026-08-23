@@ -1,6 +1,12 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/TitleScreen.gd" id="1_title"]
+[ext_resource type="Texture2D" path="res://assets/ui/title_screen/background.png" id="2_background"]
+[ext_resource type="Texture2D" path="res://assets/ui/title_screen/logo.png" id="3_logo"]
+[ext_resource type="Texture2D" path="res://assets/ui/title_screen/button_new_game.png" id="4_new_game"]
+[ext_resource type="Texture2D" path="res://assets/ui/title_screen/button_continue.png" id="5_continue"]
+[ext_resource type="Texture2D" path="res://assets/ui/title_screen/button_settings.png" id="6_settings"]
+[ext_resource type="Texture2D" path="res://assets/ui/title_screen/button_quit.png" id="7_quit"]
 
 [node name="TitleScreen" type="Control"]
 layout_mode = 3
@@ -11,42 +17,7 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_title")
 
-[node name="Backdrop" type="ColorRect" parent="."]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-color = Color(0.06, 0.07, 0.09, 1)
-
-; 装饰：山峦 & 光晕，配合项目的等距手绘风格
-[node name="MountainFar" type="Polygon2D" parent="."]
-position = Vector2(0, 0)
-polygon = PackedVector2Array(0, 620, 240, 380, 460, 470, 700, 340, 940, 460, 1180, 360, 1280, 420, 1280, 720, 0, 720)
-color = Color(0.11, 0.14, 0.18, 1)
-
-[node name="MountainNear" type="Polygon2D" parent="."]
-position = Vector2(0, 0)
-polygon = PackedVector2Array(0, 720, 0, 560, 180, 460, 420, 540, 620, 470, 860, 550, 1080, 480, 1280, 540, 1280, 720)
-color = Color(0.16, 0.19, 0.22, 1)
-
-[node name="MoonHalo" type="ColorRect" parent="."]
-offset_left = 900.0
-offset_top = 100.0
-offset_right = 1180.0
-offset_bottom = 300.0
-color = Color(0.98, 0.92, 0.68, 0.06)
-
-[node name="Moon" type="ColorRect" parent="."]
-offset_left = 990.0
-offset_top = 150.0
-offset_right = 1080.0
-offset_bottom = 220.0
-color = Color(0.98, 0.94, 0.78, 0.9)
-
-; ─── Center Layout ─────────────────────────────────────────────
-[node name="Center" type="CenterContainer" parent="."]
+[node name="Background" type="TextureRect" parent="."]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -54,73 +25,92 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
+texture = ExtResource("2_background")
+expand_mode = 1
+stretch_mode = 6
 
-[node name="VBox" type="VBoxContainer" parent="Center"]
-theme_override_constants/separation = 22
-custom_minimum_size = Vector2(520, 0)
-
-[node name="Title" type="Label" parent="Center/VBox"]
-text = "思源村探案"
-horizontal_alignment = 1
-theme_override_font_sizes/font_size = 68
-theme_override_colors/font_color = Color(1, 0.94, 0.78, 1)
-theme_override_colors/font_outline_color = Color(0, 0, 0, 0.6)
-theme_override_constants/outline_size = 8
-
-[node name="Subtitle" type="Label" parent="Center/VBox"]
-text = "Siyuan Village Mystery"
-horizontal_alignment = 1
-theme_override_font_sizes/font_size = 20
-theme_override_colors/font_color = Color(0.75, 0.7, 0.6, 1)
-
-[node name="Separator" type="HSeparator" parent="Center/VBox"]
-custom_minimum_size = Vector2(0, 24)
-modulate = Color(1, 1, 1, 0.15)
-
-[node name="Buttons" type="VBoxContainer" parent="Center/VBox"]
-theme_override_constants/separation = 12
-alignment = 1
-
-[node name="NewGameBtn" type="Button" parent="Center/VBox/Buttons"]
-custom_minimum_size = Vector2(280, 56)
-text = "开始新游戏"
-theme_override_font_sizes/font_size = 24
-
-[node name="ContinueBtn" type="Button" parent="Center/VBox/Buttons"]
-custom_minimum_size = Vector2(280, 56)
-text = "继续游戏"
-theme_override_font_sizes/font_size = 24
-
-[node name="SettingsBtn" type="Button" parent="Center/VBox/Buttons"]
-custom_minimum_size = Vector2(280, 56)
-text = "设置"
-theme_override_font_sizes/font_size = 24
-
-[node name="QuitBtn" type="Button" parent="Center/VBox/Buttons"]
-custom_minimum_size = Vector2(280, 56)
-text = "退出"
-theme_override_font_sizes/font_size = 24
-
-; ─── Footer ─────────────────────────────────────────────────────
-[node name="Footer" type="Control" parent="."]
+[node name="Logo" type="TextureRect" parent="."]
 layout_mode = 1
-anchor_left = 0.0
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_top = -48.0
+anchors_preset = 10
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -261.0
+offset_top = -8.0
+offset_right = 281.0
+offset_bottom = 392.6667
 grow_horizontal = 2
 mouse_filter = 2
+texture = ExtResource("3_logo")
+expand_mode = 1
+stretch_mode = 5
 
-[node name="FooterLabel" type="Label" parent="Footer"]
-anchor_left = 0.0
-anchor_top = 0.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 24.0
-offset_right = -24.0
-text = "WASD 移动 · E 交互 · M 打开地图 · Esc 设置"
-horizontal_alignment = 1
-vertical_alignment = 1
-theme_override_font_sizes/font_size = 14
-theme_override_colors/font_color = Color(0.55, 0.55, 0.55, 1)
+[node name="Menu" type="Control" parent="."]
+layout_mode = 1
+anchor_left = 0.5
+anchor_top = 0.545
+anchor_right = 0.5
+anchor_bottom = 0.545
+offset_left = -90.0
+offset_right = 90.0
+offset_bottom = 247.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="NewGameBtn" type="TextureButton" parent="Menu"]
+layout_mode = 0
+offset_right = 180.0
+offset_bottom = 64.6667
+focus_mode = 2
+mouse_default_cursor_shape = 2
+texture_normal = ExtResource("4_new_game")
+texture_pressed = ExtResource("4_new_game")
+texture_hover = ExtResource("4_new_game")
+texture_focused = ExtResource("4_new_game")
+ignore_texture_size = true
+stretch_mode = 5
+tooltip_text = "开始新游戏"
+
+[node name="ContinueBtn" type="TextureButton" parent="Menu"]
+layout_mode = 0
+offset_top = 83.0
+offset_right = 180.0
+offset_bottom = 128.3333
+focus_mode = 2
+mouse_default_cursor_shape = 2
+texture_normal = ExtResource("5_continue")
+texture_pressed = ExtResource("5_continue")
+texture_hover = ExtResource("5_continue")
+texture_focused = ExtResource("5_continue")
+ignore_texture_size = true
+stretch_mode = 5
+tooltip_text = "继续游戏"
+
+[node name="SettingsBtn" type="TextureButton" parent="Menu"]
+layout_mode = 0
+offset_top = 142.3333
+offset_right = 180.0
+offset_bottom = 187.6667
+focus_mode = 2
+mouse_default_cursor_shape = 2
+texture_normal = ExtResource("6_settings")
+texture_pressed = ExtResource("6_settings")
+texture_hover = ExtResource("6_settings")
+texture_focused = ExtResource("6_settings")
+ignore_texture_size = true
+stretch_mode = 5
+tooltip_text = "设置"
+
+[node name="QuitBtn" type="TextureButton" parent="Menu"]
+layout_mode = 0
+offset_top = 201.6667
+offset_right = 180.0
+offset_bottom = 247.0
+focus_mode = 2
+mouse_default_cursor_shape = 2
+texture_normal = ExtResource("7_quit")
+texture_pressed = ExtResource("7_quit")
+texture_hover = ExtResource("7_quit")
+texture_focused = ExtResource("7_quit")
+ignore_texture_size = true
+stretch_mode = 5
+tooltip_text = "退出游戏"

@@ -7,7 +7,7 @@
   "fallback_lines": [
     "我不要求你立刻信我。先去看看医院，再查一查你们宿舍里的水。",
     "这个村子会让人把异常当成幸福。你需要竭尽全力抵抗他们对认知的扭曲。",
-    "证据比承诺可靠。明天同一时间来这里，我每天这个时候都会在。",
+    "证据比承诺可靠。找到明确污染证据后，在我出现的时段回来。",
     "如果你能证明自己看见了问题，我们才有资格谈下一步。"
   ],
   "default_disclosure_level": 0,
@@ -22,11 +22,18 @@
   ],
   "fixed_story_events": [
     {
+      "id": "mysterious_hermit_strange_letter_presented",
+      "when": "clue_presented",
+      "once": false,
+      "presented_clues": ["onboarding_strange_letter"],
+      "pages": ["不知道，我没见过这封信。"]
+    },
+    {
       "id": "hermit_ritual_clue_questioned",
       "when": "clue_presented",
       "once": false,
       "presented_clues": ["lin_mysterious_stranger_ritual"],
-      "pages": ["从哪里听来的？哪个大爷？不过又是些疯话罢了。"]
+      "pages": ["我知道林德山确实说过这些话，但他的记忆很混乱。我不认为这足以说明仪式的真相。"]
     },
     {
       "id": "hermit_first_meeting",
@@ -38,38 +45,31 @@
       "pages": [
         "（神秘人始终与你保持着一段距离。）我现在无法信任你们，很抱歉。你们是村外来的，但这也许是道士为了抓住我布下的又一个诡计。我是谁不重要，重要的是你们究竟希望做什么。",
         "这个村子已经变了太多。村民都被蛊惑了，他们把痛苦当成幸福，把异常当成恩赐。你需要竭尽全力抵抗他们对你认知的扭曲。你已经被污染了——你们都是。难道没有发现吗？这一切至少从2012年、人们开始吃那些鱼时就已经发生。",
-        "我一个人无法战胜那股力量，但我还不能确定能否信任你。拿着这把钥匙，去废弃医院调查，再检查你们宿舍使用的水。带来可以核对的水污染证据，明天同一时间回这里找我。我每天这个时候都会在。到那时，我们再谈该怎么救这个村子。"
+        "我一个人无法战胜那股力量，但我还不能确定能否信任你。拿着这把钥匙，去废弃医院调查，再检查你们宿舍使用的水。找到明确的水污染证据后，在我出现的时段回来。到那时，我们再谈该怎么救这个村子。"
       ],
       "choices": ["答应调查医院和宿舍水源", "询问为什么不能信任自己"],
       "effects": {
         "set_quest_stage": {"id": "hermit_pollution_investigation", "stage": 1},
         "record_current_time_state": "hermit_first_meeting_time",
         "add_items": ["abandoned_clinic_key"],
-        "trigger_clues": ["hermit_pollution_investigation_started"],
+        "trigger_clues": ["hermit_pollution_investigation_started", "yu_le_2012_fish_banquet"],
         "document_clue": {
           "id": "hermit_first_stage_assignment",
           "title": "神秘人的污染调查委托",
-          "summary": "神秘人要求调查废弃医院和宿舍水源，并在次日同一时间带着水污染证据返回。",
+          "summary": "神秘人要求调查废弃医院和宿舍水源；取得明确污染证据后，在他出现的时段返回。",
           "pages": [
             "神秘人声称田原村村民的认知已经被扭曲，外来者同样受到污染。他拒绝立刻交代身份，要求先用调查结果证明玩家可信。",
-            "第一阶段目标：使用神秘人交出的钥匙调查废弃医院；检验临时宿舍水源；取得明确的水污染证据；自初见至少经过一天后，在同一地点向神秘人出示证据。"
+            "第一阶段目标：使用神秘人交出的钥匙调查废弃医院；检验临时宿舍水源；取得明确的水污染证据；在神秘人出现的时段回到同一地点。系统会根据玩家持有的证据自动推进。"
           ]
         }
       }
     },
     {
       "id": "hermit_pollution_evidence_presented",
-      "when": "clue_presented",
-      "presented_clues": [
-        "water_contamination_proof",
-        "water_sample_tested",
-        "dorm_shower_water_contamination",
-        "gong_water_anomaly_admitted"
-      ],
+      "when": "dialogue_open",
       "once": true,
       "all_of": [
-        {"type": "quest_stage", "id": "hermit_pollution_investigation", "min": 1},
-        {"type": "elapsed_minutes", "id": "hermit_first_meeting_time", "min": 1440}
+        {"type": "quest_stage", "id": "hermit_pollution_investigation", "min": 1}
       ],
       "any_of": [
         {"type": "clue", "id": "water_contamination_proof"},
@@ -104,6 +104,18 @@
       "effects": {"trigger_clues": ["hermit_weakened_by_seal"]}
     }
   ],
+  "presented_clue_responses": {
+    "hermit_accepts_pollution_evidence": "我认可这些污染证据，所以才认为你暂时值得合作。接下来该查污染与祭坛之间的联系。",
+    "hermit_fears_water_gauge": "旧水尺牵涉祭坛和旧水位记录，我当然警惕它。别只盯着这件东西，先弄清祭坛在做什么。",
+    "hermit_first_stage_assignment": "我让你查废弃医院和宿舍水源，是为了拿到能复核的污染证据。医院里有检测设备，先去那里。",
+    "hermit_frames_altar": "我认为污染、符阵和后山祭坛连在一起。这是我的判断，你还需要用手里的证据继续验证。",
+    "hermit_frames_day_li": "白天的李乐水一直维护利水君和祭坛，我认为他参与了这套邪教秩序。你可以自己核对他的言行。",
+    "hermit_knows_accident": "我知道二〇〇〇年的坍塌不只是施工失误，但事故的完整经过仍要靠档案和目击证词拼起来。",
+    "hermit_pollution_investigation_started": "医院里有检测设备，你快去看看；宿舍的水也要一起检查。拿到明确污染证据后再来找我。",
+    "hermit_reveals_altar_plan": "对，我主张争取村民一起摧毁祭坛。我认为那是切断利库伊力量的办法。",
+    "hermit_weakened_by_seal": "封印重新闭合后，我的力量明显衰弱。你已经看见我的反应，我不会否认。",
+    "mysterious_stranger_dorm_note": "这字条是我放在你宿舍窗边的。我不敢在人多时露面，所以约你在固定时段到田间小路见面。"
+  },
   "triggers": [
     {"keywords": ["祭坛", "符阵", "后山", "青铜鼎"], "clue_id": "hermit_frames_altar", "min_disclosure_level": 1},
     {"keywords": ["李乐水", "道士", "白天", "邪教"], "clue_id": "hermit_frames_day_li", "min_disclosure_level": 1},

@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://scripts/locations/LocationBase.gd" id="1_location"]
 [ext_resource type="Texture2D" path="res://assets/maps/test.png" id="2_background"]
@@ -7,6 +7,7 @@
 [ext_resource type="PackedScene" uid="uid://bgroupchatui000" path="res://scenes/ui/GroupChatUI.tscn" id="5_group_chat"]
 [ext_resource type="PackedScene" uid="uid://bdialogueui0000" path="res://scenes/ui/DialogueUI.tscn" id="6_dialogue"]
 [ext_resource type="PackedScene" path="res://scenes/ui/ItemBagPopup.tscn" id="7_bag"]
+[ext_resource type="PackedScene" path="res://scenes/ui/AttributeStatusHud.tscn" id="8_attributes"]
 
 [node name="LocationBase" type="Control"]
 layout_mode = 3
@@ -145,3 +146,5 @@ portrait_spacing = 320.0
 [node name="DialogueUI" parent="." instance=ExtResource("6_dialogue")]
 
 [node name="ItemBagPopup" parent="." instance=ExtResource("7_bag")]
+
+[node name="AttributeStatusHud" parent="." instance=ExtResource("8_attributes")]

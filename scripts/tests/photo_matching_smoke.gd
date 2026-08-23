@@ -91,7 +91,12 @@ func _run() -> void:
 		"item_check:photo_matching_smoke"
 	)
 	await get_tree().process_frame
-	if not ui.get_node("PhotoMatchingOverlay").visible or ui.get("_rows").size() != 0:
+	var retry_submit_button: Button = null
+	for node in ui.find_children("*", "Button", true, false):
+		if node is Button and String((node as Button).text) == "提交匹配":
+			retry_submit_button = node as Button
+			break
+	if not ui.get_node("PhotoMatchingOverlay").visible or not bool(ui.get("_submitted")) or retry_submit_button == null or not retry_submit_button.disabled:
 		_fail("The same-day matching attempt was not blocked")
 		return
 

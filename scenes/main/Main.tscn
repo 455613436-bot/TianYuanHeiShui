@@ -8,6 +8,7 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/ItemBagPopup.tscn" id="5_bag"]
 [ext_resource type="PackedScene" uid="uid://bdialogueui0000" path="res://scenes/ui/DialogueUI.tscn" id="6_dialogue"]
 [ext_resource type="Texture2D" uid="uid://b1hjvki4wa08o" path="res://assets/ui/btn_open_map.png" id="7_btn_map"]
+[ext_resource type="PackedScene" path="res://scenes/ui/AttributeStatusHud.tscn" id="8_attributes"]
 
 [node name="Main" type="Node2D" unique_id=1789519613]
 script = ExtResource("1_main")
@@ -88,3 +89,5 @@ stretch_mode = 5
 location_id = "village_square"
 
 [node name="GroupChatUI" parent="." instance=ExtResource("4_group_chat")]
+
+[node name="AttributeStatusHud" parent="." instance=ExtResource("8_attributes")]

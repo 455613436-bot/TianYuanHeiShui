@@ -34,6 +34,13 @@
   },
   "fixed_story_events": [
     {
+      "id": "yu_le_strange_letter_presented",
+      "when": "clue_presented",
+      "once": false,
+      "presented_clues": ["onboarding_strange_letter"],
+      "pages": ["不知道，我没见过这封信。"]
+    },
+    {
       "id": "yu_le_reward_fishing_lantern",
       "when": "dialogue_open",
       "once": false,
@@ -42,7 +49,7 @@
         {"type": "not_item", "id": "lantern"}
       ],
       "pages": [
-        "（于乐瞧见你收网的手势，咧嘴笑了。）行啊，这一下收得稳，鱼没从网眼里溜掉。看来我那点诀窍你真听进去了。",
+        "（于乐瞧见你收网的手势，咧嘴笑了。）行啊，这一下收得稳，鱼没从网眼里溜掉。你这天赋不错！",
         "拿着这个旧灯笼。水边天一暗，光比力气管用；有灯照着浮漂和水纹，能更好捕鱼。别嫌旧，灯芯我刚给你换过。"
       ],
       "effects": {"add_items": ["lantern"]}
@@ -51,14 +58,14 @@
       "id": "yu_le_water_evidence_presented",
       "when": "clue_presented",
       "once": true,
-      "presented_clues": ["water_contamination_proof", "water_sample_tested", "dorm_shower_water_contamination"],
+      "presented_clues": ["water_contamination_proof", "water_sample_tested", "dorm_shower_water_contamination","yu_le_2012_fish_banquet"],
       "pages": [
-        "（于乐盯着检测结果，手指在网绳上越攥越紧。）我早就觉得不对。2010 年前后，鱼鳃先变了色，后来鱼群会逆着水游，网里总有带荧光蓝斑的小鱼。",
+        "（于乐手指在网绳上越攥越紧。）我早就觉得不对。2010 年前后，鱼鳃先变了色，后来鱼群会逆着水游，网里总有带荧光蓝斑的小鱼。",
         "我没念过多少书，只会说：河在犯病。可这话说出去，谁肯信？于漓去上海练游泳，我嘴上说她有天分，其实是不敢再让她碰思源湖。",
-        "2012 年那场烧鱼宴……是我办的。那晚大伙都说香、说暖和。你要问别的，先把证据留在这儿。"
+        "2012 年那场烧鱼宴……是我办的。那晚大伙都说香、说暖和。"
       ],
       "choices": ["追问 2012 年烧鱼宴", "暂不追问"],
-      "effects": {"trigger_clues": ["yu_le_early_water_anomaly", "yu_le_2012_fish_banquet"]}
+      "effects": {"trigger_clues": ["yu_le_early_water_anomaly"]}
     },
     {
       "id": "yu_le_diary_presented",
@@ -74,6 +81,13 @@
       "effects": {"trigger_clues": ["yu_le_banquet_confession", "yu_le_daughter_protected"]}
     }
   ],
+  "presented_clue_responses": {
+    "yu_le_2012_fish_banquet": "二〇一二年那场烧鱼宴确实办过，大家当时吃得很开心。至于那些鱼为什么异常，我不会拿不知道的事乱说。",
+    "yu_le_banquet_confession": "鱼是我烧的，宴也是我办的。缺粮、学费和李乐水的话都影响了我，但责任不能推给别人。",
+    "yu_le_daughter_protected": "我把于漓送去上海，不只是因为她会游泳。我早就不敢让她继续碰思源湖的水。",
+    "yu_le_early_water_anomaly": "二〇一〇到二〇一一年，鱼鳃变色、鱼群逆流，还有带蓝斑的小鱼。我说河在犯病，说的就是这些。",
+    "yu_le_fisherman_diary": "日记里写的是我亲眼见过和亲手做过的事：水的异常、于漓的来历，还有那场烧鱼宴。我不否认。"
+  },
   "triggers": [
     {"keywords": ["捕鱼", "鱼塘", "钓鱼", "捕鱼技巧"], "lines": ["想下鱼塘试试？别图快，先看水纹。鱼肯不肯进网，水面会先告诉你。"]},
     {"keywords": ["女儿", "于漓", "游泳", "上海"], "lines": ["我闺女在上海练游泳，腿脚有劲，教练说她能往国家队冲。孩子有天分，就不能困在村里。"]},

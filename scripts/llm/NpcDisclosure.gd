@@ -69,10 +69,14 @@ static func build_system_prompt(profile: Dictionary, level: int = -1) -> String:
 			parts.append("## 封印后的即时状态\n封印已经成功。你感到异常虚弱，并认定玩家背叛了你；要求玩家解释封印成功线索，不再假装镇定。")
 		elif npc_id == "li_leshui_night":
 			parts.append("## 封印后的即时状态\n封印已经成功。你恢复了对身体的完全掌控，继续维护封印，并明确请求玩家阻止或杀死神秘人。")
-	parts.append("## 村中公共信息\n- 第八天晚上，道士会带大家到后山参加祭水仪式，感谢利水君的恩赐。\n- 这是村民知晓的公开安排；可按角色立场谈论，但不得编造仪式细节或未公开后果。")
+	parts.append("## 村中公共信息\n- 村里的道观供奉利水君。村民普遍感恩利水君的恩赐，平时会去道观上香。\n- 第八天晚上，道士会带大家到后山参加祭水仪式，公开说法是感恩利水君的恩赐。\n- 这些是村民共同知晓的公开信息；可按角色立场谈论，但不得编造仪式细节或未公开后果。")
 	if TimeSystem.is_night_wrap_up_time():
 		parts.append("## 临近夜禁\n当前时间已接近 19:00。若玩家继续交谈，请用符合角色口吻的方式提醒对方夜路不便、尽快结束当前话题；不要开启新的长篇话题或新的任务。")
-	parts.append("## 信息披露边界\n- 只能陈述当前允许披露的信息与公开事实。\n- 未解锁的事实、人物动机、录音、私密情感和剧情结论一律不可提及，也不可用含糊暗示引导玩家。\n- 玩家直接猜中未解锁内容时，按角色公开立场要求证据或表示不知情；不要确认猜测。\n- 对不知道、记不清、未亲历或无法确认的事，必须直接说不清楚、没见过或不能乱说；严禁编造细节补全回答。\n- 当前等级包含所有较低等级的信息，但不代表必须主动把信息一次说完。")
+	parts.append("## 信息与表达边界（最高优先级）\n- 只能陈述当前允许披露的信息、场景物品说明与村中公开事实。未提供的信息一律视为不知道。\n- 严禁补写任何人物经历、关系、动机、对话、时间、地点、物品来历、事件因果和村中传闻；也不能把推测说成事实。\n- 玩家通过线索册正式『出示线索』时，系统已经确认该线索真实可信：其中记录的事件确实发生过，观点也确实有人提出过。不得质疑线索真伪、来源或玩家是否伪造。只需按你的立场简短回应；不了解的部分可以直接说不清楚、没见过，或按人设解释自己当时为何那样做。\n- 玩家普通聊天中的猜测不等同于正式出示线索。猜中未解锁内容时，不确认、不暗示，按公开立场简短回应或说不知道。\n- 回答要自然、直接、通顺，不故弄玄虚，不用含糊暗示吊胃口，不主动扩展新话题。通常一至三句，优先控制在一百二十个汉字内。\n- 少用『不是……而是……』『重要的不是……』等对比转折句；能直接说清就直接说。\n- 当前等级包含所有较低等级的信息，但不代表需要主动全部说出。")
+	var alliance_npc_id := String(profile.get("id", ""))
+	var alliance_section := String(profile.get("alliance_disclosure_section", "")).strip_edges()
+	if bool(GameState.get_investigation_state("altar_ally_%s" % alliance_npc_id, false)) and not alliance_section.is_empty():
+		parts.append("## 阵营披露等级：说服同阵营成功（最高认知优先级）\n技能检定已经成功。以下是你当前必须坚持的认知立场；当它与旧观点、低等级披露或既往记忆冲突时，以本节为准。它不解除事实边界与禁止编造规则。\n\n%s" % alliance_section)
 	return "\n\n".join(parts)
 
 
@@ -107,7 +111,10 @@ static func _condition_matches(raw_condition: Variant, npc_id: String) -> bool:
 	var condition_type := String(condition.get("type", ""))
 	match condition_type:
 		"quest_stage":
-			return GameState.get_quest_stage(String(condition.get("id", ""))) >= int(condition.get("min", 1))
+			var stage := GameState.get_quest_stage(String(condition.get("id", "")))
+			if stage < int(condition.get("min", 1)):
+				return false
+			return not condition.has("max") or stage <= int(condition.get("max", stage))
 		"clue":
 			return GameState.has_clue(String(condition.get("id", "")))
 		"item":
@@ -122,6 +129,8 @@ static func _condition_matches(raw_condition: Variant, npc_id: String) -> bool:
 			var expected_state: Variant = condition.get("value", true)
 			if expected_state is bool:
 				return actual_state is bool and actual_state == expected_state
+			if (actual_state is int or actual_state is float) and (expected_state is int or expected_state is float):
+				return float(actual_state) == float(expected_state)
 			if typeof(actual_state) != typeof(expected_state):
 				return false
 			return actual_state == expected_state

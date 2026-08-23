@@ -31,6 +31,13 @@
   },
   "fixed_story_events": [
     {
+      "id": "wu_zhiyuan_strange_letter_presented",
+      "when": "clue_presented",
+      "once": false,
+      "presented_clues": ["onboarding_strange_letter"],
+      "pages": ["不知道，我没见过这封信。"]
+    },
+    {
       "id": "wu_zhiyuan_first_meeting",
       "when": "dialogue_open",
       "once": true,
@@ -92,6 +99,23 @@
       "effects": {"add_items": ["village_chief_safe_silver_key"], "trigger_clues": ["wu_chief_safe_key_given"]}
     }
   ],
+  "presented_clue_responses": {
+    "wu_chief_admits_village_dilemma": "我承认水有异常，也承认自己选择了沉默。医院、资源和活路都摆在那里，我没有找到能让全村人安全离开的办法。",
+    "wu_chief_requests_factory_evidence": "我当时把问题归到甘艾工厂，并要求你拿出撤厂证据。那是我不愿面对其他可能。",
+    "wu_chief_safe_key_given": "钥匙是我交给你的。保险柜里的东西可能有用，但我仍希望你谨慎处理。",
+    "wu_denies_pollution": "我确实否认过污染。那时我只想让外乡人尽快离开，不愿让你们卷进村里的问题。",
+    "wu_follows_likuyi": "我和村里人都感恩利水君在饥荒时带来的活路。你把这称作信奉，我不回避。",
+    "wu_hides_gun": "枪一直锁在保险柜里。我不想让它落到别人手上，也不打算拿它威胁外乡人。",
+    "wu_knows_pollution": "我早就知道水和村民身体有异常，只是一直没有能替代现状的办法。",
+    "wu_lets_player_leave": "我让你离开，是因为真心不希望你继续受村里的水影响，不是为了扣住你。",
+    "wu_mentions_accident": "多年前的施工事故我知道一些，但现场和青铜遗物的细节并不都在我手里。你该结合档案和目击证词查。",
+    "wu_mentions_cave": "我知道后山有洞，也知道村里有人去那里。至于洞内结构，你要问真正进去过的人。",
+    "wu_mentions_factory": "甘艾工厂确实在村里活动过，后来也撤走了。它留下的问题解释不了现在的一切。",
+    "wu_mentions_hospital": "干水固医院曾接诊村民，后来迁走或停摆。村里失去医疗支持，是我一直不敢贸然改变现状的原因之一。",
+    "wu_mentions_swelling": "村民普遍变胖、浮肿，这一点我见得到。我过去把它说轻了。",
+    "wu_warns_hermit": "我让你远离神秘人，是因为他一直鼓动人去碰后山祭坛。我不相信他的办法会保护村民。",
+    "medical_exam_wu_zhiyuan": "检验显示我长期接触了异常污染物。我不否认这个结果，它和我这些年看到的变化对得上。"
+  },
   "triggers": [
   ],
   "home_location": "village_chief_house",

@@ -55,9 +55,15 @@ func skills_for_target(has_npc: bool, location_id: String) -> Array[Dictionary]:
 
 func is_skill_available_for_npc(skill_id: String, npc_id: String) -> bool:
 	if skill_id == "attack":
-		return NpcRegistry.is_npc_present_at(npc_id, NpcRegistry.get_location_of(npc_id)) and NpcRegistry.can_interact_with_npc(npc_id)
+		return (
+			NpcRegistry.is_npc_present_at(npc_id, NpcRegistry.get_location_of(npc_id))
+			and NpcRegistry.can_interact_with_npc(npc_id)
+			and (not is_repeatable_attack_target(npc_id) or not has_attempted_attack_today(npc_id))
+			and (not NpcRegistry.is_npc_hostile(npc_id) or can_retry_hostile_attack(npc_id))
+		)
 	if skill_id == "medical_exam":
-		return is_medical_exam_unlocked()
+		# 医学检验只对宿舍淋浴水开放，不再以人物为目标。
+		return false
 	if skill_id == "dismiss":
 		return bool(GameState.get_investigation_state("skill_unlocked_dismiss", false))
 	if skill_id == "persuade_ally":
@@ -66,9 +72,40 @@ func is_skill_available_for_npc(skill_id: String, npc_id: String) -> bool:
 				GameState.get_quest_stage("hermit_pollution_investigation") >= 2
 				or GameState.get_quest_stage("chief_pollution_truth") >= 2
 			)
-			and npc_id != "mysterious_hermit"
+			and npc_id not in ["mysterious_hermit", "li_leshui_day", "li_leshui_night"]
 		)
 	return true
+
+
+func can_retry_hostile_attack(npc_id: String) -> bool:
+	return (
+		is_repeatable_attack_target(npc_id)
+		and NpcRegistry.is_npc_hostile(npc_id)
+		and not NpcRegistry.is_npc_killed(npc_id)
+		and not has_attempted_attack_today(npc_id)
+	)
+
+
+func is_repeatable_attack_target(npc_id: String) -> bool:
+	return npc_id in ["li_leshui_day", "li_leshui_night", "mysterious_hermit"]
+
+
+func has_attempted_attack_today(npc_id: String) -> bool:
+	if not is_repeatable_attack_target(npc_id):
+		return false
+	return int(GameState.get_investigation_state(_daily_attack_state_key(npc_id), -1)) == TimeSystem.current_day
+
+
+func record_attack_attempt(npc_id: String) -> void:
+	if not is_repeatable_attack_target(npc_id):
+		return
+	GameState.set_investigation_state(_daily_attack_state_key(npc_id), TimeSystem.current_day)
+
+
+func _daily_attack_state_key(npc_id: String) -> String:
+	# 昼夜李乐水是不同人格、敌对状态互不共享，但攻击次数按同一个肉身计算。
+	var target_key := "li_leshui" if npc_id in ["li_leshui_day", "li_leshui_night"] else npc_id
+	return "daily_attack_attempt:%s" % target_key
 
 
 func is_medical_exam_unlocked() -> bool:
@@ -116,6 +153,11 @@ func perform_social_check(profile: Dictionary, skill_id: String, reason: String)
 func perform_trust_check(reason: String) -> Dictionary:
 	# 夜间道士的信任门槛比阵营拉拢低；理由具体、带证据时降低最终难度。
 	var rationality := _reason_modifier(reason)
+	return perform_trust_check_with_modifier(reason, rationality)
+
+
+func perform_trust_check_with_modifier(reason: String, rationality_modifier: int) -> Dictionary:
+	var rationality := clampi(rationality_modifier, -5, 5)
 	var result := CheckSystem.perform_check(
 		"charisma",
 		14,
@@ -130,15 +172,26 @@ func get_attack_preview(npc_id: String, weapon_id: String = "") -> Dictionary:
 	var base_difficulty := CheckSystem.RAW_DIFFICULTY_MAX if npc_id in ["li_leshui_day", "li_leshui_night", "mysterious_hermit"] else 18
 	var offering_penalty := GameState.get_ritual_offering_penalty() if npc_id in ["li_leshui_day", "li_leshui_night"] else 0
 	base_difficulty += offering_penalty
-	var seal_reduction := 5 if npc_id == "mysterious_hermit" and String(GameState.get_investigation_state("altar_resolution", "")) == "sealed" else 0
-	base_difficulty = maxi(CheckSystem.RAW_DIFFICULTY_MIN, base_difficulty - seal_reduction)
+	var story_reduction := 0
+	var story_reduction_reasons: Array[String] = []
+	if npc_id == "mysterious_hermit" and String(GameState.get_investigation_state("altar_resolution", "")) == "sealed":
+		story_reduction += 5
+		story_reduction_reasons.append("封印成功")
+	if npc_id == "mysterious_hermit" and GameState.has_item("li_leshui_talisman"):
+		story_reduction += 5
+		story_reduction_reasons.append("持有李乐水的护符")
+	if npc_id in ["li_leshui_day", "li_leshui_night"] and String(GameState.get_investigation_state("altar_resolution", "")) == "destroyed":
+		story_reduction += 10
+		story_reduction_reasons.append("祭坛已被摧毁")
+	base_difficulty = maxi(CheckSystem.RAW_DIFFICULTY_MIN, base_difficulty - story_reduction)
 	var reduction := _attack_weapon_reduction(weapon_id)
 	var attribute := GameState.get_attribute("strength")
 	var final_difficulty := clampi(base_difficulty - attribute - reduction, CheckSystem.MIN_DIFFICULTY, CheckSystem.MAX_DIFFICULTY)
 	return {
 		"base_difficulty": base_difficulty,
 		"offering_penalty": offering_penalty,
-		"seal_reduction": seal_reduction,
+		"seal_reduction": story_reduction,
+		"story_reduction_reason": "、".join(story_reduction_reasons),
 		"weapon_reduction": reduction,
 		"weapon_id": weapon_id,
 		"weapon_name": "徒手" if weapon_id.is_empty() else ItemDB.get_display_name(weapon_id),
@@ -155,6 +208,36 @@ func perform_attack_check(npc_id: String, weapon_id: String = "") -> Dictionary:
 		int(preview.get("base_difficulty", 18)),
 		int(preview.get("weapon_reduction", 0)),
 		reason
+	)
+	result["weapon_id"] = weapon_id
+	result["weapon_name"] = String(preview.get("weapon_name", "徒手"))
+	result["weapon_reduction"] = int(preview.get("weapon_reduction", 0))
+	return result
+
+
+func get_altar_attack_preview(weapon_id: String = "") -> Dictionary:
+	var base_difficulty := 20
+	# CheckSystem 对物品修正的有效范围是 -10..10；预览使用相同的有效值，
+	# 避免攻击确认页显示的最终难度与实际掷骰不一致。
+	var reduction := mini(_attack_weapon_reduction(weapon_id), 10)
+	var attribute := GameState.get_attribute("strength")
+	return {
+		"base_difficulty": base_difficulty,
+		"weapon_reduction": reduction,
+		"weapon_id": weapon_id,
+		"weapon_name": "徒手" if weapon_id.is_empty() else ItemDB.get_display_name(weapon_id),
+		"strength": attribute,
+		"final_difficulty": clampi(base_difficulty - attribute - reduction, CheckSystem.MIN_DIFFICULTY, CheckSystem.MAX_DIFFICULTY),
+	}
+
+
+func perform_altar_attack_check(weapon_id: String = "") -> Dictionary:
+	var preview := get_altar_attack_preview(weapon_id)
+	var result := CheckSystem.perform_check(
+		"strength",
+		int(preview.get("base_difficulty", 20)),
+		int(preview.get("weapon_reduction", 0)),
+		"攻击并摧毁洞内祭坛；武器：%s" % String(preview.get("weapon_name", "徒手"))
 	)
 	result["weapon_id"] = weapon_id
 	result["weapon_name"] = String(preview.get("weapon_name", "徒手"))

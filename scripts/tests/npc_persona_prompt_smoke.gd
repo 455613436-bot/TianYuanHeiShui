@@ -30,10 +30,20 @@ func _init() -> void:
 		if not prompt.contains("## 事实边界与常识推断"):
 			_fail("Missing fact-boundary section in prompt: %s" % npc_id)
 			return
+		if not prompt.contains("## 你所在场景有的东西"):
+			_fail("Missing scene-object section in prompt: %s" % npc_id)
+			return
+		if not prompt.contains("不故弄玄虚") or not prompt.contains("绝不补写村中人物"):
+			_fail("Missing concise grounded-response constraints: %s" % npc_id)
+			return
 		var fewshots: Array = profile.get("fewshots", [])
 		if fewshots.size() < 10 or fewshots.size() % 2 != 0:
 			_fail("Insufficient or malformed few-shots for %s: %d messages" % [npc_id, fewshots.size()])
 			return
+		for message in fewshots:
+			if String((message as Dictionary).get("role", "")) == "assistant" and String((message as Dictionary).get("content", "")).length() > 180:
+				_fail("Overlong few-shot reply in %s" % npc_id)
+				return
 	print("NPC_PERSONA_PROMPT_SMOKE_OK")
 	quit(0)
 

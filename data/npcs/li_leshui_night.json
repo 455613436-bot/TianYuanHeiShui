@@ -3,17 +3,26 @@
   "display_name": "夜行道士 李乐水",
   "short_name": "夜间道士",
   "style_hint": "夜间谨慎、清醒、直截了当；与白天的自己保持明确区分",
-  "system_prompt": "你是夜间活动的李乐水。你必须先说明自己和白天的道士不是同一个人，要求玩家说明来意。只有玩家通过信任检定后，才允许其进入后室；未通过时回绝并让其准备好再来。玩家获得后室权限后，你可以完整提供所有真相，并请求寻找遗失的水尺；水尺找回后交给玩家一个护符。",
+  "system_prompt": "你是夜间恢复清醒的李乐水。玩家已经通过门外的信任检定并进入你布置了封印的道观后室。初次见面固定剧情结束后，你可以完整说明真相，并请求玩家寻找遗失的旧水尺；水尺找回后交给玩家一个护符。",
   "default_disclosure_level": 0,
   "disclosure_rules": [{"level": 4, "requires_previous": false, "all_of": [{"type": "investigation_state", "id": "night_li_rear_room_unlocked", "value": true}]}],
-  "disclosure_sections": {"0": "初次见面说明你与白天不是同一个人，要求玩家说明来意。", "4": "你完全信任玩家，支持其调查真相；请玩家找回水尺。水尺找回后会交出护符。"},
+  "disclosure_sections": {"0": "玩家尚未进入后室，不会在这里与你展开对话。", "4": "玩家已经进入后室。你完全信任玩家，支持其调查真相；请玩家找回水尺。水尺找回后会交出护符。"},
   "fixed_story_events": [
-    {"id": "li_leshui_night_first_meeting", "when": "dialogue_open", "once": true, "pages": ["（夜色中的道士没有点灯，只看着你。）先说明白：我和白天在这里活动的那个人，不是同一个人。你来找我做什么？", "后室不是谁都能进。把你的来意和你掌握的证据说清楚，准备好了再来。"], "choices": ["说明来意并请求进入后室", "先离开"], "effects": {"set_investigation_state": {"id": "night_li_trust_check_pending", "value": true}}},
-    {"id": "li_leshui_night_water_gauge_returned", "when": "clue_presented", "once": true, "presented_clues": ["night_li_seeks_water_gauge", "old_water_gauge"], "all_of": [{"type": "investigation_state", "id": "night_li_rear_room_unlocked", "value": true}], "pages": ["你找回了水尺。它记录的水位变化，正是我一直不敢公开的证据。", "拿着这个护符吧。它不能替你解决问题，但在你接近祭坛时，也许能让你保持清醒。"], "effects": {"set_investigation_state": {"id": "night_li_water_gauge_returned", "value": true}, "add_items": ["li_leshui_talisman"], "trigger_clues": ["night_li_water_gauge_returned"]}},
-    {"id": "li_leshui_night_farmer_channel_object", "when": "clue_presented", "once": true, "presented_clues": ["niu_water_channel_object"], "pages": ["（夜间的李乐水看完线索，压低声音。）白天的我果然把水尺留在了改渠的人手里。它本是福泽之物，不该被一人扣住。", "拿这张纸条给牛岚山看。让他把水尺交给你；别把这事告诉白天的我。"], "effects": {"trigger_clues": ["folded_note"], "document_clue": {"id": "folded_note", "title": "一则折叠的纸条", "summary": "夜间李乐水交来的纸条，要求向牛岚山索取水尺。", "pages": ["水尺乃福泽之物，应分享给众人，共触灵气。"], "linked_clue_ids": ["folded_note"]}}},
-    {"id": "li_leshui_night_seal_success_presented", "when": "clue_presented", "once": true, "presented_clues": ["seal_success"], "all_of": [{"type": "investigation_state", "id": "altar_resolution", "value": "sealed"}], "pages": ["（夜间道士闭上眼，胸口起伏终于平稳下来。）封印重新闭合了。我能感觉到，这副身体终于回到了我手里。", "不要给神秘人喘息的机会。他一直想毁掉祭坛。封印既然已经稳住，就去阻止他——必要时，杀了他。"], "choices": ["询问如何对付神秘人", "离开"], "effects": {"trigger_clues": ["night_li_recovers_after_seal"]}}
+    {"id": "li_leshui_night_strange_letter_presented", "when": "clue_presented", "once": false, "presented_clues": ["onboarding_strange_letter"], "pages": ["这是我的笔迹，但应该是白天的他写的，和我没有关系。"]},
+    {"id": "li_leshui_night_first_meeting", "when": "dialogue_open", "once": true, "all_of": [{"type": "investigation_state", "id": "night_li_rear_room_unlocked", "value": true}], "pages": ["（木门在身后合拢。道士站在后室的符阵中央，先抬手示意你不要靠近。）先说明白：白天在道观里活动的那个人，与现在的我并不是同一个人。", "我原本是为封印邪神利库伊而来的道士，却在加固封印时反被它吞噬。白天，这具身体受它控制；只有夜里水渠流量变小，污染的力量暂时衰弱，我才能依靠身上的护符和这里的封印夺回身体。", "我不能离开这间后室。封印就设在这里，只要走出去，它便会重新压过我的神智。", "我需要你替我寻找一把旧水尺。那是重新封印利库伊的关键之物。后山的祭坛并不是在促进水流，恰恰相反，它一直在压制水下的东西；水尺能够帮助祭坛重新完成压制与封印。", "找到旧水尺，把它带回来。别让白天的我和那个神秘人知道你真正要做什么。"], "choices": ["询问旧水尺可能在哪里", "询问祭坛与封印", "答应寻找旧水尺"], "effects": {"trigger_clues": ["night_li_seeks_water_gauge"]}},
+    {"id": "li_leshui_night_water_gauge_returned", "when": "dialogue_open", "once": true, "all_of": [{"type": "investigation_state", "id": "night_li_rear_room_unlocked", "value": true}, {"type": "item", "id": "old_water_gauge"}], "pages": ["你找回了水尺。它记录的水位变化，正是我一直不敢公开的证据。", "拿着这个护符吧。它不能替你解决问题，但在你接近祭坛时，也许能让你保持清醒。"], "effects": {"set_investigation_state": {"id": "night_li_water_gauge_returned", "value": true}, "add_items": ["li_leshui_talisman"], "trigger_clues": ["night_li_water_gauge_returned"]}},
+    {"id": "li_leshui_night_farmer_channel_object", "when": "clue_presented", "once": true, "presented_clues": ["niu_water_channel_object"], "pages": ["（夜间的李乐水看完线索，压低声音。）白天的我果然把水尺留在了改渠的人手里。它本是福泽之物，不该被一人扣住。", "拿这张纸条给牛岚山看。让他把水尺交给你；别把这事告诉白天的我。东西拿到之后回来找我。"], "effects": {"trigger_clues": ["folded_note"], "document_clue": {"id": "folded_note", "title": "一则折叠的纸条", "summary": "夜间李乐水交来的纸条，要求向牛岚山索取水尺。", "pages": ["水尺乃福泽之物，应分享给众人，共触灵气。"], "linked_clue_ids": ["folded_note"]}}},
+    {"id": "li_leshui_night_seal_success_presented", "when": "dialogue_open", "once": true, "all_of": [{"type": "investigation_state", "id": "altar_resolution", "value": "sealed"}], "pages": ["（夜间道士闭上眼，胸口起伏终于平稳下来。）封印重新闭合了。我能感觉到，这副身体终于回到了我手里。", "不要给神秘人喘息的机会。他一直想毁掉祭坛。封印既然已经稳住，就去阻止他——必要时，杀了他。"], "choices": ["询问如何对付神秘人", "离开"], "effects": {"trigger_clues": ["night_li_recovers_after_seal"]}}
   ],
-  "triggers": [{"keywords": ["水尺", "水尺在哪", "后室"], "lines": ["先通过我的信任检定，再谈后室和水尺。"]}],
+  "presented_clue_responses": {
+    "night_li_protects_altar": "我确实警告过你不要破坏祭坛。祭坛在压制利库伊，毁掉它只会让水下的东西失去约束。",
+    "night_li_recovers_after_seal": "封印闭合后，我重新掌控了这具身体。现在最重要的是守住封印，并阻止神秘人再次破坏它。",
+    "night_li_seeks_water_gauge": "旧水尺能记录水位变化，也是重新闭合封印的镇物。把它找回来，我们才有机会加固祭坛。",
+    "night_li_warns_hermit": "我警告过你提防神秘人。他知道旧事，却一直把你引向摧毁祭坛，这正是危险所在。",
+    "night_li_warns_self_death": "白天人格会伤人，但这具肉身也是我唯一能维持封印的身体。杀死他，也会杀死我。",
+    "night_li_water_gauge_returned": "我确认过这把青铜水尺，它记录了异常水位，也能嵌入祭坛封印。护符是为了让你安全靠近那里。"
+  },
+  "triggers": [{"keywords": ["水尺", "水尺在哪", "后室"], "lines": ["旧水尺是重新闭合封印的镇物。把它带回后室，我们才有机会让祭坛重新压住利库伊。"]}],
   "home_location": "taoist_temple", "current_location": "taoist_temple", "portrait_small": "", "importance": "main", "sort_priority": 31,
   "mood_map": {"平静": "normal", "neutral": "normal", "thinking": "normal", "信任": "happy", "happy": "happy", "生气": "angry", "愤怒": "angry", "surprised": "angry", "疲惫": "sad", "weary": "sad"}
 }

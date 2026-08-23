@@ -16,16 +16,14 @@ const GREETING_CHOICES: Array[String] = [
 ]
 const SAFE_GENERIC_CHOICES: Array[String] = [
 	"这件事能再说详细一点吗？",
-	"为什么你会这么认为？",
-	"后来又发生了什么？",
-	"这件事最早是什么时候发生的？",
-	"当时还有谁在场？",
-	"你是从哪里知道这件事的？",
-	"这件事对村里有什么影响？",
-	"还有什么细节是我遗漏的吗？",
-	"你对此最担心的是什么？",
-	"我们也可以换个话题。",
+	"你为什么会这么想？",
+	"后来怎么样了？",
+	"那你接下来准备怎么办？",
+	"这和村里的异常有关吗？",
+	"你觉得我应该先调查什么？",
+	"我明白了，换件事问你。",
 ]
+const MAX_NPC_REPLY_CHARS := 180
 
 static func parse(raw_content: String, prior_context: String, current_user_text: String, profile: Dictionary) -> Dictionary:
 	var fallback_text := raw_content.strip_edges()
@@ -53,7 +51,7 @@ static func parse(raw_content: String, prior_context: String, current_user_text:
 		reply_text = _salvage_text_from_parsed(parsed)
 	# 依然没抢救出：给一个中性的场景描述，让开场不至于空白
 	if reply_text == "":
-		reply_text = "……（对方看着你，一时没开口。）"
+		reply_text = "我暂时不知道该怎么回答。"
 
 	var knowledge_context := prior_context + "\n" + current_user_text
 	var new_mentions := _parse_new_mentions(parsed.get("mentions", []), reply_text, knowledge_context, profile)
@@ -114,10 +112,16 @@ static func parse(raw_content: String, prior_context: String, current_user_text:
 	_fill_safe_choices(choices, reply_text, knowledge_context, profile)
 
 	var check_request := _parse_check_request(parsed.get("check_request", null))
+	# 线索册只允许出示玩家已经取得的真实线索。正式出示本身不再触发
+	# “是否相信证据”的检定；NPC 只需按立场回应。
+	if current_user_text.strip_edges().begins_with("【出示线索】"):
+		check_request = {}
 	# 若本轮触发检定，则强制把 text 收敛为一段"NPC 正在犹豫"的中性过渡句，
 	# 防止 LLM 一次把"完整拒绝/答复"和"检定"同时输出，让玩家看到"回复→骰→再回复"的三段体。
 	if not check_request.is_empty():
 		reply_text = _sanitize_hesitation_text(reply_text, profile)
+	else:
+		reply_text = _clip_npc_reply(reply_text)
 
 	# 道具工具：item_used（玩家使用/出示了物品）+ item_request（NPC 要求玩家出示）
 	# 通用意图工具：offer_request（NPC 主动送物 / 请求玩家做某事 → 玩家点接受/拒绝）
@@ -168,11 +172,9 @@ static func parse(raw_content: String, prior_context: String, current_user_text:
 ## 若 text 看起来已经给出决定性回答（答应 / 拒绝 / 转移话题），把它替换为中性犹豫过渡句。
 ## 只有非常明显是"纯犹豫描写"的 text 才会原样保留。
 const _HESITATION_FALLBACKS: Array[String] = [
-	"（对方神情微微一凝，手指下意识地攥紧，一时没答话……）",
-	"（眉头轻皱，像是在心里飞快地掂量什么，没马上开口。）",
-	"唔——这个嘛，让我想想……",
-	"（顿住脚步，眯起眼上下打量了一下，没作声。）",
-	"（对方明显犹豫了一下，脸上闪过复杂的神色。）",
+	"这件事我得想一下。",
+	"你先让我理一理。",
+	"我还不能马上答复。",
 ]
 ## 表示"已经给出决定"的关键词——命中即视为违规
 const _DECISIVE_MARKERS: Array[String] = [
@@ -188,8 +190,10 @@ static func _sanitize_hesitation_text(text: String, _profile: Dictionary) -> Str
 	var trimmed := text.strip_edges()
 	if trimmed == "":
 		return _pick_hesitation_fallback()
-	# 过长本身就不像犹豫过渡（阈值宽一点，避免误伤合法的犹豫描写）
-	if trimmed.length() > 60:
+	# 检定前只保留一句简短、自然的权衡表达。
+	if trimmed.length() > 30:
+		return _pick_hesitation_fallback()
+	if trimmed.contains("…") or trimmed.begins_with("（") or trimmed.begins_with("("):
 		return _pick_hesitation_fallback()
 	# 命中"决定性"关键词就直接替换
 	for marker in _DECISIVE_MARKERS:
@@ -205,8 +209,21 @@ static func _sanitize_hesitation_text(text: String, _profile: Dictionary) -> Str
 
 static func _pick_hesitation_fallback() -> String:
 	if _HESITATION_FALLBACKS.is_empty():
-		return "（对方沉默了一下，没马上答话……）"
+		return "这件事我得想一下。"
 	return _HESITATION_FALLBACKS[randi() % _HESITATION_FALLBACKS.size()]
+
+
+static func _clip_npc_reply(text: String) -> String:
+	var trimmed := text.strip_edges()
+	if trimmed.length() <= MAX_NPC_REPLY_CHARS:
+		return trimmed
+	var prefix := trimmed.substr(0, MAX_NPC_REPLY_CHARS)
+	var sentence_end := -1
+	for punctuation in ["。", "！", "？", "\n"]:
+		sentence_end = maxi(sentence_end, prefix.rfind(punctuation))
+	if sentence_end >= 60:
+		return prefix.substr(0, sentence_end + 1).strip_edges()
+	return prefix.substr(0, MAX_NPC_REPLY_CHARS - 1).strip_edges() + "…"
 
 
 ## 智能提取一段可解析的 JSON 对象字符串。
@@ -606,7 +623,8 @@ static func _fallback_reply(reply_text: String, prior_context: String, current_u
 	var display_text := reply_text
 	if _looks_like_json(reply_text):
 		push_warning("[SuggestionGuard] LLM 输出疑似畸形 JSON，已回退为中性文本；原文前 200 字: %s" % reply_text.substr(0, 200))
-		display_text = "……"
+		display_text = "我暂时没听明白，你可以换个说法。"
+	display_text = _clip_npc_reply(display_text)
 	var choices: Array[String] = []
 	_fill_safe_choices(choices, display_text, prior_context + "\n" + current_user_text, profile)
 	return {"text": display_text, "choices": choices, "mentions": [], "format_valid": false, "check_request": {}, "item_used": {}, "item_request": {}, "offer_request": {}, "mood": ""}

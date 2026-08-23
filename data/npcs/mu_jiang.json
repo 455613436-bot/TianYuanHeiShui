@@ -29,10 +29,17 @@
   ],
   "fixed_story_events": [
     {
+      "id": "mu_jiang_strange_letter_presented",
+      "when": "clue_presented",
+      "once": false,
+      "presented_clues": ["onboarding_strange_letter"],
+      "pages": ["不知道，我没见过这封信。"]
+    },
+    {
       "id": "mu_jiang_aizhi_truth_presented",
       "when": "clue_presented",
       "once": true,
-      "presented_clues": ["mu_jiang_aizhi_photo", "mu_jiang_aizhi_diary_document"],
+      "presented_clues": ["mu_jiang_aizhi_photo", "mu_jiang_aizhi_diary_document","mu_jiang_aizhi_connection"],
       "pages": [
         "（穆江盯着你手里的合照，许久没有接。）2014 年那个出了事的城里女商人，叫艾芝。她不是来砍树的。她和我在林区一起遴过木料，我给她做过鲁班锁，也做过这只木盒。",
         "那天我见她在电话里讨论伐木建度假村的事，直接气走了。",
@@ -62,6 +69,12 @@
       }
     }
   ],
+  "presented_clue_responses": {
+    "mu_jiang_aizhi_connection": "艾芝和我一起选过木料，我也给她做过东西。她吐黑血求救时，是我误解了她，这件事我认。",
+    "mu_jiang_aizhi_diary": "日记里写的是我当时看到和误判的事。艾芝临终提到利库伊和道士，我没有更多可以替她补充的。",
+    "mu_jiang_craft_decline": "旧作和近年的榫角确实对不上。手艺退得太快，不像只是年纪大了，但我还不能断定原因。",
+    "mu_jiang_water_fatigue_admitted": "我喝村里的水后不容易累，手却越来越不听使唤。这两件事同时发生，确实不合节。"
+  },
   "triggers": [],
   "home_location": "carpenter_workshop",
   "current_location": "carpenter_workshop",

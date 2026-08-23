@@ -41,16 +41,9 @@ func _run() -> void:
 		return
 
 	GameState.trigger_clue("dorm_shower_water_contamination")
-	var evidence_ids: Array[String] = ["dorm_shower_water_contamination"]
-	var too_early: Dictionary = NpcStoryEvent.find_presented_clue_event(profile, evidence_ids)
-	if not too_early.is_empty():
-		_fail("Pollution evidence was accepted before tomorrow at the same time")
-		return
-
-	TimeSystem.advance_minutes(TimeSystem.MINUTES_PER_DAY)
-	var evidence_event: Dictionary = NpcStoryEvent.find_presented_clue_event(profile, evidence_ids)
+	var evidence_event: Dictionary = NpcStoryEvent.find_available_event(profile, "dialogue_open")
 	if String(evidence_event.get("id", "")) != "hermit_pollution_evidence_presented":
-		_fail("Pollution evidence was not accepted after 24 in-game hours")
+		_fail("Held pollution evidence did not advance the hermit quest on the next dialogue")
 		return
 	NpcStoryEvent.apply_event(evidence_event)
 	if GameState.get_quest_stage("hermit_pollution_investigation") != 2:

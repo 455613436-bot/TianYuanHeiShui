@@ -26,6 +26,7 @@ const MAP_SCENE := "res://scenes/map/WorldMap.tscn"
 const DEFAULT_MAP_RETURN_SCENE := "res://scenes/locations/VillageChiefHouse.tscn"
 const TEMP_DORM_LOCATION_ID := "temporary_dorm"
 const TEMP_DORM_SCENE := "res://scenes/locations/TemporaryDorm.tscn"
+const SCENE_ITEM_INTERACTION_SCRIPT := preload("res://scripts/ui/SceneItemInteraction.gd")
 
 ## 玩家初始仅携带相机；村庄手绘地图需在村长家由村长发放。
 const INITIAL_INVENTORY: Array[String] = ["camera"]
@@ -76,8 +77,11 @@ var investigation_states: Dictionary = {}
 var npc_dialogue_stages: Dictionary = {}
 var triggered_events: Dictionary = {}
 var one_shot_items: Dictionary = {}
-## 19:00 后完成一整轮对话时置为 true；仅在临时宿舍休息到次日九点后解除。
+## 22:00 后置为 true；仅在临时宿舍休息到次日九点后解除。
 var night_rest_required: bool = false
+## 已为当天的 19:00 夜归提示弹过窗，避免同一晚重复打断玩家。
+var _night_return_prompt_day: int = -1
+var _night_return_dialog: Node
 
 var _autosave_timer: Timer
 
@@ -85,6 +89,10 @@ var _autosave_timer: Timer
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_setup_autosave_timer()
+	if not TimeSystem.minute_changed.is_connected(_on_time_changed):
+		TimeSystem.minute_changed.connect(_on_time_changed)
+	# 延迟到首个场景就绪后再检查，兼容读取到夜间存档后直接进入地点的情况。
+	call_deferred("_enforce_night_rules")
 
 
 func _notification(what: int) -> void:
@@ -95,6 +103,8 @@ func _notification(what: int) -> void:
 ## 新游戏开始前把所有玩家进度归零，并发放 INITIAL_INVENTORY 里配置的初始物品。
 ## TitleScreen._on_new_game 应在跳转到属性分配 UI 之前调用此函数。
 func reset_for_new_game() -> void:
+	if is_instance_valid(EndingController):
+		EndingController.reset_for_new_game()
 	pollution = 0
 	affinity = {}
 	inventory = []
@@ -118,6 +128,7 @@ func reset_for_new_game() -> void:
 	triggered_events = {}
 	one_shot_items = {}
 	night_rest_required = false
+	_night_return_prompt_day = -1
 	scene_states = {}
 	map_return_scene_path = DEFAULT_MAP_RETURN_SCENE
 	current_scene_path = MAP_SCENE
@@ -142,10 +153,15 @@ func get_attribute(key: String) -> int:
 func attributes_allocated() -> bool:
 	if not attributes_locked_in:
 		return false
-	var total := 0
 	for key in ATTRIBUTE_KEYS:
-		total += int(attributes.get(key, 0))
-	return total == ATTRIBUTE_TOTAL_POINTS
+		if not attributes.has(key):
+			return false
+		var raw: Variant = attributes.get(key)
+		if not (raw is int or raw is float) or int(raw) < ATTRIBUTE_MIN:
+			return false
+	# 初始分配必须恰好为 10 点，但任务提供的永久成长会让总和超过 10。
+	# 因此锁定后只验证四项属性存在，不能再用“总和等于 10”判断 UI 是否显示。
+	return true
 
 
 func set_attributes(values: Dictionary, lock_in: bool = true) -> bool:
@@ -390,16 +406,24 @@ func get_document_clues() -> Array[Dictionary]:
 	return document_clues.duplicate(true)
 
 
-## Unified clue-book view: rich documents first, then story clues that used to
-## exist only as opaque ids in `clues`. Metadata comes from the central ClueDB.
+## Unified clue-book view ordered by acquisition time. Godot Dictionary keeps
+## insertion order, and every document also registers its own id in `clues`, so
+## iterating `clues` reconstructs the exact mixed document/story-clue sequence.
 func get_clue_book_entries() -> Array[Dictionary]:
-	var result: Array[Dictionary] = document_clues.duplicate(true)
+	var result: Array[Dictionary] = []
+	var documents_by_id: Dictionary = {}
+	for document in document_clues:
+		var document_id := String(document.get("id", "")).strip_edges()
+		if not document_id.is_empty():
+			documents_by_id[document_id] = document
 	var seen_ids: Dictionary = {}
-	for entry in result:
-		seen_ids[String(entry.get("id", ""))] = true
 	for raw_id in clues.keys():
 		var clue_id := String(raw_id).strip_edges()
-		if clue_id.is_empty() or seen_ids.has(clue_id):
+		if clue_id.is_empty():
+			continue
+		if documents_by_id.has(clue_id):
+			result.append((documents_by_id[clue_id] as Dictionary).duplicate(true))
+			seen_ids[clue_id] = true
 			continue
 		var metadata: Dictionary = ClueDB.get_entry(clue_id)
 		result.append({
@@ -412,6 +436,13 @@ func get_clue_book_entries() -> Array[Dictionary]:
 			"linked_clue_ids": [clue_id],
 		})
 		seen_ids[clue_id] = true
+	# Legacy saves may contain documents created before document ids were also
+	# registered in `clues`. Keep them visible, after all entries with known time.
+	for document in document_clues:
+		var document_id := String(document.get("id", "")).strip_edges()
+		if not document_id.is_empty() and not seen_ids.has(document_id):
+			result.append(document.duplicate(true))
+			seen_ids[document_id] = true
 	return result
 
 
@@ -574,23 +605,64 @@ func can_enter_scene(scene_path: String) -> bool:
 	return true
 
 
-## 完成玩家提出问题并收到 NPC 回复的一整轮后调用；19:00 返回宿舍，22:00 后必须休息。
+## 完成玩家提出问题并收到 NPC 回复的一整轮后调用。
+## 夜间规则由 TimeSystem.minute_changed 的全局监听统一处理，避免遗漏地点切换、检定等其他计时路径。
 func complete_player_dialogue_round() -> bool:
 	TimeSystem.on_dialogue_turn_completed()
 	if TimeSystem.is_rest_lock_time():
-		night_rest_required = true
-		call_deferred("_force_return_to_dorm")
-		save_game(AUTO_SAVE_PATH, false)
 		return true
 	if is_night_outing_time():
-		night_return_required.emit("天黑了。请先回临时宿舍；持有灯笼时，之后仍可前往村长家或道观进行夜间调查。")
-		save_game(AUTO_SAVE_PATH, false)
 		return true
 	return false
 
 
 func confirm_night_return() -> void:
+	_dismiss_night_return_dialog()
 	_force_return_to_dorm()
+
+
+func _on_time_changed(_day: int, _minute_of_day: int) -> void:
+	# 场景切换本身也会推进时间；延迟一帧可确保弹窗附着在抵达后的当前场景上。
+	call_deferred("_enforce_night_rules")
+
+
+func _enforce_night_rules() -> void:
+	if TimeSystem.is_rest_lock_time():
+		night_rest_required = true
+		_dismiss_night_return_dialog()
+		_force_return_to_dorm()
+		return
+	if not TimeSystem.is_night_outing_time() or _night_return_prompt_day == TimeSystem.current_day:
+		return
+	_night_return_prompt_day = TimeSystem.current_day
+	var message := "夜深了，请先回临时宿舍。无论是否持有灯笼，都需要先回去；持有灯笼后，才可再次前往村长家或道观进行夜间调查。"
+	night_return_required.emit(message)
+	_show_night_return_dialog(message)
+
+
+func _show_night_return_dialog(message: String) -> void:
+	if is_instance_valid(_night_return_dialog):
+		return
+	var scene := get_tree().current_scene
+	if scene == null:
+		return
+	_night_return_dialog = SCENE_ITEM_INTERACTION_SCRIPT.new()
+	_night_return_dialog.name = "NightReturnInteraction"
+	scene.add_child(_night_return_dialog)
+	_night_return_dialog.paged_text_completed.connect(_on_night_return_acknowledged)
+	var pages: Array[String] = [message]
+	_night_return_dialog.open_paged_text("夜间休整", pages, "night_return", {}, true, "返回宿舍")
+
+
+func _on_night_return_acknowledged(interaction_id: String) -> void:
+	if interaction_id == "night_return":
+		confirm_night_return()
+
+
+func _dismiss_night_return_dialog() -> void:
+	if is_instance_valid(_night_return_dialog):
+		_night_return_dialog.queue_free()
+	_night_return_dialog = null
 
 
 func _force_return_to_dorm() -> void:
@@ -628,6 +700,7 @@ func _apply_morning_status(completed_day: int) -> Dictionary:
 		"show": false,
 		"title": "清晨",
 		"pages": [],
+		"ending_id": "",
 	}
 	var offering_gained: PackedStringArray = []
 	if bool(ritual_offering_days.get(str(completed_day), false)):
@@ -637,7 +710,9 @@ func _apply_morning_status(completed_day: int) -> Dictionary:
 		if not offering_gained.is_empty():
 			report["show"] = true
 			report["pages"] = ["昨夜祭台上的供品似乎仍在回应你。\n\n[color=sea_green]今日增益：%s[/color]" % "、".join(offering_gained)]
-	if not has_contacted_water_on_day(completed_day):
+	# 兼容已经看过最高侵蚀文本、却因旧逻辑未结算结局的存档：达到最高阶段后，
+	# 即使当天没有再次接触水，下一次清晨也会重新显示最终文本并进入结局。
+	if not has_contacted_water_on_day(completed_day) and water_contact_count < 6:
 		attributes_changed.emit()
 		return report
 
@@ -658,7 +733,9 @@ func _apply_morning_status(completed_day: int) -> Dictionary:
 				if _grant_daily_attribute_bonus(key):
 					gained.append("%s +1" % ATTRIBUTE_LABELS.get(key, key))
 		5:
-			pass
+			# 最高水侵蚀阶段过去只显示异变文字，却没有接入污染结局。
+			# 由宿舍清晨弹窗在玩家确认这段文字后触发，避免结局遮住阶段文本。
+			report["ending_id"] = "pollution_follower"
 	if not gained.is_empty():
 		text += "\n\n[color=sea_green]今日增益：%s[/color]" % "、".join(gained)
 	report["show"] = true
@@ -668,7 +745,7 @@ func _apply_morning_status(completed_day: int) -> Dictionary:
 
 
 func _grant_daily_attribute_bonus(key: String) -> bool:
-	if not ATTRIBUTE_KEYS.has(key) or get_attribute(key) >= ATTRIBUTE_MAX:
+	if not ATTRIBUTE_KEYS.has(key):
 		return false
 	daily_attribute_bonuses[key] = int(daily_attribute_bonuses.get(key, 0)) + 1
 	return true
@@ -1127,7 +1204,9 @@ func _sanitize_scene_states(value: Variant) -> Dictionary:
 
 func _load_attribute_runtime_state(adjustments_value: Variant, bonuses_value: Variant, water_count_value: Variant, contact_days_value: Variant, shower_days_value: Variant, offering_days_value: Variant = {}, offering_count_value: Variant = 0) -> void:
 	attribute_adjustments = _attribute_delta_dictionary(adjustments_value)
-	daily_attribute_bonuses = _attribute_delta_dictionary(bonuses_value, 0, 1)
+	# 供奉与水接触可能在同一天叠加多个临时点数；读取存档时不能再把
+	# 实时加成压回 1，也不再以初始属性上限 5 限制最终属性。
+	daily_attribute_bonuses = _attribute_delta_dictionary(bonuses_value, 0, 99)
 	water_contact_count = clampi(_safe_int(water_count_value, 0), 0, 9999)
 	water_contact_days = _bool_dictionary(contact_days_value)
 	showered_days = _bool_dictionary(shower_days_value)
@@ -1153,7 +1232,8 @@ func _load_attributes(value: Variant, locked_in_value: Variant) -> void:
 		for key in ATTRIBUTE_KEYS:
 			var raw: Variant = (value as Dictionary).get(key, 0)
 			var v: int = int(raw) if (raw is int or raw is float) else 0
-			candidate[key] = clampi(v, ATTRIBUTE_MIN, ATTRIBUTE_MAX)
+			# ATTRIBUTE_MAX 只约束初始分配；任务奖励允许基础属性永久超过 5。
+			candidate[key] = maxi(v, ATTRIBUTE_MIN)
 	var lock_in: bool = false
 	if locked_in_value is bool:
 		lock_in = locked_in_value
@@ -1161,11 +1241,11 @@ func _load_attributes(value: Variant, locked_in_value: Variant) -> void:
 		attributes = {}
 		attributes_locked_in = false
 		return
-	# 严格校验总和；不合法则视为未分配，强制回退到分配 UI
+	# 初始分配至少有 10 点；高于 10 的部分来自永久成长，必须随存档保留。
 	var total := 0
 	for key in ATTRIBUTE_KEYS:
 		total += int(candidate.get(key, 0))
-	if total != ATTRIBUTE_TOTAL_POINTS:
+	if total < ATTRIBUTE_TOTAL_POINTS:
 		attributes = {}
 		attributes_locked_in = false
 		return

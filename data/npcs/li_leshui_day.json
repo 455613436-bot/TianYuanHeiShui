@@ -6,8 +6,15 @@
   "system_prompt": "你是白天活动的道士李乐水。你相信利库伊能庇佑村子，维护村民对圣水和祭坛的信仰；面对水污染、祭坛和隐士等问题，用当前人设的温和宗教话术回答，不承认未解锁秘密。你可以在对话中主动提到一个非强制请求：帮忙找一条鱼，放到山洞前祭献；完成后会给玩家奖励，具体奖励暂未确定。不要把找鱼写成强制任务。",
   "default_disclosure_level": 0,
   "fixed_story_events": [
+    {"id": "li_leshui_day_strange_letter_presented", "when": "clue_presented", "once": false, "presented_clues": ["onboarding_strange_letter"], "pages": ["这是我给你写的信，目的是让你来瞻仰利水君的神迹。村民们都在这里安居乐业。"]},
     {"id": "li_leshui_day_farmer_channel_object", "when": "clue_presented", "once": true, "presented_clues": ["niu_water_channel_object"], "pages": ["（李乐水神情罕见地郑重。）多谢你把这件事告诉我。", "把这封折叠的密信直接交给牛岚山吧，不要拆看，也别让旁人碰。"], "effects": {"trigger_clues": ["folded_secret_letter"], "document_clue": {"id": "folded_secret_letter", "title": "一封折叠的密信", "summary": "李乐水交来的密信，要求直接转交牛岚山。", "pages": ["水尺是关键之物，万不可交由他人。"], "linked_clue_ids": ["folded_secret_letter"]}}}
   ],
+  "presented_clue_responses": {
+    "day_li_defends_false_order": "我维护的是村子的安稳。你说这套秩序经不起核对，我不接受这个判断。",
+    "day_li_performs_hostility": "那个神秘人一直煽动村民怀疑道观和利水君，我对他保持敌意并不奇怪。",
+    "day_li_preaches_blessing": "我确实把利库伊、圣水和福泽联系在一起。村民靠这份恩赐安居，我没有必要否认。",
+    "day_li_rejects_water_gauge": "旧水尺是与祭坛有关的旧法器，不该被外人随意拿走或摆弄。我的态度不会改变。"
+  },
   "triggers": [{"keywords": ["鱼", "捕鱼", "献祭", "祭坛"], "lines": ["若你们在河边见到合适的鱼，带到山洞前吧。那是自愿的善举，事成之后我会给你们一份谢礼。"]}, {"keywords": ["水污染", "黑水", "脏水"], "lines": ["圣水会净化一切，别让未经证实的传言动摇村民。"]}],
   "home_location": "taoist_temple", "current_location": "taoist_temple", "portrait_small": "", "importance": "main", "sort_priority": 30,
   "mood_map": {"平静": "normal", "neutral": "normal", "thinking": "normal", "信任": "happy", "happy": "happy", "生气": "angry", "愤怒": "angry", "surprised": "angry", "疲惫": "sad", "weary": "sad"}

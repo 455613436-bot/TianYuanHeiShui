@@ -45,11 +45,18 @@
   ],
   "fixed_story_events": [
     {
+      "id": "gong_zhong_strange_letter_presented",
+      "when": "clue_presented",
+      "once": false,
+      "presented_clues": ["onboarding_strange_letter"],
+      "pages": ["不知道，我没见过这封信。"]
+    },
+    {
       "id": "gong_toolbox_opening",
       "when": "dialogue_open",
       "once": true,
       "all_of": [
-        {"type": "quest_stage", "id": "gong_toolbox", "min": 0},
+        {"type": "quest_stage", "id": "gong_toolbox", "min": 0, "max": 0},
         {"type": "not_item", "id": "gong_toolbox"}
       ],
       "text": "（龚忠正焦急地在材料堆和工棚里翻找。）我的工具箱怎么不见了……上周还在这儿。抱歉，没注意到有人。你从村道过来？路上见没见一个深绿色铁皮工具箱，两层卡扣，约半米长？",
@@ -80,7 +87,7 @@
     },
     {
       "id": "gong_guided_stranger_reveal",
-      "when": "manual",
+      "when": "dialogue_open",
       "once": true,
       "all_of": [
         {"type": "quest_stage", "id": "gong_toolbox", "min": 2}
@@ -126,6 +133,18 @@
       }
     }
   ],
+  "presented_clue_responses": {
+    "gong_accident_investigation_opened": "工具箱里的施工记录和青铜碎片，是我重查龚泽事故的起点。你有能核对时间和现场的线索就告诉我。",
+    "gong_bronze_sample_suspected": "这碎片的边缘确实太齐，像提前加工过的样品。若能坐实，就说明事故现场有人动过手脚。",
+    "gong_desiccant_experiment": "离村和用干燥剂都只能暂时缓解，说明根子还在村里的环境里，不能当成普通发胖。",
+    "gong_guided_stranger_revealed": "龚泽说过，那名带路人连洞里的岔路都熟。他不是本村人，这一点我记得很清楚。",
+    "gong_guilt_confession": "事故前是我逼着龚泽继续干的。这份愧疚是我的，我不会拿别的理由推掉。",
+    "gong_rumor_was_planted": "如果青铜鼎的传闻是有人故意放出来的，那人就是在把施工队往洞里引。还得找传播时间和最早来源。",
+    "gong_toolbox_lead": "对，就是那个深绿色、两层卡扣的工具箱。里面有施工记录和事故留下的东西，我必须找回来。",
+    "gong_water_anomaly_admitted": "我承认村里的水可能有问题。离开后症状会缓解，这比任何传闻都更值得查。",
+    "gong_zes_death_questioned": "龚泽的死亡时间线和现场情况确实对不上。没有证据前我不乱定性，但这绝不是一句意外就能结案。",
+    "medical_exam_gong_zhong": "检验说明我的水肿和组织异常不是普通发胖，离村后缓解也有医学依据。这更说明村里的环境值得查。"
+  },
   "triggers": [
     {
       "keywords": ["龚泽", "弟弟", "为什么调查", "为什么执着"],

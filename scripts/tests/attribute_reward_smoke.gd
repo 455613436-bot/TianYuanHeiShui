@@ -25,6 +25,32 @@ func _run() -> void:
 	var committee := committee_scene.instantiate()
 	get_tree().root.add_child(committee)
 	await get_tree().process_frame
+	var expected_masks := {
+		"CommitteePhotosHotspot": "res://assets/scenes/masks/committee_photos_mask.png",
+		"HospitalNoticeHotspot": "res://assets/scenes/masks/hospital_notice_mask.png",
+		"WuXuanHotspot": "res://assets/scenes/masks/wu_xuan_mask.png",
+		"CommitteeComputerHotspot": "res://assets/scenes/masks/committee_computer_mask.png",
+	}
+	for hotspot_name in expected_masks:
+		var hotspot := committee.get_node_or_null(hotspot_name) as Button
+		var hit_area := committee.get_node_or_null("%s/MaskHitArea" % hotspot_name) as TextureButton
+		if hotspot == null or hit_area == null:
+			_fail("Committee mask hotspot was not created: %s" % hotspot_name)
+			return
+		var mask_texture := hit_area.texture_normal
+		var mask_image := mask_texture.get_image() if mask_texture != null else null
+		if mask_texture == null or mask_texture.resource_path != expected_masks[hotspot_name]:
+			_fail("Committee hotspot uses the wrong mask: %s" % hotspot_name)
+			return
+		if mask_image == null or mask_image.get_size() != Vector2i(1920, 1080):
+			_fail("Committee mask is not aligned to the 1920x1080 scene: %s" % hotspot_name)
+			return
+		if hit_area.texture_click_mask == null:
+			_fail("Committee mask did not generate an alpha click map: %s" % hotspot_name)
+			return
+		if hotspot.pressed.get_connections().is_empty():
+			_fail("Committee mask lost its original interaction callback: %s" % hotspot_name)
+			return
 
 	var interaction_ui := committee.get_node_or_null("CommitteeComputerInteraction") as SceneItemInteraction
 	if interaction_ui == null:
@@ -45,8 +71,15 @@ func _run() -> void:
 	if not bool(GameState.get_investigation_state("wu_xuan_computer_game_completed", false)):
 		_fail("Committee game completion state was not persisted")
 		return
-	if GameState.grant_permanent_attribute("intellect", 1) != 0 or GameState.get_attribute("intellect") != GameState.ATTRIBUTE_MAX:
-		_fail("Intellect cap was not preserved")
+	var after_first_play := GameState.get_attribute("intellect")
+	var time_before_replay := TimeSystem.total_minutes()
+	committee.call("_on_committee_computer_choice", "committee_computer", "play_game", {}, interaction_ui)
+	await get_tree().process_frame
+	if GameState.get_attribute("intellect") != after_first_play:
+		_fail("Committee game replay granted the one-time intellect reward again")
+		return
+	if TimeSystem.total_minutes() != time_before_replay + 240:
+		_fail("Committee game replay did not consume four hours")
 		return
 
 	committee.queue_free()

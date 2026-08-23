@@ -218,7 +218,8 @@ func is_npc_present_at(npc_id: String, location_id: String) -> bool:
 func get_interactable_npcs_at(location_id: String) -> Array[String]:
 	var result: Array[String] = []
 	for npc_id in get_npcs_at(location_id):
-		if can_interact_with_npc(npc_id):
+		# 敌对 NPC 仍可单独点击查看其拒谈反应，但不能参与多人谈话。
+		if can_interact_with_npc(npc_id) and not is_npc_hostile(npc_id):
 			result.append(npc_id)
 	return result
 
@@ -242,6 +243,7 @@ func is_mysterious_hermit_road_time() -> bool:
 		TimeSystem.current_day >= 3
 		and TimeSystem.minute_of_day >= 16 * 60 + 50
 		and TimeSystem.minute_of_day < 19 * 60
+		and int(GameState.get_investigation_state("field_path:mysterious_hermit_met_day", -1)) != TimeSystem.current_day
 	)
 
 
@@ -303,8 +305,18 @@ func kill_npc(npc_id: String, reason: String = "被玩家攻击致死") -> bool:
 	var from_location := String(_current_locations.get(npc_id, ""))
 	if from_location.is_empty():
 		return false
-	_killed_npcs[npc_id] = {"location": from_location, "reason": reason.strip_edges(), "day": TimeSystem.current_day, "minute": TimeSystem.minute_of_day}
-	npc_moved.emit(npc_id, from_location, "", reason)
+	var killed_ids: Array[String] = [npc_id]
+	# 李乐水的昼夜人格共用同一具身体；任一人格死亡时，另一人格也不能再出现。
+	if npc_id == "li_leshui_day":
+		killed_ids.append("li_leshui_night")
+	elif npc_id == "li_leshui_night":
+		killed_ids.append("li_leshui_day")
+	for killed_id in killed_ids:
+		if not _npcs.has(killed_id) or _killed_npcs.has(killed_id):
+			continue
+		var killed_location := String(_current_locations.get(killed_id, from_location))
+		_killed_npcs[killed_id] = {"location": killed_location, "reason": reason.strip_edges(), "day": TimeSystem.current_day, "minute": TimeSystem.minute_of_day}
+		npc_moved.emit(killed_id, killed_location, "", reason)
 	if is_instance_valid(EndingController):
 		EndingController.on_npc_killed(npc_id)
 	return true
@@ -317,12 +329,17 @@ func is_npc_killed(npc_id: String) -> bool:
 func mark_npc_hostile(npc_id: String, reason: String = "攻击失败") -> bool:
 	if not _npcs.has(npc_id) or _killed_npcs.has(npc_id):
 		return false
+	# 昼夜人格的态度彼此独立：攻击失败只让当时被攻击的人格敌对。
 	_hostile_npcs[npc_id] = {"reason": reason.strip_edges(), "day": TimeSystem.current_day, "minute": TimeSystem.minute_of_day}
 	return true
 
 
 func can_interact_with_npc(npc_id: String) -> bool:
-	return _npcs.has(npc_id) and not _dismissed_npcs.has(npc_id) and not _killed_npcs.has(npc_id) and not _hostile_npcs.has(npc_id)
+	return _npcs.has(npc_id) and not _dismissed_npcs.has(npc_id) and not _killed_npcs.has(npc_id)
+
+
+func is_npc_hostile(npc_id: String) -> bool:
+	return _hostile_npcs.has(npc_id)
 
 
 ## F5：未探索地点的 NPC 显示为 "？？？"（返回空数组，由 UI 层画占位）

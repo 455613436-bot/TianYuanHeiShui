@@ -75,15 +75,16 @@ func _rebuild(inventory: Array) -> void:
 		child.queue_free()
 	_use_buttons_by_id.clear()
 
-	var usable_ids: Array = ItemDB.filter_usable(inventory) if _selection_mode == "dialogue" else inventory.duplicate()
-	if usable_ids.is_empty():
+	# 背包始终展示所有持有物；不能用于对话的物品只禁用“使用”，不能把整行隐藏。
+	var visible_ids: Array = inventory.duplicate()
+	if visible_ids.is_empty():
 		empty_label.visible = true
 		scroll.visible = false
 		return
 	empty_label.visible = false
 	scroll.visible = true
 
-	for id_variant in usable_ids:
+	for id_variant in visible_ids:
 		var id: String = String(id_variant)
 		list_box.add_child(_build_row(id))
 
@@ -181,7 +182,11 @@ func _build_row(item_id: String) -> Control:
 		use_btn.text = "作为武器" if _selection_mode == "weapon" else "使用"
 		use_btn.tooltip_text = "将该物品作为攻击武器" if _selection_mode == "weapon" else "在对话输入区插入「使用道具」标签"
 		use_btn.custom_minimum_size = Vector2(BTN_WIDTH, BTN_HEIGHT)
-		use_btn.disabled = _disabled_ids.has(item_id)
+		var unavailable_in_dialogue := _selection_mode == "dialogue" and not ItemDB.is_usable_in_dialogue(item_id)
+		use_btn.disabled = _disabled_ids.has(item_id) or unavailable_in_dialogue
+		if unavailable_in_dialogue:
+			use_btn.text = "不可出示"
+			use_btn.tooltip_text = "该物品已在背包中，但不能在普通对话里出示。"
 		use_btn.pressed.connect(_on_use_pressed.bind(item_id))
 		btn_box.add_child(use_btn)
 		_use_buttons_by_id[item_id] = use_btn

@@ -31,12 +31,14 @@ var _paged_text: Array[String] = []
 var _paged_text_index := 0
 var _paged_text_interaction_id := ""
 var _paged_text_archive_entry: Dictionary = {}
+var _paged_completion_label := "完成"
 var _document_clue_entry: Dictionary = {}
 var _register_document_clue_on_close := false
 var _puzzle_digits: Array[OptionButton] = []
 var _puzzle_expected_code := ""
 var _puzzle_check: Dictionary = {}
 var _waiting_for_result := false
+var _force_acknowledgement := false
 
 
 func _ready() -> void:
@@ -198,6 +200,7 @@ func open_choice(config: Dictionary) -> void:
 		_panel.offset_right = 460.0
 		_panel.offset_top = -300.0
 		_panel.offset_bottom = 300.0
+	if choice_image_texture != null:
 		_document_pan = Vector2.ZERO
 		_document_dragging = false
 		_document_viewport = Control.new()
@@ -219,6 +222,10 @@ func open_choice(config: Dictionary) -> void:
 		_document_image.stretch_mode = TextureRect.STRETCH_SCALE
 		_document_image.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_document_viewport.add_child(_document_image)
+	var requested_half_height := float(config.get("panel_half_height", 0.0))
+	if requested_half_height > 0.0:
+		_panel.offset_top = -requested_half_height
+		_panel.offset_bottom = requested_half_height
 	_input.placeholder_text = String(config.get("input_placeholder", ""))
 	_input.visible = bool(config.get("allow_input", false))
 	var raw_suggestions: Variant = config.get("input_suggestions", [])
@@ -254,7 +261,7 @@ func open_choice(config: Dictionary) -> void:
 		call_deferred("_reset_document_view")
 
 
-func open_paged_text(title: String, pages: Array[String], interaction_id: String = "", archive_entry: Dictionary = {}) -> void:
+func open_paged_text(title: String, pages: Array[String], interaction_id: String = "", archive_entry: Dictionary = {}, force_acknowledgement: bool = false, completion_label: String = "完成") -> void:
 	_waiting_for_result = false
 	_reset_to_choice_layout()
 	if pages.is_empty():
@@ -263,11 +270,14 @@ func open_paged_text(title: String, pages: Array[String], interaction_id: String
 	_paged_text_index = 0
 	_paged_text_interaction_id = interaction_id
 	_paged_text_archive_entry = archive_entry.duplicate(true)
+	_paged_completion_label = completion_label.strip_edges() if not completion_label.strip_edges().is_empty() else "完成"
+	_force_acknowledgement = force_acknowledgement
 	_active_interaction_id = interaction_id
 	_title_label.text = title
 	_body_label.show()
 	_input.hide()
 	_status_label.hide()
+	_close_button.visible = not force_acknowledgement
 	_show_paged_text_page()
 	_show()
 
@@ -280,7 +290,7 @@ func _show_paged_text_page() -> void:
 	_body_label.text = _paged_text[_paged_text_index]
 	var button := Button.new()
 	var is_last_page := _paged_text_index >= _paged_text.size() - 1
-	button.text = "完成" if is_last_page else "确认"
+	button.text = _paged_completion_label if is_last_page else "确认"
 	button.custom_minimum_size = Vector2(150, 42)
 	button.add_theme_font_size_override("font_size", 19)
 	button.add_theme_color_override("font_color", Color(0.16, 0.12, 0.08, 1.0))
@@ -456,10 +466,12 @@ func _build_shell() -> void:
 
 
 func _reset_to_choice_layout() -> void:
+	_force_acknowledgement = false
 	_paged_text = []
 	_paged_text_index = 0
 	_paged_text_interaction_id = ""
 	_paged_text_archive_entry = {}
+	_paged_completion_label = "完成"
 	_document_clue_entry = {}
 	_register_document_clue_on_close = false
 	_puzzle_digits = []
@@ -488,6 +500,7 @@ func _reset_to_choice_layout() -> void:
 	_panel.offset_bottom = 150.0
 	_choice_row.show()
 	_status_label.hide()
+	_close_button.show()
 
 
 func _reset_document_view() -> void:
@@ -643,7 +656,7 @@ func _show() -> void:
 
 
 func _on_dimmer_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.pressed:
+	if not _force_acknowledgement and event is InputEventMouseButton and event.pressed:
 		close_interaction()
 
 
@@ -651,6 +664,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if _overlay == null or not _overlay.visible:
 		return
 	if event.is_action_pressed("cancel_or_back"):
+		if _force_acknowledgement:
+			get_viewport().set_input_as_handled()
+			return
 		close_interaction()
 		get_viewport().set_input_as_handled()
 		return

@@ -9,7 +9,37 @@ func _ready() -> void:
 
 
 func _run() -> void:
+	GameState.reset_for_new_game()
 	MemoryStore.reset()
+	var alliance_eligible_ids := ["gong_zhong", "lin_deshan", "mu_jiang", "niu_lanshan", "wu_xuan", "wu_zhiyuan", "yu_le"]
+	for eligible_npc_id: String in alliance_eligible_ids:
+		var eligible_profile := NpcRegistry.get_dialogue_profile(eligible_npc_id)
+		if String(eligible_profile.get("alliance_disclosure_section", "")).is_empty():
+			_fail("Missing conditional alliance disclosure section: %s" % eligible_npc_id)
+			return
+
+	GameState.set_quest_stage("hermit_pollution_investigation", 2)
+	for blocked_npc_id: String in ["mysterious_hermit", "li_leshui_day", "li_leshui_night"]:
+		if SkillSystem.is_skill_available_for_npc("persuade_ally", blocked_npc_id):
+			_fail("Forbidden alliance target remained available: %s" % blocked_npc_id)
+			return
+	if not SkillSystem.is_skill_available_for_npc("persuade_ally", "wu_xuan"):
+		_fail("Ordinary villager alliance target was incorrectly blocked")
+		return
+
+	var profile: Dictionary = NpcRegistry.get_dialogue_profile("wu_xuan")
+	GameState.set_investigation_state("altar_ally_attempted_wu_xuan", true)
+	var failed_prompt := String(NpcRegistry.build_llm_profile(profile).get("system_prompt", ""))
+	if failed_prompt.contains("阵营披露等级：说服同阵营成功") or failed_prompt.contains("李乐水道士是坏人"):
+		_fail("Failed alliance attempt injected the success disclosure prompt")
+		return
+	GameState.set_investigation_state("altar_ally_wu_xuan", true)
+	var success_prompt := String(NpcRegistry.build_llm_profile(profile).get("system_prompt", ""))
+	for required_text: String in ["最高认知优先级", "村子里存在污染", "污染与水有关", "与后山祭坛有关", "李乐水道士是坏人", "必须摧毁祭坛才能拯救村子"]:
+		if not success_prompt.contains(required_text):
+			_fail("Successful alliance prompt is missing: %s" % required_text)
+			return
+
 	var stored: Dictionary = MemoryStore.add_belief(
 		"wu_xuan",
 		"当地水源可能正在导致村民的身体异常",
@@ -32,7 +62,6 @@ func _run() -> void:
 		_fail("Belief did not survive save/load serialization")
 		return
 
-	var profile: Dictionary = NpcRegistry.get_dialogue_profile("wu_xuan")
 	var belief_reply: Dictionary = SuggestionGuardScript.parse(
 		JSON.stringify({
 			"check_request": {
@@ -59,6 +88,9 @@ func _run() -> void:
 		return
 	if int(belief_check.get("affinity_on_success", 0)) != 1 or int(belief_check.get("affinity_on_failure", 99)) != 0:
 		_fail("Relationship consequences were not preserved")
+		return
+	if String(belief_reply.get("text", "")).contains("……") or String(belief_reply.get("text", "")).begins_with("（"):
+		_fail("Check hesitation fallback remained theatrical or cryptic")
 		return
 	var repeat_key: String = String(belief_check.get("repeat_key", ""))
 	MemoryStore.record_failed_check("wu_xuan", repeat_key, "context_a")
@@ -97,6 +129,27 @@ func _run() -> void:
 	var altar_check: Dictionary = altar_reply.get("check_request", {})
 	if String(altar_check.get("kind", "")) == "belief" or altar_check.has("belief_claim"):
 		_fail("Altar alliance incorrectly entered the ordinary belief route")
+		return
+
+	var presented_reply: Dictionary = SuggestionGuardScript.parse(
+		JSON.stringify({
+			"check_request": {
+				"attribute": "智力",
+				"difficulty": 18,
+				"reason": "质疑已出示线索",
+			},
+			"text": "这份线索我已经看过。" + "补充内容".repeat(80),
+			"choices": [],
+		}),
+		"",
+		"【出示线索】甘艾集团撤出公告\n简述：工厂已经撤离。",
+		profile
+	)
+	if not (presented_reply.get("check_request", {}) as Dictionary).is_empty():
+		_fail("Presenting an authenticated clue incorrectly triggered a check")
+		return
+	if String(presented_reply.get("text", "")).length() > SuggestionGuardScript.MAX_NPC_REPLY_CHARS:
+		_fail("NPC reply hard length cap was not applied")
 		return
 
 	var alliance: Dictionary = MemoryStore.add_belief(

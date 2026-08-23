@@ -15,6 +15,10 @@ config/description="Siyuan Village Mystery - 思源村跑团探案游戏（LLM �
 run/main_scene="res://scenes/ui/TitleScreen.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 
+[audio]
+
+default_bus_layout="res://assets/audio/default_bus_layout.tres"
+
 [autoload]
 
 GameState="*res://scripts/autoload/GameState.gd"
@@ -49,10 +53,6 @@ enabled=PackedStringArray("res://addons/godot_mcp/plugin.cfg")
 [gui]
 
 theme/custom="res://assets/theme/default_theme.tres"
-
-[audio]
-
-default_bus_layout="res://assets/audio/default_bus_layout.tres"
 
 [input]
 

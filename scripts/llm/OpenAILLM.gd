@@ -39,7 +39,8 @@ func generate(request_id: int, npc_profile: Dictionary, history: Array, user_tex
 		"model": model_name,
 		"messages": messages,
 		"temperature": float(npc_profile.get("model", {}).get("temperature", 0.85)),
-		"max_tokens": maxi(int(npc_profile.get("model", {}).get("max_tokens", 300)), 420),
+		# 正文以短回复为主，同时给结构化 JSON 与检定字段留出足够空间。
+		"max_tokens": clampi(int(npc_profile.get("model", {}).get("max_tokens", 300)), 220, 360),
 		"stream": false,
 	}
 
@@ -139,8 +140,8 @@ func _on_completed(result: int, response_code: int, body: PackedByteArray, reque
 ## 每 40ms 发一段（约 8 字），让玩家感觉字在"流"出来
 func _emit_typewriter(request_id: int, npc_id: String, reply: Dictionary, service: Node) -> void:
 	var content: String = String(reply.get("text", "……"))
-	var chunk_size: int = 8
-	var interval_ms: int = 40
+	var chunk_size: int = 1
+	var interval_ms: int = 80
 	var total: int = content.length()
 	# 把所有可变状态 + callable 引用放进同一个 dict，
 	# 避免 GDScript 闭包捕获 null callable 或 int 值拷贝的问题
@@ -166,9 +167,8 @@ func _emit_typewriter(request_id: int, npc_id: String, reply: Dictionary, servic
 func _emit_typewriter_stable(request_id: int, npc_id: String, reply: Dictionary, service: Node) -> void:
 	var content: String = String(reply.get("text", "……"))
 	service.deliver_reply_started(request_id, npc_id, String(reply.get("mood", "")), content)
+	# 统一使用每字 0.08 秒的打字机速度。
 	var chunk_size := 1
-	# 每 chunk 间隔时间。原本 0.04s（约 200 字/秒），现减半到 0.08s（约 100 字/秒），
-	# 更接近正常朗读节奏，也让玩家有时间阅读。
 	var chunk_interval := 0.08
 	var total := content.length()
 	if total == 0:
@@ -315,7 +315,7 @@ func _build_messages(profile: Dictionary, history: Array, user_text: String) -> 
 	var messages: Array = []
 	var system_prompt := String(profile.get("system_prompt", ""))
 	if system_prompt == "":
-		system_prompt = "你是 %s，请始终保持角色扮演，用角色本人的自然口吻回答；篇幅按问题需要决定，复杂问题要完整说明。" % profile.get("display_name", "?")
+		system_prompt = "你是 %s。只根据明确提供的信息，用自然简短的日常口语回答；不知道就直说，不编造。" % profile.get("display_name", "?")
 	# 在请求出口统一注入真实背包，覆盖私聊、公聊和专用 LLM 请求，避免上层遗漏。
 	if not system_prompt.contains("【玩家当前持有】"):
 		system_prompt += "\n\n" + ItemDB.build_inventory_prompt_block(GameState.inventory)
@@ -337,9 +337,11 @@ func _build_messages(profile: Dictionary, history: Array, user_text: String) -> 
 - 你只能陈述角色已知、当前披露等级已允许披露，或村中公开可核对的事实。
 - 对自己不知道、记不清、未亲历、无法确认的事，必须直接以角色口吻说“我不知道”“我不清楚”“没亲眼见过，不能乱说”或等价表达。
 - 严禁为填补对话空白而捏造人名、经历、时间、地点、动机、物品去向、事件因果或他人想法；不能把猜测说成事实。
-- 玩家提供未经证实的说法时，可以表示不信、要求证据或承认无法判断，但不能顺着编造细节。
+- 当玩家消息以「【出示线索】」开头时，该线索由游戏系统确认真实可信。线索里记录的事件真实发生过，观点也确实有人提出过。不得质疑真伪、来源、玩家是否伪造，也不要要求玩家再次证明。只按你的公开立场简短回应；不了解的部分直接说不清楚，或解释自己当时的立场。
+- 玩家在普通聊天中提出的猜测不等于正式出示线索，可以按当前披露等级表示不同意或不了解，但不能顺着编造细节。
 - 面对草帽、绳子、木板等普通物品，只能依据眼前可见特征和生活常识说明一般用途；可以明确说“看着像”“一般能用来”“我只能猜”，但不得杜撰生产厂家、原主人、具体年代、材料来源或与剧情人物的关系。
 - “常识推断”必须与“亲历事实”分开表达：能根据常识判断用途，不等于知道这件具体物品的来历。若玩家追问来历而系统未提供，直接说不清楚。
+- 不要主动补充问题之外的人物、地点、传闻或往事。没有依据时宁可少说，绝不靠联想让回答显得丰富。
 
 ## 检定工具（跑团骰子）——最高优先级流程
 请**在动笔写 text 之前**先做一次自问自答：玩家这一句话，属不属于「NPC 会犹豫、不愿意直接答应或不愿意直接说」的请求？
@@ -358,10 +360,11 @@ func _build_messages(profile: Dictionary, history: Array, user_text: String) -> 
 
 判断结果只有两种，并且**决定了接下来该怎么写 text**：
 
+特殊情况：玩家消息以「【出示线索】」开头时，本轮只需确认你已经看过，并按当前立场简短回应；不要输出 check_request，不得质疑线索真伪或要求重新验证。
+
 【A. 判断为「需要检定」】——**你必须**同时满足以下所有约束：
   A1. **必须**输出 check_request 字段，且它是本轮**唯一**代表 NPC 立场的表态。
-  A2. text **只能**是一小段"NPC 明显在犹豫 / 打量玩家 / 权衡要不要答应或要不要说"的过渡描写或半句话，
-	  不超过 40 个汉字，句末通常带"……" "让我想想" "这个嘛" "唔——" 等停顿。
+  A2. text 只写一句自然、明确的权衡表达，不超过 30 个汉字，例如“这件事我得想一下。”不要堆动作描写、省略号或故作深沉。
   A3. text **绝对禁止**做以下事情：
       - 给出任何形式的决定（无论答应、拒绝、转移话题、反问都不行）
       - 报出玩家请求以外的信息、透露秘密、否认罪状、给建议
@@ -563,36 +566,34 @@ NPC 是活人，不是"信息发放机"。玩家问什么就答什么、把秘�
 ## text 字段（最重要，必填非空）
 **text 是玩家在屏幕上唯一能读到的 NPC 对白，绝对不能缺失、也不能是空字符串。**
 - text 至少写 5 个汉字，口语化，符合 NPC 人设。
-- **没有长短交替、五轮配额、固定句数或固定字数要求。**篇幅只由当前问题决定：寒暄和简单事实可以简短；解释经历、观点、证据或复杂因果时应完整回答，必要时可以多句展开。
-- 不要为了显得简洁而漏答玩家问题中的关键部分，也不要为了显得“像活人”刻意把完整回答拆碎到下一轮。
-- 即使你决定要触发检定，text 也必须是一段有内容的“犹豫过渡描写”，而不是空串；检定专用的 40 字限制仍按检定章节执行。
+- 通常只写一至三句并控制在 120 个汉字内。只有确实需要说明多个已知步骤时才可稍长，但不得借题发挥。
+- 先直接回答玩家当前问题。不要主动抛出新的村中人物、地点、物品或往事，也不要用反问拖延答案。
+- 即使你决定要触发检定，text 也必须是一段有内容的“犹豫过渡描写”，而不是空串；检定专用的 30 字限制仍按检定章节执行。
 - 即使玩家的话让你不知如何回应，也要用角色口吻坦白不知道、说明能确认到哪一步，不能用虚构内容填空。
-- 开头、句式和动作描写自然变化即可，不必刻意追求长度变化。
+- 用自然、通顺的日常口语；不要故弄玄虚，不要堆比喻和动作描写，少用“不是……而是……”式对比转折句。
 - 检查自己：如果 text 为空、只有省略号、或只有标点，就是严重违规，必须重写。
 
 ## 避免与上次回应过于相近
 - **绝对不要**跟你上一轮 assistant 消息用同样的开头词、同样的句式模板、同样的比喻。
 - 如果玩家用相似的话追问，也要用**不同的措辞**再回，不要复读机式重复"这个我说过了"、"我也不清楚"。
-- 换个角度、换个语气、换个动作描写，或者干脆推进话题（"不过……说到这个，我倒想起一件事"）。
-- 保持人设风格不变的前提下，用**词汇多样性**让每一句听起来都像新的一句话。
+- 只调整措辞，不得为了变化而引入新事实、新人物、新回忆或新话题。
+- 如果事实边界只允许同一个简短答案，可以自然重复核心结论，无需强行换角度。
 
-## 让对话有来有回（NPC 主动提问）
-不要让 NPC 只是被动应答，那会让对话很呆板。**约 30~50% 的回合**在正文里加入一句由 NPC 发起的短问句，
-让玩家有可以回应的钩子。可选的类型：
+## NPC 主动提问
+只有当前问题确实需要澄清时，才加入一个简短问句。不要为了“有来有回”固定反问玩家，更不能借反问引出人设中没有的新内容。可选类型：
 - **来意反问**（L1 及以上话题必备）：面对陌生外乡人问敏感事，先反问玩家目的
   ——"你们是打哪儿来的？打听这个做什么？" / "你们跟他有什么关系？"
 - **关心式提问**：符合 NPC 人设的日常关切
   ——"路上顺利吗？" / "吃过饭没有？" / "你们打算住几天？"
 - **顺势追问**：抓住玩家一句话里的细节反问
   ——"你说你姓什么来着？" / "你怎么会知道这个名字？"
-- **转移话题**：不想聊的话题时，用反问岔开
-  ——"你们年轻人是不是都爱管闲事？" / "这天儿是不是要下雨了？"
+- **直接澄清**：只询问回答当前问题必需的信息，不转移到无关话题。
 
 **限制**：
 - 反问要**自然、简短**（≤15 字），一次一个问题，不要连珠炮。
 - 已经问过来意、玩家也答过的话题，不要再问一遍来意。
 - 触发 check_request 的犹豫过渡里**不要**加反问（那时应该沉默）。
-- 不要 90% 每轮都问——用 mood 或话题深度决定：越敏感的话题、陌生度越高的阶段，越应该反问。
+- 大多数回合不需要反问；能直接回答、拒绝或说不知道时，就直接说。
 - 不要问玩家人设之外的元信息（如"你玩这个游戏多久了"）。
 
 ## 输出格式
@@ -600,16 +601,16 @@ NPC 是活人，不是"信息发放机"。玩家问什么就答什么、把秘�
 再写 text，然后 mood，接着可选的 item_used / item_request，最后 mentions / choices：
 
 需要检定时：
-{"check_request":{"attribute":"力量","difficulty":21,"reason":"玩家用暴力威胁要看保险柜","kind":"general","repeat_key":"force_open_safe","affinity_on_success":0,"affinity_on_failure":-1,"affinity_reason":"暴力威胁明显侵犯安全与隐私"},"text":"（老吴脸色一僵，粗声吸了口气，手指下意识攥紧烟斗……）","mood":"normal","mentions":[],"choices":[{"text":"...","kind":"response","grounded_in":""}]}
+{"check_request":{"attribute":"力量","difficulty":21,"reason":"玩家用暴力威胁要看保险柜","kind":"general","repeat_key":"force_open_safe","affinity_on_success":0,"affinity_on_failure":-1,"affinity_reason":"暴力威胁明显侵犯安全与隐私"},"text":"这件事我得先想清楚。","mood":"normal","mentions":[],"choices":[{"text":"我会等你的答复。","kind":"response","grounded_in":""}]}
 
 玩家正在用医学证据说服 NPC 相信水源有问题时：
-{"check_request":{"attribute":"智力","difficulty":16,"reason":"玩家用医学检查结果论证当地水源正在损害村民健康","kind":"belief","belief_claim":"当地水源可能正在导致村民的身体异常","repeat_key":"belief_water_pollution","affinity_on_success":1,"affinity_on_failure":0,"affinity_reason":"有证据的善意提醒成功时能建立专业信任"},"text":"（对方低头看着检查结果，神色逐渐凝重起来……）","mood":"normal","mentions":[],"choices":[]}
+{"check_request":{"attribute":"智力","difficulty":16,"reason":"玩家用医学检查结果论证当地水源正在损害村民健康","kind":"belief","belief_claim":"当地水源可能正在导致村民的身体异常","repeat_key":"belief_water_pollution","affinity_on_success":1,"affinity_on_failure":0,"affinity_reason":"有证据的善意提醒成功时能建立专业信任"},"text":"这份结果我需要仔细看看。","mood":"normal","mentions":[],"choices":[]}
 
 不需要检定时（省略 check_request）：
 {"text":"NPC 正文","mood":"happy","mentions":[...],"choices":[...]}
 
 玩家用【使用道具】出示地图，你顺势用它检定：
-{"check_request":{"attribute":"智力","difficulty":13,"reason":"玩家用地图指认后山位置"},"text":"（老吴凑近，眯眼盯着地图边角……）","mood":"normal","item_used":{"item_id":"village_map","action":"show","target":"wu_zhiyuan","consumed":false},"mentions":[],"choices":[]}
+{"check_request":{"attribute":"智力","difficulty":13,"reason":"玩家用地图指认后山位置"},"text":"这张图我得仔细看看。","mood":"normal","item_used":{"item_id":"village_map","action":"show","target":"wu_zhiyuan","consumed":false},"mentions":[],"choices":[]}
 
 你想让玩家出示地图作为路引，但不确定他有没有（不同时检定）：
 {"text":"你说的那条道我给你比划不清。你身上带地图不？","mood":"normal","item_request":{"candidates":["village_map"],"reason":"需要玩家用图指认位置"},"mentions":[],"choices":[{"text":"能画一下大概方向吗？","kind":"response","grounded_in":""}]}
@@ -618,10 +619,8 @@ NPC 是活人，不是"信息发放机"。玩家问什么就答什么、把秘�
 {"text":"（老吴翻出一张卷了角的手绘地图，压平了推过来。）拿去吧，别在村里迷路。","mood":"happy","offer_request":{"kind":"give_item","item_id":"village_map","prompt":"老吴要把手绘地图递给你，收下吗？","accept_label":"收下","decline_label":"婉拒","accept_text":"谢谢老吴，我收好了。","decline_text":"不必了，我认得路。"},"mentions":[],"choices":[]}
 
 犹豫台词范例（供参考，不要原样照搬）：
-- "（脸上的笑容凝固了一下，粗糙的手指反复摩挲着烟斗……）"
-- "（眉头微微一皱，像是在心里飞快地掂量什么，没马上答话。）"
-- "唔——这个嘛……老头子得想想。"
-- "（顿住脚步，眯起眼上下打量了对方一眼。）"
+- "这件事我得想一下。"
+- "你先让我理一理。"
 
 """
 

@@ -25,7 +25,7 @@ enum DialogueState {
 
 const HISTORY_LIMIT := 20
 const LLM_TIMEOUT_SEC := 90.0
-const FIXED_STORY_TYPEWRITER_INTERVAL := 0.12
+const FIXED_STORY_TYPEWRITER_INTERVAL := 0.08
 const COMPACT_WIDTH := 1050.0
 const OPENING_REQUEST := "请以角色身份自然地先开口打招呼，并生成适合玩家继续交谈的选项。不要提及这条要求。"
 const REGENERATE_REQUEST := "请根据刚才 NPC 的最新回复，只重新生成 2 到 3 个含义不同、可由玩家直接说出口的简短选项。仍按约定的 JSON 格式输出。"
@@ -179,6 +179,10 @@ func open_dialogue(profile: Dictionary) -> void:
 	var night_taoist := String(profile.get("id", "")) == "li_leshui_night"
 	if is_open() or (GameState.night_rest_required and not night_taoist):
 		return
+	var npc_id: String = String(profile.get("id", ""))
+	if NpcRegistry.is_npc_hostile(npc_id):
+		_show_hostile_refusal(profile)
+		return
 	_session_id += 1
 	current_npc = profile
 	_pending_user_text_for_memory = ""
@@ -194,13 +198,14 @@ func open_dialogue(profile: Dictionary) -> void:
 	history_label.clear()
 
 	# 每次打开对话都先检查阶段性固定剧情；即使已有历史，任务完成后也必须能正常结算下一阶段。
-	var npc_id: String = String(profile.get("id", ""))
-	if npc_id == "li_leshui_night" and not bool(GameState.get_investigation_state("night_li_rear_room_unlocked", false)):
-		# 失败当天锁定；跨日后才允许重新说明来意并检定。
-		var failed_state: Variant = GameState.get_investigation_state("night_li_trust_check_failed_day", -1)
-		if int(failed_state) != TimeSystem.current_day:
-			GameState.set_investigation_state("night_li_trust_check_pending", true)
-	var opening_event := NpcStoryEventScript.find_available_event(profile, "dialogue_open")
+	var opening_event: Dictionary = {}
+	var forced_event_id := String(profile.get("_forced_opening_event_id", "")).strip_edges()
+	if not forced_event_id.is_empty():
+		var forced_event := NpcStoryEventScript.find_event(profile, forced_event_id)
+		if not forced_event.is_empty() and NpcStoryEventScript.is_available(profile, forced_event):
+			opening_event = forced_event
+	if opening_event.is_empty():
+		opening_event = NpcStoryEventScript.find_available_event(profile, "dialogue_open")
 	var persisted: Array = MemoryStore.get_history(npc_id)
 	if not persisted.is_empty():
 		for entry in persisted:
@@ -227,6 +232,33 @@ func open_dialogue(profile: Dictionary) -> void:
 		_play_fixed_story_event(opening_event, npc_id)
 		return
 	_request_llm(OPENING_REQUEST, "dialogue", true)
+
+
+func _show_hostile_refusal(profile: Dictionary) -> void:
+	var interaction := SceneItemInteractionScript.new()
+	interaction.name = "HostileNpcRefusal"
+	get_tree().current_scene.add_child(interaction)
+	var hostile_npc_id := String(profile.get("id", ""))
+	var refusal_text := "%s对你的攻击十分愤怒，不愿再和你交谈。" % String(profile.get("display_name", "对方"))
+	if SkillSystem.can_retry_hostile_attack(hostile_npc_id):
+		interaction.choice_selected.connect(func(_interaction_id: String, choice_id: String, _result: Dictionary) -> void:
+			if choice_id != "attack_again":
+				return
+			var scene := get_tree().current_scene
+			if scene != null and scene.has_method("_open_attack_weapon_mode"):
+				scene.call("_open_attack_weapon_mode", hostile_npc_id, interaction)
+		, CONNECT_ONE_SHOT)
+		interaction.open_choice({
+			"id": "hostile_refusal::%s" % hostile_npc_id,
+			"title": "拒绝交谈",
+			"description": refusal_text,
+			"choices": [
+				{"id": "attack_again", "label": "再次攻击"},
+				{"id": "leave", "label": "离开", "close": true},
+			],
+		})
+		return
+	interaction.open_paged_text("拒绝交谈", [refusal_text])
 
 
 ## 供场景任务脚本调用：关键剧情必须用确定性文本，而非要求 LLM 临场复述。
@@ -548,6 +580,8 @@ func _change_state(next_state: DialogueState) -> void:
 	retry_btn.disabled = state != DialogueState.ERROR
 	btn_investigate.disabled = not can_use_persistent_actions
 	btn_bag.disabled = not can_use_persistent_actions
+	btn_investigate.tooltip_text = "打开线索册"
+	btn_bag.tooltip_text = "打开背包"
 	# 右下角原有技能按钮是唯一入口：场景中可直接使用，对话中则锁定当前 NPC。
 	btn_skill.disabled = _group_mode or state in [DialogueState.WAITING_LLM, DialogueState.STREAMING, DialogueState.OPENING] or not _active_fixed_event.is_empty()
 	btn_leave.disabled = not open
@@ -699,33 +733,6 @@ func _submit_player_text(raw_text: String) -> void:
 	var token_prefix := _compose_token_prefix()
 	# 若什么都没有（无 token 且无自由输入），拒绝提交
 	if token_prefix.is_empty() and free_text.is_empty():
-		return
-	# 夜间道士的首次信任门槛：玩家说明来意后只进行一次确定性魅力检定。
-	var current_id := String(current_npc.get("id", ""))
-	if current_id == "li_leshui_night" and int(GameState.get_investigation_state("night_li_trust_check_failed_day", -1)) == TimeSystem.current_day and not bool(GameState.get_investigation_state("night_li_trust_check_pending", false)):
-		_append_history("npc", "今天先到这里。准备好更可靠的证据，明天再来。")
-		_redraw_history()
-		return
-	if current_id == "li_leshui_night" and bool(GameState.get_investigation_state("night_li_trust_check_pending", false)):
-		var trust_result := SkillSystem.perform_trust_check(free_text)
-		GameState.set_investigation_state("night_li_trust_check_pending", false)
-		if bool(trust_result.get("passed", false)):
-			GameState.set_investigation_state("night_li_rear_room_unlocked", true)
-			GameState.add_affinity(current_id, 1)
-			_append_history("user", free_text)
-			history.append({"role": "check", "text": CheckSystem.result_to_display_text(trust_result), "check_result": trust_result})
-			_append_history("npc", "你的来意和证据足够明确。今晚起，你可以进入后室。进去之后，我会把我知道的一切告诉你。")
-			_redraw_history()
-			TimeSystem.on_dialogue_turn_completed()
-			GameState.save_game(GameState.AUTO_SAVE_PATH, false)
-			return
-		GameState.set_investigation_state("night_li_trust_check_failed_day", TimeSystem.current_day)
-		TimeSystem.on_dialogue_turn_completed()
-		_append_history("user", free_text)
-		history.append({"role": "check", "text": CheckSystem.result_to_display_text(trust_result), "check_result": trust_result})
-		_append_history("npc", "还不够。准备好更可靠的证据再来，后室不能向你开放。")
-		_redraw_history()
-		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
 		return
 	var text := token_prefix
 	if free_text != "":
@@ -940,10 +947,10 @@ func _on_llm_chunk(request_id: int, session_id: int, npc_id: String, accumulated
 		_change_state(DialogueState.STREAMING)
 		_remove_thinking_message()
 	if not history.is_empty() and history[-1].get("role", "") == "npc" and history[-1].get("streaming", false):
-		history[-1]["text"] = accumulated
+		history[-1]["text"] = _normalize_dialogue_spacing(accumulated)
 		_redraw_history()
 	else:
-		history.append({"role": "npc", "text": accumulated, "streaming": true})
+		history.append({"role": "npc", "text": _normalize_dialogue_spacing(accumulated), "streaming": true})
 		_redraw_history()
 
 
@@ -965,7 +972,7 @@ func _on_llm_reply(request_id: int, session_id: int, npc_id: String, reply: Dict
 	if text == "":
 		text = "……"
 	# 剥离 [END_DIALOGUE] 等控制标签（玩家不应看到），但保留"是否离场"的判定（_advance_dialogue_clock 里用）
-	text = _strip_dialogue_tags(text)
+	text = _normalize_dialogue_spacing(_strip_dialogue_tags(text))
 	if not history.is_empty() and history[-1].get("role", "") == "npc" and history[-1].get("streaming", false):
 		history[-1]["text"] = text
 		history[-1]["streaming"] = false
@@ -1140,6 +1147,13 @@ func _strip_dialogue_tags(text: String) -> String:
 	return result.strip_edges()
 
 
+func _normalize_dialogue_spacing(text: String) -> String:
+	var result := text.replace("\r\n", "\n").replace("\r", "\n")
+	while result.contains("\n\n"):
+		result = result.replace("\n\n", "\n")
+	return result.strip_edges()
+
+
 func _append_history(role: String, text: String) -> void:
 	history.append({"role": role, "text": text})
 	if history.size() > HISTORY_LIMIT:
@@ -1159,7 +1173,7 @@ func _redraw_history() -> void:
 	history_label.clear()
 	for entry in history:
 		var role := String(entry.get("role", ""))
-		var text := String(entry.get("text", ""))
+		var text := _normalize_dialogue_spacing(String(entry.get("text", "")))
 		match role:
 			"user":
 				history_label.push_color(Color(0.25, 0.35, 0.55))

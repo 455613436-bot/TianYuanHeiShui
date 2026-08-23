@@ -28,6 +28,13 @@
   ],
   "fixed_story_events": [
     {
+      "id": "wu_xuan_strange_letter_presented",
+      "when": "clue_presented",
+      "once": false,
+      "presented_clues": ["onboarding_strange_letter"],
+      "pages": ["你可以拿这封信去跟档案柜上的联名书比对字迹。"]
+    },
+    {
       "id": "wu_xuan_photo_match_completed",
       "when": "dialogue_open",
       "once": true,
@@ -91,6 +98,12 @@
       }
     }
   ],
+  "presented_clue_responses": {
+    "wu_xuan_archive_tampering_suspected": "我查到有人只留下档案编号，却移走原件和扫描件。我爸可能参与限制查阅，但还要用具体档案继续核对。",
+    "wu_xuan_factory_notice_missing": "甘艾工厂的撤出公告在系统里标着已归档，纸质原件和扫描件却都不见了。这不是正常的整理疏漏。",
+    "wu_xuan_safe_key_handover": "我不知道保险柜里有什么，你要是想看就自己去吧。",
+    "medical_exam_wu_xuan": "检查结果说明我接触异常水源的程度还不深，但已经有早期迹象。我会把它当作污染调查的一部分。"
+  },
   "triggers": [],
   "home_location": "village_committee",
   "current_location": "village_committee",

@@ -14,26 +14,24 @@ const NEW_GAME_SCENE := "res://scenes/ui/AttributeAllocation.tscn"
 const SETTINGS_SCENE_PATH := "res://scenes/ui/SettingsMenu.tscn"  # 兜底：SettingsMenu autoload 缺失时手动打开
 const FADE_OUT_SECONDS := 0.8
 
-@onready var title_label: Label = $Center/VBox/Title
-@onready var subtitle_label: Label = $Center/VBox/Subtitle
-@onready var new_game_btn: Button = $Center/VBox/Buttons/NewGameBtn
-@onready var continue_btn: Button = $Center/VBox/Buttons/ContinueBtn
-@onready var settings_btn: Button = $Center/VBox/Buttons/SettingsBtn
-@onready var quit_btn: Button = $Center/VBox/Buttons/QuitBtn
-@onready var footer_label: Label = $Footer/FooterLabel
+@onready var new_game_btn: TextureButton = $Menu/NewGameBtn
+@onready var continue_btn: TextureButton = $Menu/ContinueBtn
+@onready var settings_btn: TextureButton = $Menu/SettingsBtn
+@onready var quit_btn: TextureButton = $Menu/QuitBtn
 
 var _leaving := false
 
 
 func _ready() -> void:
-	title_label.text = "思源村探案"
-	subtitle_label.text = "Siyuan Village Mystery"
-	footer_label.text = "WASD 移动 · E 交互 · M 打开地图 · Esc 设置"
-
 	new_game_btn.pressed.connect(_on_new_game)
 	continue_btn.pressed.connect(_on_continue)
 	settings_btn.pressed.connect(_on_open_settings)
 	quit_btn.pressed.connect(_on_quit)
+	for button in [new_game_btn, continue_btn, settings_btn, quit_btn]:
+		button.mouse_entered.connect(_on_button_hover.bind(button))
+		button.mouse_exited.connect(_on_button_idle.bind(button))
+		button.button_down.connect(_on_button_pressed_visual.bind(button))
+		button.button_up.connect(_on_button_hover.bind(button))
 
 	_refresh_continue_button()
 	AudioManager.play_title_bgm()
@@ -50,6 +48,23 @@ func _refresh_continue_button() -> void:
 		continue_btn.tooltip_text = "继续 " + when if when != "" else "继续之前的进度"
 	else:
 		continue_btn.tooltip_text = "尚无存档"
+	_on_button_idle(continue_btn)
+
+
+func _on_button_hover(button: TextureButton) -> void:
+	if button.disabled:
+		_on_button_idle(button)
+		return
+	button.self_modulate = Color(1.10, 1.06, 0.94, 1.0)
+
+
+func _on_button_idle(button: TextureButton) -> void:
+	button.self_modulate = Color(0.48, 0.48, 0.48, 0.78) if button.disabled else Color.WHITE
+
+
+func _on_button_pressed_visual(button: TextureButton) -> void:
+	if not button.disabled:
+		button.self_modulate = Color(0.78, 0.72, 0.62, 1.0)
 
 
 func _on_new_game() -> void:

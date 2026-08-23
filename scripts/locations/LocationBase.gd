@@ -10,9 +10,14 @@ const PHOTO_MATCH_ATTEMPT_STATE := "item_check:wu_xuan_photo_location_match"
 const COMMITTEE_ACTIVITY_CUTOFF_MINUTE := 19 * 60
 const LIN_DIARY_ATTEMPT_STATE := "item_check:lin_deshan_diary_match"
 const LIN_DIARY_PROGRESS_STATE := "lin_deshan:diary_match_progress"
+const HERMIT_MET_DAY_STATE := "field_path:mysterious_hermit_met_day"
+const CAVE_ALTAR_REACHED_STATE := "cave_altar_reached"
+const CAVE_ALTAR_ATTACK_DAY_STATE := "cave_altar_attack_attempt_day"
 const TAOIST_TEMPLE_DAY_TEXTURE := preload("res://assets/scenes/taoist_temple_day.png")
 const TAOIST_TEMPLE_NIGHT_TEXTURE := preload("res://assets/scenes/taoist_temple_night.png")
+const TAOIST_TEMPLE_EMPTY_TEXTURE := preload("res://assets/scenes/taoist_temple_empty.png")
 const TAOIST_TEMPLE_REAR_TEXTURE := preload("res://assets/scenes/taoist_temple_rear.png")
+const TAOIST_TEMPLE_REAR_EMPTY_TEXTURE := preload("res://assets/scenes/taoist_temple_rear_empty.png")
 const VILLAGE_CHIEF_NIGHT_TEXTURE_PATH := "res://assets/scenes/village_chief_house_night.png"
 const LIN_DIARY_OPTIONS := [
 	{"id": "garbled_name", "label": "???（姓名被涂抹）"},
@@ -109,10 +114,14 @@ var _map_action_layer: CanvasLayer
 var _scene_npc_hotspots: Dictionary = {}
 var _cave_front_nodes: Array[CanvasItem] = []
 var _cave_back_nodes: Array[CanvasItem] = []
+var _cave_ritual_nodes: Dictionary = {}
+var _altar_pending_weapon_id := ""
 var _uses_taoist_temple_cycle := false
 var _uses_village_chief_night_state := false
-var _night_return_dialog_open := false
 var _taoist_in_rear_room := false
+var _taoist_door_ui: SceneItemInteraction
+var _taoist_door_judge_request_id := 0
+var _taoist_door_pending_reason := ""
 var _village_chief_nodes: Dictionary = {}
 var _taoist_front_nodes: Array[CanvasItem] = []
 var _taoist_rear_nodes: Array[CanvasItem] = []
@@ -160,8 +169,6 @@ func _ready() -> void:
 		_create_view_toggle_button()
 	_move_map_button_to_hud_layer()
 	return_button.pressed.connect(_open_map)
-	if not GameState.night_return_required.is_connected(_on_night_return_required):
-		GameState.night_return_required.connect(_on_night_return_required)
 	GameState.item_added.connect(_on_item_added)
 	_refresh_map_access()
 	call_deferred("_enforce_night_location_return")
@@ -246,11 +253,16 @@ func _on_item_added(item_id: String) -> void:
 
 func _refresh_map_access() -> void:
 	var unlocked := GameState.can_open_world_map()
+	var night_rest_locked := GameState.night_rest_required
 	var night_without_lantern := GameState.is_night_outing_time() and not GameState.can_night_travel()
 	return_button.disabled = not unlocked
 	if not unlocked:
 		return_button.tooltip_text = "先向村长询问并取得村庄手绘地图"
 		return_button.text = "地图尚未解锁"
+	elif night_rest_locked:
+		# 保持按钮可点，以便给出明确反馈，而不是让玩家误以为输入失效。
+		return_button.tooltip_text = "今晚的调查已经结束，请在临时宿舍休息。"
+		return_button.text = "今晚必须休息"
 	elif night_without_lantern:
 		return_button.tooltip_text = "路太黑了，现在还不具备夜间出门的能力。"
 		return_button.text = "夜间无法出门"
@@ -260,31 +272,15 @@ func _refresh_map_access() -> void:
 
 
 func _enforce_night_location_return() -> void:
-	if TimeSystem.minute_of_day < TimeSystem.NIGHT_OUTING_START_MINUTE:
-		return
-	if location_id in [GameState.TEMP_DORM_LOCATION_ID, "village_chief_house", "taoist_temple"]:
-		return
-	if TimeSystem.is_rest_lock_time():
-		GameState.night_rest_required = true
-	_on_night_return_required("天色已晚，当前地点不能继续停留。请立即返回临时宿舍。")
-
-
-func _on_night_return_required(message: String) -> void:
-	if _night_return_dialog_open:
-		return
-	_night_return_dialog_open = true
-	var dialog := AcceptDialog.new()
-	dialog.title = "夜间休整"
-	dialog.dialog_text = message
-	dialog.ok_button_text = "返回宿舍"
-	dialog.exclusive = true
-	add_child(dialog)
-	dialog.confirmed.connect(GameState.confirm_night_return)
-	dialog.close_requested.connect(GameState.confirm_night_return)
-	dialog.popup_centered(Vector2i(520, 220))
+	# 夜间规则由 GameState 集中处理。这里保留场景钩子，确保加载夜间存档时也立即复核，
+	# 但不再自行创建弹窗，避免和全局强制弹窗重复。
+	GameState._enforce_night_rules()
 
 
 func _open_map() -> void:
+	if GameState.night_rest_required:
+		_show_scene_message("今晚必须休息", "今晚的调查已经结束，请留在临时宿舍休息，明早 09:00 再继续。")
+		return
 	if GameState.is_night_outing_time() and not GameState.can_night_travel():
 		_show_scene_message("夜路太黑", "路太黑了，现在还不具备夜间出门的能力。")
 		return
@@ -428,7 +424,7 @@ func _learn_medical_exam(highlight: MaskInteractionHighlight, ui: SceneItemInter
 	GameState.set_investigation_state("skill_unlocked_medical_exam", true)
 	GameState.save_game(GameState.AUTO_SAVE_PATH, false)
 	SceneItemInteraction.show_content_added_toast("医学检验", "技能列表")
-	ui.open_paged_text("学会技能：医学检验", ["你整理了诊所遗留的检验器械与试剂，掌握了基础医学检验方法。现在可以对宿舍洗澡水或场景中的人物使用“医学检验”。"])
+	ui.open_paged_text("学会技能：医学检验", ["你整理了诊所遗留的检验器械与试剂，掌握了基础水样检验方法。现在可以在临时宿舍对淋浴水使用“医学检验”。该技能不能用于检查人物。"])
 
 
 func _create_village_committee_hotspots() -> void:
@@ -546,13 +542,13 @@ func _show_committee_computer_menu(interaction_ui: SceneItemInteraction) -> void
 	var choices: Array[Dictionary] = []
 	var description := "吴萱为你开放了有限的电脑使用权限。"
 	if has_game_access:
-		var can_play := not bool(GameState.get_investigation_state("wu_xuan_computer_game_completed", false)) and TimeSystem.minute_of_day + 240 <= COMMITTEE_ACTIVITY_CUTOFF_MINUTE
+		var can_play := TimeSystem.minute_of_day + 240 <= COMMITTEE_ACTIVITY_CUTOFF_MINUTE
 		if can_play:
 			choices.append({"id": "play_game", "label": "玩本地游戏（消耗 4 小时）"})
-		elif bool(GameState.get_investigation_state("wu_xuan_computer_game_completed", false)):
-			description += "你已经通过本地游戏获得过一次智力成长。"
 		else:
 			description += "距离 19:00 已不足四小时，现在不适合开始游戏。"
+		if bool(GameState.get_investigation_state("wu_xuan_computer_game_completed", false)):
+			description += "你已经获得过一次智力成长，但仍可继续游玩。"
 	if has_archive_access:
 		choices.append({"id": "search_archives", "label": "查找档案"})
 	choices.append({"id": "leave", "label": "离开", "close": true})
@@ -567,19 +563,21 @@ func _show_committee_computer_menu(interaction_ui: SceneItemInteraction) -> void
 func _on_committee_computer_choice(interaction_id: String, choice_id: String, _result: Dictionary, interaction_ui: SceneItemInteraction) -> void:
 	if interaction_id == "committee_computer":
 		if choice_id == "play_game":
-			if bool(GameState.get_investigation_state("wu_xuan_computer_game_completed", false)):
-				return
 			if not _can_finish_committee_activity(240, interaction_ui):
 				return
 			TimeSystem.advance_minutes(240)
-			var gained := GameState.grant_permanent_attribute("intellect", 1)
-			GameState.set_investigation_state("wu_xuan_computer_game_completed", true)
+			var first_completion := not bool(GameState.get_investigation_state("wu_xuan_computer_game_completed", false))
+			var gained := GameState.grant_permanent_attribute("intellect", 1) if first_completion else 0
+			if first_completion:
+				GameState.set_investigation_state("wu_xuan_computer_game_completed", true)
 			GameState.save_game(GameState.AUTO_SAVE_PATH, false)
 			var reward_text := "你在一套老旧的解谜游戏里花了四个小时，思路变得更清晰。"
 			if gained > 0:
 				reward_text += "\n\n[color=sea_green]永久获得：智力 +%d[/color]" % gained
-			else:
+			elif first_completion:
 				reward_text += "\n\n你的智力已达到上限，无法继续提升。"
+			else:
+				reward_text += "\n\n你已经获得过这项游戏的智力奖励，本次不再重复增加属性。"
 			interaction_ui.open_paged_text("本地游戏", [reward_text])
 		elif choice_id == "search_archives":
 			_show_committee_archive_menu(interaction_ui)
@@ -617,6 +615,7 @@ func _show_committee_archive_menu(interaction_ui: SceneItemInteraction) -> void:
 		"title": "查找档案",
 		"description": description,
 		"choices": choices,
+		"panel_half_height": 270.0,
 	})
 
 
@@ -706,6 +705,7 @@ func _create_village_chief_house_hotspots() -> void:
 		"查看里屋保险柜"
 	)
 	_village_chief_nodes = {"chief": chief, "television": television_closet, "safe": safe}
+	_scene_npc_hotspots["wu_zhiyuan"] = chief
 	(chief["button"] as Button).pressed.connect(func() -> void:
 		(chief["highlight"] as MaskInteractionHighlight).hide_highlight()
 		_open_village_chief_dialogue()
@@ -725,14 +725,19 @@ func _refresh_village_chief_night_state() -> void:
 	if not _uses_village_chief_night_state:
 		return
 	var is_night := GameState.is_night_outing_time()
+	var chief_present := _is_village_chief_present()
 	if is_night:
 		var night_texture := load(VILLAGE_CHIEF_NIGHT_TEXTURE_PATH) as Texture2D
 		background.texture = night_texture if night_texture != null else empty_background_texture
+	elif not chief_present:
+		background.texture = empty_background_texture
 	else:
 		background.texture = background_texture
 	background.visible = background.texture != null
 	if _village_chief_nodes.is_empty():
 		return
+	var television_available := not GameState.has_clue("factory_withdrawal_notice")
+	var safe_available := not bool(GameState.get_investigation_state("village_chief_safe_opened", false))
 	for key in ["chief", "television", "safe"]:
 		var node_set: Dictionary = _village_chief_nodes.get(key, {})
 		if node_set.is_empty():
@@ -741,10 +746,17 @@ func _refresh_village_chief_night_state() -> void:
 		var button := node_set.get("button") as Control
 		if highlight != null:
 			highlight.hide_highlight()
-			if key == "chief":
-				highlight.visible = not is_night
 		if button != null:
-			button.visible = key != "chief" or not is_night
+			if key == "chief":
+				button.visible = chief_present
+			elif key == "television":
+				button.visible = television_available
+			else:
+				button.visible = safe_available
+
+
+func _is_village_chief_present() -> bool:
+	return not GameState.is_night_outing_time() and NpcRegistry.is_npc_present_at("wu_zhiyuan", location_id)
 
 
 func _open_village_chief_dialogue() -> void:
@@ -767,7 +779,10 @@ func _open_village_chief_television_closet() -> void:
 	var ui := SceneItemInteraction.new()
 	ui.name = "VillageChiefTelevisionClosetInteraction"
 	add_child(ui)
-	if not GameState.is_night_outing_time():
+	if GameState.has_clue("factory_withdrawal_notice"):
+		ui.open_paged_text("电视柜", ["电视柜中有价值的公告已经被你收录，没有新的内容。"])
+		return
+	if _is_village_chief_present():
 		ui.open_choice({
 			"id": "village_chief_television_closet_blocked",
 			"title": "电视柜",
@@ -779,9 +794,9 @@ func _open_village_chief_television_closet() -> void:
 	ui.open_choice({
 		"id": "village_chief_television_closet",
 		"title": "电视柜",
-		"description": "夜里的屋子空无一人。电视柜的锁扣并不结实，但弄出动静可能会留下痕迹。",
+		"description": "屋子空无一人。电视柜的锁扣并不结实，但弄出动静可能会留下痕迹。",
 		"choices": [
-			{"id": "pry_open", "label": "撬开电视柜（敏捷检定 20，每天限一次）", "type": "check", "attribute": "敏捷", "difficulty": 20, "reason": "趁夜撬开村长家电视柜", "success_text": "锁扣轻轻一响，柜门开了。", "failure_text": "锁扣没有松动。"},
+			{"id": "pry_open", "label": "撬开电视柜（敏捷检定 16，每天限一次）", "type": "check", "attribute": "敏捷", "difficulty": 16, "reason": "撬开村长家电视柜", "success_text": "锁扣轻轻一响，柜门开了。", "failure_text": "锁扣没有松动。"},
 			{"id": "leave", "label": "离开", "close": true},
 		],
 	})
@@ -801,6 +816,7 @@ func _on_village_chief_television_closet_choice(interaction_id: String, choice_i
 			"linked_clue_ids": ["factory_withdrawal_notice", "factory_withdrawal_confirmed"],
 		}
 	)
+	_refresh_village_chief_night_state()
 	if GameState.get_quest_stage("wu_xuan_factory_notice") >= 1:
 		GameState.set_quest_stage("wu_xuan_factory_notice", 2)
 		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
@@ -810,7 +826,7 @@ func _open_village_chief_safe() -> void:
 	var ui := SceneItemInteraction.new()
 	ui.name = "VillageChiefSafeInteraction"
 	add_child(ui)
-	if not NpcRegistry.get_npcs_at(location_id).is_empty():
+	if _is_village_chief_present():
 		ui.open_choice({
 			"id": "village_chief_safe_blocked",
 			"title": "里屋保险柜",
@@ -821,7 +837,7 @@ func _open_village_chief_safe() -> void:
 	if bool(GameState.get_investigation_state("village_chief_safe_opened", false)):
 		ui.open_paged_text("里屋保险柜", ["保险柜已经被打开，里面的猎枪已被你收好。其余物品暂时没有新的发现。"])
 		return
-	var choices: Array[Dictionary] = [{"id": "pry_lock", "label": "撬锁（敏捷检定 30，每天限一次）"}]
+	var choices: Array[Dictionary] = [{"id": "pry_lock", "label": "撬锁（敏捷检定 28，每天限一次）"}]
 	if GameState.has_item("village_chief_safe_silver_key"):
 		choices.append({"id": "use_key", "label": "使用钥匙"})
 	choices.append({"id": "leave", "label": "离开", "close": true})
@@ -849,7 +865,7 @@ func _on_village_chief_safe_choice(interaction_id: String, choice_id: String, _r
 		ui.open_paged_text("里屋保险柜", ["你今天已经尝试过撬锁了。不要在同一把锁上留下更多痕迹。"])
 		return
 	GameState.set_investigation_state(state_key, {"day": TimeSystem.current_day})
-	var check_result := CheckSystem.perform_check("敏捷", 30, 0, "撬开村长家保险柜")
+	var check_result := CheckSystem.perform_check("敏捷",28, 0, "撬开村长家保险柜")
 	GameState.save_game(GameState.AUTO_SAVE_PATH, false)
 	if bool(check_result.get("passed", false)):
 		_unlock_village_chief_safe(ui, "你屏住呼吸拨动锁芯，双锁终于依次弹开。")
@@ -866,6 +882,7 @@ func _unlock_village_chief_safe(ui: SceneItemInteraction, opening_text: String) 
 	GameState.save_game(GameState.AUTO_SAVE_PATH, false)
 	SceneItemInteraction.show_content_added_toast("猎枪", "背包")
 	ui.open_paged_text("保险柜中的猎枪", [opening_text, "保险柜内侧固定着一支旧猎枪。你将它收进背包；它可在攻击技能中作为武器使用。"])
+	_refresh_village_chief_night_state()
 
 
 func open_skill_menu_for_npc(npc_id: String = "", dialogue_ui: Node = null) -> void:
@@ -888,9 +905,14 @@ func open_skill_menu_for_npc(npc_id: String = "", dialogue_ui: Node = null) -> v
 	for target_id in targets:
 		if not NpcRegistry.can_interact_with_npc(target_id):
 			continue
+		var hostile_retry_only := NpcRegistry.is_npc_hostile(target_id) and SkillSystem.can_retry_hostile_attack(target_id)
+		if NpcRegistry.is_npc_hostile(target_id) and not hostile_retry_only:
+			continue
 		var target_name := NpcRegistry.get_short_name(target_id)
 		for skill in SkillSystem.skills_for_target(true, location_id):
 			var skill_id := String(skill.get("id", ""))
+			if hostile_retry_only and skill_id != "attack":
+				continue
 			if not SkillSystem.is_skill_available_for_npc(skill_id, target_id):
 				continue
 			entries.append({
@@ -931,6 +953,9 @@ func _on_skill_list_action(entry: Dictionary, popup: ClueBookPopup, dialogue_ui:
 
 
 func _open_attack_weapon_mode(npc_id: String, ui: SceneItemInteraction) -> void:
+	if SkillSystem.has_attempted_attack_today(npc_id):
+		ui.open_paged_text("今天无法再次攻击", ["你今天已经攻击过%s了，只能等到明天再试。" % NpcRegistry.get_short_name(npc_id)])
+		return
 	ui.choice_selected.connect(_on_attack_weapon_mode_selected.bind(ui, npc_id), CONNECT_ONE_SHOT)
 	ui.open_choice({
 		"id": "attack_weapon_mode::%s" % npc_id,
@@ -971,11 +996,13 @@ func _on_attack_weapon_picked(weapon_id: String, npc_id: String) -> void:
 func _open_attack_confirmation(npc_id: String, weapon_id: String, ui: SceneItemInteraction) -> void:
 	var preview := SkillSystem.get_attack_preview(npc_id, weapon_id)
 	ui.choice_selected.connect(_on_attack_confirmation_selected.bind(ui, npc_id, weapon_id), CONNECT_ONE_SHOT)
-	var seal_note := "；封印成功难度-5" if int(preview.get("seal_reduction", 0)) > 0 else ""
+	var story_note := ""
+	if int(preview.get("seal_reduction", 0)) > 0:
+		story_note = "；%s使难度-%d" % [String(preview.get("story_reduction_reason", "剧情条件")), int(preview.get("seal_reduction", 0))]
 	ui.open_choice({
 		"id": "attack_confirm::%s" % npc_id,
 		"title": "确认攻击：%s" % NpcRegistry.get_short_name(npc_id),
-		"description": "武器：%s\n基础难度：%d%s；力量：%d；武器减难度：%d。\n本次力量检定最终难度为：%d。\n攻击成功会永久杀死目标；失败后目标将永久拒绝与你交互，且所有人都会知道这次攻击。" % [String(preview.get("weapon_name", "徒手")), int(preview.get("base_difficulty", 18)), seal_note, int(preview.get("strength", 0)), int(preview.get("weapon_reduction", 0)), int(preview.get("final_difficulty", 18))],
+		"description": "武器：%s\n基础难度：%d%s；力量：%d；武器减难度：%d。\n本次力量检定最终难度为：%d。\n攻击成功会永久杀死目标；失败后目标会非常愤怒并拒绝交谈。道士与神秘人次日仍可再次攻击，但每天最多攻击一次；其他人物不能重复攻击。所有人都会知道这次攻击。" % [String(preview.get("weapon_name", "徒手")), int(preview.get("base_difficulty", 18)), story_note, int(preview.get("strength", 0)), int(preview.get("weapon_reduction", 0)), int(preview.get("final_difficulty", 18))],
 		"choices": [{"id": "confirm", "label": "发动攻击"}, {"id": "leave", "label": "取消", "close": true}],
 	})
 
@@ -983,9 +1010,13 @@ func _open_attack_confirmation(npc_id: String, weapon_id: String, ui: SceneItemI
 func _on_attack_confirmation_selected(_interaction_id: String, choice_id: String, _result: Dictionary, ui: SceneItemInteraction, npc_id: String, weapon_id: String) -> void:
 	if choice_id != "confirm":
 		return
+	if SkillSystem.has_attempted_attack_today(npc_id):
+		ui.open_paged_text("今天无法再次攻击", ["你今天已经攻击过%s了，只能等到明天再试。" % NpcRegistry.get_short_name(npc_id)])
+		return
 	if not NpcRegistry.is_npc_present_at(npc_id, location_id) or not NpcRegistry.can_interact_with_npc(npc_id):
 		ui.open_paged_text("攻击无法发动", ["目标已经不在这里，或不再接受你的交互。"])
 		return
+	SkillSystem.record_attack_attempt(npc_id)
 	var result := SkillSystem.perform_attack_check(npc_id, weapon_id)
 	var passed := bool(result.get("passed", false))
 	var target_name := NpcRegistry.get_short_name(npc_id)
@@ -996,7 +1027,7 @@ func _on_attack_confirmation_selected(_interaction_id: String, choice_id: String
 		MemoryStore.add_global_memory("外来者在%s用%s杀死了%s。村中所有人都已得知此事。" % [NpcRegistry.get_location_name(location_id), weapon_name, target_name], ["attack", "killed", npc_id, location_id])
 	else:
 		NpcRegistry.mark_npc_hostile(npc_id, "玩家使用%s攻击失败" % weapon_name)
-		pages.append("攻击没有得手。%s从此拒绝与你进行任何交互；村中所有人都会知道你攻击过他。" % target_name)
+		pages.append("攻击没有得手。%s对你非常愤怒；你仍可点击他，但他会拒绝和你交谈。村中所有人都会知道你攻击过他。" % target_name)
 		MemoryStore.add_global_memory("外来者在%s试图用%s攻击%s但失败了。村中所有人都已得知此事。" % [NpcRegistry.get_location_name(location_id), weapon_name, target_name], ["attack", "failed", npc_id, location_id])
 	var dialogue_ui := get_tree().get_first_node_in_group("dialogue_ui")
 	if dialogue_ui != null and dialogue_ui.has_method("is_open") and dialogue_ui.is_open() and dialogue_ui.has_method("close_dialogue"):
@@ -1060,6 +1091,10 @@ func _resolve_social_skill(skill_id: String, npc_id: String, reason: String, ui:
 	if profile.is_empty() or not NpcRegistry.can_be_persuaded(npc_id):
 		ui.open_paged_text("技能无法使用", ["当前人物已经离开，或不接受这种形式的说服。"])
 		return
+	# 技能列表之外再做规则层校验，避免旧 UI、旧存档或直接调用绕过目标限制。
+	if not SkillSystem.is_skill_available_for_npc(skill_id, npc_id):
+		ui.open_paged_text("技能无法使用", ["当前人物不接受这种形式的说服。"])
+		return
 	if skill_id == "dismiss" and _dismiss_attempted_today():
 		ui.open_paged_text("今天已经使用过劝离", ["同一场景每天只能进行一次劝离检定。你可以明天再尝试。"])
 		return
@@ -1104,7 +1139,11 @@ func _resolve_social_skill(skill_id: String, npc_id: String, reason: String, ui:
 
 
 func _apply_medical_skill(target_id: String, ui: SceneItemInteraction) -> void:
-	var data := SkillSystem.get_water_result() if target_id == "water" else SkillSystem.get_medical_result(target_id)
+	# 规则层二次校验：即使旧存档或旧 UI 残留了人物检验入口，也不能绕过场景限制。
+	if location_id != "temporary_dorm" or target_id != "water":
+		ui.open_paged_text("无法使用医学检验", ["现有器材只能用于检验临时宿舍的淋浴水，不能检查人物，也不能在其他场景使用。"])
+		return
+	var data := SkillSystem.get_water_result()
 	if data.is_empty():
 		return
 	var pages: Array[String] = []
@@ -1129,9 +1168,10 @@ func _create_cave_hotspots() -> void:
 	var offering := _create_mask_hotspot("CaveOfferingTable", "res://assets/scenes/masks/cave_offering_table_mask.png", Rect2(0.459, 0.630, 0.079, 0.055), "村民供奉的祭台")
 	var dirt := _create_mask_hotspot("CaveDirtHole", "res://assets/scenes/masks/cave_dirt_hole_mask.png", Rect2(0.055, 0.742, 0.314, 0.258), "查看土堆")
 	var passage := _create_mask_hotspot("CavePassage", "res://assets/scenes/masks/cave_passage_mask.png", Rect2(0.461, 0.449, 0.079, 0.169), "通往山洞后方")
-	var exit := _create_mask_hotspot("CaveExit", "res://assets/scenes/masks/cave_exit_mask.png", Rect2(0.750, 0.810, 0.250, 0.190), "返回山洞前方")
+	var exit := _create_mask_hotspot("CaveExit", "res://assets/scenes/masks/cave_entrance_mask.png", Rect2(0, 0, 1, 1), "返回山洞前方")
 	var water := _create_mask_hotspot("CaveWater", "res://assets/scenes/masks/cave_water_mask.png", Rect2(0.234, 0.483, 0.500, 0.238), "查看水潭")
 	var ritual := _create_mask_hotspot("CaveRitualTable", "res://assets/scenes/masks/cave_ritual_table_mask.png", Rect2(0.320, 0.407, 0.060, 0.068), "查看洞内祭坛")
+	_cave_ritual_nodes = ritual
 	_cave_front_nodes = [offering["highlight"], offering["button"], dirt["highlight"], dirt["button"], passage["highlight"], passage["button"]]
 	_cave_back_nodes = [exit["highlight"], exit["button"], water["highlight"], water["button"], ritual["highlight"], ritual["button"]]
 	var offering_ui := SceneItemInteraction.new()
@@ -1175,6 +1215,15 @@ func _refresh_cave_view() -> void:
 		if is_instance_valid(node):
 			# 高亮仅由鼠标悬停事件显式显示，切换视角时不得默认可见。
 			node.visible = false if node is MaskInteractionHighlight else _showing_alternate_view
+	var altar_resolved := String(GameState.get_investigation_state("altar_resolution", "untouched")) in ["destroyed", "sealed"]
+	if not _cave_ritual_nodes.is_empty():
+		var ritual_button := _cave_ritual_nodes.get("button") as Button
+		var ritual_highlight := _cave_ritual_nodes.get("highlight") as MaskInteractionHighlight
+		if is_instance_valid(ritual_button):
+			ritual_button.visible = _showing_alternate_view and not altar_resolved
+			ritual_button.disabled = altar_resolved
+		if is_instance_valid(ritual_highlight) and (altar_resolved or not _showing_alternate_view):
+			ritual_highlight.hide_highlight()
 	if is_instance_valid(_view_toggle_button):
 		_view_toggle_button.visible = false
 	background.texture = alternate_background_texture if _showing_alternate_view else background_texture
@@ -1222,6 +1271,7 @@ func _on_cave_dirt_choice(interaction_id: String, choice_id: String, result: Dic
 	if interaction_id != "cave_dirt_hole" or choice_id != "dig" or not bool(result.get("passed", false)):
 		return
 	if GameState.collect_one_shot_item("gong_toolbox"):
+		GameState.set_quest_stage("gong_toolbox", maxi(2, GameState.get_quest_stage("gong_toolbox")))
 		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
 		SceneItemInteraction.show_content_added_toast("深绿色工具箱", "物品栏")
 		ui.open_paged_text("挖出工具箱", ["你从湿土里拖出一只深绿色铁皮工具箱。两层卡扣沾满泥，但箱体仍然完好。"])
@@ -1298,45 +1348,149 @@ func _open_cave_ritual(highlight: MaskInteractionHighlight, ui: SceneItemInterac
 	if altar_state == "sealed":
 		ui.open_paged_text("洞内祭坛", ["水尺嵌在矩形凹槽中，封印纹路仍发着微弱冷光。这里暂时安静了。"])
 		return
+	if bool(GameState.get_investigation_state(CAVE_ALTAR_REACHED_STATE, false)):
+		_open_cave_ritual_reached(ui)
+		return
 	var choices: Array[Dictionary] = []
 	if GameState.has_item("hunting_rifle"):
-		choices.append({"id": "destroy", "label": "使用猎枪摧毁祭坛"})
+		choices.append({"id": "rifle_destroy", "label": "使用猎枪摧毁祭坛"})
 	if GameState.has_item("li_leshui_talisman"):
 		choices.append({"id": "raise_talisman", "label": "高举护符"})
-	else:
-		choices.append({"id": "blocked", "label": "水太深，无法靠近", "close": true})
+	if not GameState.has_item("hunting_rifle") and not GameState.has_item("li_leshui_talisman"):
+		choices.append({"id": "swim_across", "label": "游泳到对岸（力量检定 18）"})
 	choices.append({"id": "leave", "label": "离开", "close": true})
-	ui.open_choice({"id": "cave_ritual_table", "title": "洞内祭坛", "description": "水太深，无法走到祭坛前。" if not GameState.has_item("li_leshui_talisman") else "护符在掌心发冷，你似乎可以踩着水靠近祭坛。", "choices": choices})
+	ui.open_choice({"id": "cave_ritual_table", "title": "洞内祭坛", "description": "祭坛位于深水对岸，难以直接接触。", "choices": choices})
 
 
 func _on_cave_ritual_choice(interaction_id: String, choice_id: String, result: Dictionary, ui: SceneItemInteraction) -> void:
-	if interaction_id == "cave_seal_ritual" and choice_id == "seal":
+	if interaction_id in ["cave_seal_ritual", "cave_ritual_table"] and choice_id == "seal":
 		_on_cave_ritual_check(interaction_id, choice_id, result, ui)
+		return
+	if interaction_id == "cave_altar_attack_mode":
+		if choice_id == "bare_hands":
+			_open_altar_attack_confirmation("", ui)
+		elif choice_id == "open_bag":
+			ui.close_interaction()
+			_open_altar_attack_weapon_bag()
+		return
+	if interaction_id == "cave_altar_attack_confirm" and choice_id == "confirm":
+		_resolve_altar_attack(_altar_pending_weapon_id, ui)
 		return
 	if interaction_id != "cave_ritual_table":
 		return
-	if choice_id == "destroy":
-		GameState.set_investigation_state("altar_resolution", "destroyed")
-		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
-		ui.open_paged_text("祭坛崩裂", ["枪声在洞中回荡，祭坛石面裂开，黑水从裂缝里涌出又迅速退去。你已经选择了摧毁它。"])
-		EndingController.on_altar_resolution_changed()
+	if choice_id == "rifle_destroy":
+		_complete_altar_destruction(ui, "枪声在洞中回荡。子弹越过深水击中祭坛，石面裂开，黑水从缝隙里涌出又迅速退去。")
+	elif choice_id == "attack_destroy":
+		_open_altar_attack_weapon_mode(ui)
 	elif choice_id == "raise_talisman":
-		if not GameState.has_item("old_water_gauge"):
-			ui.open_paged_text("原始加固仪式", ["你踩着水靠近祭坛，发现石面中央有一个矩形凹槽。没有旧水尺，仪式无法开始。"])
-			return
+		GameState.set_investigation_state(CAVE_ALTAR_REACHED_STATE, true)
+		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
+		ui.open_paged_text("抵达祭坛", ["护符在掌心发出冷光，水中的低语被隔在身外。你平安抵达对岸，今后可以直接接近祭坛。"])
+	elif choice_id == "swim_across":
+		var swim_result := CheckSystem.perform_check("力量", 18, 0, "游过深水抵达洞内祭坛")
+		GameState.record_water_contact("cave_altar_swim")
+		TimeSystem.on_dialogue_turn_completed()
+		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
+		var pages: Array[String] = [CheckSystem.result_to_display_text(swim_result)]
+		if bool(swim_result.get("passed", false)):
+			GameState.set_investigation_state(CAVE_ALTAR_REACHED_STATE, true)
+			GameState.save_game(GameState.AUTO_SAVE_PATH, false)
+			pages.append("你顶住暗流游到对岸，终于能够直接接触祭坛。以后不必再次渡水。")
+		else:
+			pages.append("暗流把你推回岸边，你没能抵达祭坛。")
+		ui.open_paged_text("横渡深水", pages)
+
+
+func _open_cave_ritual_reached(ui: SceneItemInteraction) -> void:
+	var choices: Array[Dictionary] = []
+	if GameState.has_item("hunting_rifle"):
+		choices.append({"id": "rifle_destroy", "label": "使用猎枪摧毁祭坛"})
+	choices.append({"id": "attack_destroy", "label": "摧毁祭坛（力量攻击检定，基础难度 20）"})
+	if GameState.has_item("old_water_gauge"):
 		var penalty := GameState.get_ritual_offering_penalty()
-		ui.open_choice({
-			"id": "cave_seal_ritual",
-			"title": "原始加固仪式",
-			"description": "你踩着水靠近祭坛。石面中央有一个矩形凹槽。",
-			"choices": [{"id": "seal", "label": "使用旧水尺加固封印（智力检定）", "type": "check", "attribute": "智力", "difficulty": 5 + penalty, "reason": "使用旧水尺加固洞内祭坛封印", "success_text": "水尺嵌入凹槽，封印纹路开始闭合。", "failure_text": "水尺在凹槽边缘震动，仪式今天无法继续。"}, {"id": "leave", "label": "离开", "close": true}],
-		})
-	elif interaction_id == "cave_seal_ritual" and choice_id == "seal":
-		pass
+		choices.append({"id": "seal", "label": "使用水尺封印（智力检定 %d）" % (5 + penalty), "type": "check", "attribute": "智力", "difficulty": 5 + penalty, "reason": "使用旧水尺加固洞内祭坛封印", "success_text": "水尺嵌入凹槽，封印纹路开始闭合。", "failure_text": "水尺在凹槽边缘震动，仪式今天无法继续。"})
+	choices.append({"id": "leave", "label": "离开", "close": true})
+	ui.open_choice({"id": "cave_ritual_table", "title": "洞内祭坛", "description": "你已经抵达深水对岸，可以直接接触祭坛。", "choices": choices})
+
+
+func _altar_attack_attempted_today() -> bool:
+	return int(GameState.get_investigation_state(CAVE_ALTAR_ATTACK_DAY_STATE, -1)) == TimeSystem.current_day
+
+
+func _open_altar_attack_weapon_mode(ui: SceneItemInteraction) -> void:
+	if _altar_attack_attempted_today():
+		ui.open_paged_text("今天无法再次摧毁", ["你今天已经尝试攻击过祭坛，只能明天再试。"])
+		return
+	ui.open_choice({
+		"id": "cave_altar_attack_mode",
+		"title": "摧毁祭坛",
+		"description": "选择徒手攻击，或从背包选择一件物品作为武器。每个游戏日只能尝试一次。",
+		"choices": [{"id": "bare_hands", "label": "徒手攻击"}, {"id": "open_bag", "label": "从背包选择武器"}, {"id": "leave", "label": "取消", "close": true}],
+	})
+
+
+func _open_altar_attack_weapon_bag() -> void:
+	var bag: Node = get_tree().get_first_node_in_group("attack_weapon_bag")
+	if bag == null:
+		bag = ITEM_BAG_POPUP_SCENE.instantiate()
+		bag.name = "AltarAttackWeaponBag"
+		bag.add_to_group("attack_weapon_bag")
+		add_child(bag)
+	if bag.has_signal("weapon_picked"):
+		bag.connect("weapon_picked", _on_altar_attack_weapon_picked, CONNECT_ONE_SHOT)
+	if bag.has_method("open_weapon_selection"):
+		bag.call("open_weapon_selection", GameState.inventory)
+
+
+func _on_altar_attack_weapon_picked(weapon_id: String) -> void:
+	var ui := SceneItemInteraction.new()
+	ui.name = "AltarAttackConfirmation"
+	add_child(ui)
+	ui.choice_selected.connect(_on_cave_ritual_choice.bind(ui))
+	_open_altar_attack_confirmation(weapon_id, ui)
+
+
+func _open_altar_attack_confirmation(weapon_id: String, ui: SceneItemInteraction) -> void:
+	if _altar_attack_attempted_today():
+		ui.open_paged_text("今天无法再次摧毁", ["你今天已经尝试攻击过祭坛，只能明天再试。"])
+		return
+	_altar_pending_weapon_id = weapon_id
+	var preview := SkillSystem.get_altar_attack_preview(weapon_id)
+	ui.open_choice({
+		"id": "cave_altar_attack_confirm",
+		"title": "确认攻击祭坛",
+		"description": "武器：%s\n基础难度：20；力量：%d；武器减难度：%d。\n本次力量检定最终难度为：%d。" % [String(preview.get("weapon_name", "徒手")), int(preview.get("strength", 0)), int(preview.get("weapon_reduction", 0)), int(preview.get("final_difficulty", 20))],
+		"choices": [{"id": "confirm", "label": "发动攻击"}, {"id": "leave", "label": "取消", "close": true}],
+	})
+
+
+func _resolve_altar_attack(weapon_id: String, ui: SceneItemInteraction) -> void:
+	if _altar_attack_attempted_today() or String(GameState.get_investigation_state("altar_resolution", "untouched")) != "untouched":
+		ui.open_paged_text("攻击无法发动", ["今天已经尝试过，或祭坛已经无法继续操作。"])
+		return
+	var attack_result := SkillSystem.perform_altar_attack_check(weapon_id)
+	GameState.set_investigation_state(CAVE_ALTAR_ATTACK_DAY_STATE, TimeSystem.current_day)
+	TimeSystem.on_dialogue_turn_completed()
+	GameState.save_game(GameState.AUTO_SAVE_PATH, false)
+	var pages: Array[String] = [CheckSystem.result_to_display_text(attack_result)]
+	if bool(attack_result.get("passed", false)):
+		pages.append("攻击击碎了祭坛的关键结构。黑水从裂缝里涌出又迅速退去。")
+		_complete_altar_destruction(ui, "\n".join(pages))
+	else:
+		pages.append("祭坛只留下浅浅的痕迹。你今天无法再次尝试。")
+		ui.open_paged_text("摧毁祭坛失败", pages)
+
+
+func _complete_altar_destruction(ui: SceneItemInteraction, text: String) -> void:
+	GameState.set_investigation_state("altar_resolution", "destroyed")
+	GameState.save_game(GameState.AUTO_SAVE_PATH, false)
+	_refresh_cave_view()
+	ui.open_paged_text("祭坛崩裂", [text])
+	EndingController.on_altar_resolution_changed()
 
 
 func _on_cave_ritual_check(interaction_id: String, choice_id: String, result: Dictionary, ui: SceneItemInteraction) -> void:
-	if interaction_id != "cave_seal_ritual" or choice_id != "seal" or not bool(result.get("passed", false)):
+	if interaction_id not in ["cave_seal_ritual", "cave_ritual_table"] or choice_id != "seal" or not bool(result.get("passed", false)):
 		return
 	GameState.set_investigation_state("altar_resolution", "sealed")
 	GameState.trigger_clue("seal_success")
@@ -1344,6 +1498,7 @@ func _on_cave_ritual_check(interaction_id: String, choice_id: String, result: Di
 	if GameState.add_document_clue(entry):
 		SceneItemInteraction.show_content_added_toast("封印成功", "线索册")
 	GameState.save_game(GameState.AUTO_SAVE_PATH, false)
+	_refresh_cave_view()
 	ui.open_paged_text("封印成功", ["水尺嵌入凹槽，祭坛纹路重新闭合。你感到远处有什么东西骤然虚弱下来。夜间道士似乎终于能重新掌控自己的身体。"])
 	EndingController.on_altar_resolution_changed()
 
@@ -1416,7 +1571,7 @@ func _open_mu_jiang_dialogue(highlight: MaskInteractionHighlight) -> void:
 func _open_carpenter_practice(highlight: MaskInteractionHighlight, ui: SceneItemInteraction) -> void:
 	highlight.hide_highlight()
 	if TimeSystem.minute_of_day + 240 > TimeSystem.NIGHT_OUTING_START_MINUTE:
-		ui.open_paged_text("木工练习", ["距离 19:00 已不足四小时。穆江没有开口，只把锯子按回桌面，示意你明天再来。"])
+		ui.open_paged_text("木工练习", ["距离 19:00 已不足四小时。来不及做完了。"])
 		return
 	ui.open_choice({
 		"id": "carpenter_woodwork_practice",
@@ -1581,6 +1736,9 @@ func _refresh_scene_presence() -> void:
 		return
 	if location_id == "taoist_temple":
 		_refresh_taoist_temple_state()
+		return
+	if location_id == "village_chief_house":
+		_refresh_village_chief_night_state()
 		return
 	var scene_empty := NpcRegistry.get_npcs_at(location_id).is_empty()
 	# 田间小路的人物背景由分钟级日程控制，不能被通用的有人/无人刷新覆盖。
@@ -1752,6 +1910,7 @@ func _create_lakeside_dock_hotspots() -> void:
 	basket_ui.name = "DockBasketInteraction"
 	add_child(basket_ui)
 	basket_ui.choice_selected.connect(_on_dock_basket_choice.bind(basket_ui))
+	_scene_npc_hotspots["yu_le"] = fisherman
 	(fisherman["button"] as Button).pressed.connect(func() -> void:
 		(fisherman["highlight"] as MaskInteractionHighlight).hide_highlight()
 		_open_dock_fisherman_dialogue()
@@ -1803,6 +1962,8 @@ func _on_dock_fishing_choice(interaction_id: String, choice_id: String, _result:
 	if not _can_finish_before_rest_lock(240, interaction_ui):
 		return
 	TimeSystem.advance_minutes(240)
+	var completed := int(GameState.get_investigation_state("lakeside_dock:fishing_count", 0)) + 1
+	GameState.set_investigation_state("lakeside_dock:fishing_count", completed)
 	GameState.set_investigation_state("lakeside_dock:fishing_completed", true)
 	GameState.record_water_contact("lakeside_dock_fishing")
 	var pollution_day := int(GameState.get_investigation_state("lakeside_dock:fishing_pollution_day", 0))
@@ -1816,10 +1977,14 @@ func _on_dock_fishing_choice(interaction_id: String, choice_id: String, _result:
 		GameState.set_investigation_state("lakeside_dock:fishing_success", 1)
 		if not GameState.has_item("fresh_fish"):
 			GameState.add_item("fresh_fish")
+	var rope_added := completed >= 2 and GameState.collect_one_shot_item("climbing_rope")
 	GameState.save_game(GameState.AUTO_SAVE_PATH, false)
 	var pages: Array[String] = ["四小时过去，你的身上沾满湿冷的湖水。"]
 	if agility_gained > 0:
 		pages.append("[color=sea_green]永久获得：敏捷 +%d[/color]" % agility_gained)
+	if rope_added:
+		SceneItemInteraction.show_content_added_toast("长绳子", "物品栏")
+		pages.append("第二次捕鱼结束后，于乐把一卷结实的长绳子交给你。")
 	var outcome := CheckSystem.result_to_display_text(check_result)
 	if caught_fish:
 		outcome += "\n[color=sea_green]你成功收网，获得物品：鱼。[/color]"
@@ -1835,7 +2000,7 @@ func _open_dock_basket_puzzle(interaction_ui: SceneItemInteraction) -> void:
 		return
 	var basic_hint := String(GameState.get_investigation_state("lakeside_dock:basket_hint_basic_text", ""))
 	var advanced_hint := String(GameState.get_investigation_state("lakeside_dock:basket_hint_advanced_text", ""))
-	var description := "你在篮子下面发现了一个木盒，旁边有一张奇怪的图片，或许这图片指向的密码是打开木盒的关键……（答案为五位汉字）"
+	var description := "你在篮子下面发现了一个木盒，旁边有一张奇怪的图片，那图片边上隐约能看见“上海xxxx”的字样。或许这图片指向的密码是打开木盒的关键……（答案为五位汉字）"
 	if not basic_hint.is_empty():
 		description += "\n\n已获得初级提示：%s" % basic_hint
 	if not advanced_hint.is_empty():
@@ -1902,7 +2067,10 @@ func _run_dock_basket_hint(interaction_ui: SceneItemInteraction, advanced: bool)
 	GameState.save_game(GameState.AUTO_SAVE_PATH, false)
 	var text := CheckSystem.result_to_display_text(check_result)
 	if bool(check_result.get("passed", false)):
-		text += "\n\n" + ("高级提示：每个点水滴的数量，与对应站名中水相关元素出现的次数相等。" if advanced else "初级提示：谜题与上海地铁线路有关。")
+		var unlocked_hint := "每个点水滴的数量，与对应站名中水相关元素出现的次数相等。" if advanced else "谜题与上海地铁线路有关。"
+		GameState.set_investigation_state("%s_text" % state_key, unlocked_hint)
+		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
+		text += "\n\n%s提示：%s\n今后可以永久查看这条提示。" % ["高级" if advanced else "初级", unlocked_hint]
 	else:
 		text += "\n\n你暂时理不清图片中的关系，明天可以再试。"
 	interaction_ui.open_paged_text("木盒提示", [text])
@@ -1919,6 +2087,7 @@ func _create_lakeside_pavilion_hotspots() -> void:
 	diary_ui.name = "LindeshanDiaryInteraction"
 	add_child(diary_ui)
 	diary_ui.submitted.connect(_on_lindeshan_diary_submitted.bind(diary_ui))
+	_scene_npc_hotspots["lin_deshan"] = lin_deshan
 	(lin_deshan["button"] as Button).pressed.connect(func() -> void:
 		(lin_deshan["highlight"] as MaskInteractionHighlight).hide_highlight()
 		_open_lindeshan_dialogue()
@@ -1929,7 +2098,7 @@ func _create_lakeside_pavilion_hotspots() -> void:
 	)
 
 
-func _open_lindeshan_dialogue() -> void:
+func _open_lindeshan_dialogue(forced_event_id: String = "") -> void:
 	if not NpcRegistry.is_npc_present_at("lin_deshan", location_id) or not NpcRegistry.can_interact_with_npc("lin_deshan"):
 		_show_scene_message("无人回应", "亭子里暂时没有人回应你。")
 		return
@@ -1940,6 +2109,8 @@ func _open_lindeshan_dialogue() -> void:
 		return
 	var profile := NpcRegistry.get_dialogue_profile("lin_deshan")
 	if not profile.is_empty():
+		if not forced_event_id.is_empty():
+			profile["_forced_opening_event_id"] = forced_event_id
 		dialogue_ui.open_dialogue(profile)
 
 
@@ -1968,7 +2139,7 @@ func _on_lindeshan_diary_submitted(result: Dictionary, interaction_ui: PhotoMatc
 		GameState.trigger_clue("lin_diary_second_revelation")
 		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
 		interaction_ui.close_interaction()
-		call_deferred("_open_lindeshan_dialogue")
+		call_deferred("_open_lindeshan_dialogue", "lin_deshan_diary_level_two")
 		return
 	if correct >= 3 and level < 1:
 		GameState.set_investigation_state("lin_deshan:diary_level", 1)
@@ -1977,7 +2148,7 @@ func _on_lindeshan_diary_submitted(result: Dictionary, interaction_ui: PhotoMatc
 		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
 		SceneItemInteraction.show_content_added_toast("劝离", "技能列表")
 		interaction_ui.close_interaction()
-		call_deferred("_open_lindeshan_dialogue")
+		call_deferred("_open_lindeshan_dialogue", "lin_deshan_diary_level_one")
 
 
 func _create_taoist_temple_hotspots() -> void:
@@ -1988,6 +2159,14 @@ func _create_taoist_temple_hotspots() -> void:
 	var back := _create_mask_hotspot("TaoistBackToFront", "res://assets/scenes/masks/back_to_temple.png", Rect2(0, 0, 1, 1), "返回道观前殿")
 	_taoist_front_nodes = [day_li["button"], day_li["highlight"], inner_door["button"], inner_door["highlight"]]
 	_taoist_rear_nodes = [night_li["button"], night_li["highlight"], ritual_book["button"], ritual_book["highlight"], back["button"], back["highlight"]]
+	_taoist_door_ui = SceneItemInteraction.new()
+	_taoist_door_ui.name = "TaoistRearDoorTrustInteraction"
+	add_child(_taoist_door_ui)
+	_taoist_door_ui.choice_selected.connect(_on_taoist_door_choice)
+	if not LLMService.reply_received.is_connected(_on_taoist_door_judge_reply):
+		LLMService.reply_received.connect(_on_taoist_door_judge_reply)
+	if not LLMService.reply_failed.is_connected(_on_taoist_door_judge_failed):
+		LLMService.reply_failed.connect(_on_taoist_door_judge_failed)
 	(day_li["button"] as Button).pressed.connect(func() -> void:
 		(day_li["highlight"] as MaskInteractionHighlight).hide_highlight()
 		_open_taoist_dialogue("li_leshui_day")
@@ -2022,7 +2201,8 @@ func _refresh_taoist_temple_state() -> void:
 	var daytime := _is_taoist_temple_daytime()
 	if daytime:
 		_taoist_in_rear_room = false
-	background.texture = TAOIST_TEMPLE_REAR_TEXTURE if _taoist_in_rear_room else (TAOIST_TEMPLE_DAY_TEXTURE if daytime else TAOIST_TEMPLE_NIGHT_TEXTURE)
+	var taoist_killed := NpcRegistry.is_npc_killed("li_leshui_day") or NpcRegistry.is_npc_killed("li_leshui_night")
+	background.texture = (TAOIST_TEMPLE_REAR_EMPTY_TEXTURE if _taoist_in_rear_room else TAOIST_TEMPLE_EMPTY_TEXTURE) if taoist_killed else (TAOIST_TEMPLE_REAR_TEXTURE if _taoist_in_rear_room else (TAOIST_TEMPLE_DAY_TEXTURE if daytime else TAOIST_TEMPLE_NIGHT_TEXTURE))
 	background.visible = true
 	for node in _taoist_front_nodes:
 		if node is MaskInteractionHighlight:
@@ -2046,9 +2226,12 @@ func _refresh_taoist_temple_state() -> void:
 	if _taoist_in_rear_room:
 		var night_present := NpcRegistry.is_npc_present_at("li_leshui_night", location_id)
 		var night_button := _taoist_rear_nodes[0] as Button if _taoist_rear_nodes.size() > 0 else null
+		var night_highlight := _taoist_rear_nodes[1] as MaskInteractionHighlight if _taoist_rear_nodes.size() > 1 else null
 		if night_button != null:
 			night_button.visible = night_present
 			night_button.disabled = not night_present
+		if night_highlight != null and not night_present:
+			night_highlight.hide_highlight()
 
 
 func _open_taoist_dialogue(npc_id: String) -> void:
@@ -2069,10 +2252,110 @@ func _open_taoist_inner_door() -> void:
 		_show_scene_message("后厅的门", "房门紧锁。白天的道士似乎不愿任何人进入后厅。")
 		return
 	if not bool(GameState.get_investigation_state("night_li_rear_room_unlocked", false)):
-		_open_taoist_dialogue("li_leshui_night")
+		_open_taoist_door_trust_check()
 		return
 	_taoist_in_rear_room = true
 	_refresh_taoist_temple_state()
+
+
+func _open_taoist_door_trust_check() -> void:
+	if _taoist_door_ui == null:
+		return
+	if int(GameState.get_investigation_state("night_li_trust_check_failed_day", -1)) == TimeSystem.current_day:
+		_taoist_door_ui.open_paged_text("紧锁的后室", ["门后的人没有再回应。你今天已经没办法说服他，只能明晚再来。"])
+		return
+	if _taoist_door_judge_request_id != 0:
+		_taoist_door_ui.show_waiting("门后的人仍在斟酌你的来意，请稍候……")
+		return
+	_taoist_door_ui.open_choice({
+		"id": "taoist_rear_door_trust",
+		"title": "紧锁的后室",
+		"description": "门后传来隐隐的光亮，以及道士念念有词的声音。你尝试推开木门，却被锁住了。里面那人道：“谁在外面，你想干什么？”你听出来那声音与白天的道士大不相同。",
+		"allow_input": true,
+		"input_placeholder": "输入你的来意",
+		"choices": [
+			{"id": "submit", "label": "说明来意"},
+			{"id": "leave", "label": "暂时离开", "close": true},
+		],
+	})
+
+
+func _on_taoist_door_choice(interaction_id: String, choice_id: String, result: Dictionary) -> void:
+	if interaction_id != "taoist_rear_door_trust" or choice_id != "submit":
+		return
+	var reason := String(result.get("input", "")).strip_edges()
+	if reason.is_empty():
+		_taoist_door_ui.open_paged_text("紧锁的后室", ["你需要先说清楚自己的来意。今晚若直接沉默离开，仍可再次敲门。"])
+		return
+	_taoist_door_pending_reason = reason
+	_taoist_door_ui.show_waiting("门后沉默了片刻，对方正在判断你的来意……")
+	var known_clues: Array[String] = []
+	for entry in GameState.get_clue_book_entries():
+		var clue_title := String(entry.get("title", "")).strip_edges()
+		if not clue_title.is_empty():
+			known_clues.append(clue_title)
+	var judge_profile := {
+		"id": "taoist_door_trust_judge",
+		"display_name": "夜间道士信任评估",
+		"system_prompt": "你是夜间道观后室的来意评估器。你只评估玩家这段话是否足以让谨慎的夜间道士稍微信任玩家，并给魅力检定提供 -5 到 +5 的合理性修正；正数会降低难度，负数会提高难度。明确意识到白天与夜晚的道士可能是两个人，提及水污染危机或具体污染证据，或者真诚表达对门后道士本人安危的关心，都应适当给正修正；同时包含多个方向且理由具体时可以给更高修正。普通但明确的调查来意可给 0 到 +1；空泛、威胁、敌意、明显敷衍应给负修正。玩家当前线索册中确实存在的资料只有：%s。不要替玩家补充没说过的理由，也不要直接决定检定成功或失败。回复必须严格以 MODIFIER +N 或 MODIFIER -N 开头（N 为 0 到 5），随后只用一句中文解释。" % ["、".join(known_clues) if not known_clues.is_empty() else "（暂无资料）"],
+		"fallback_lines": ["MODIFIER +0：来意明确，但尚不足以建立额外信任。"],
+	}
+	_taoist_door_judge_request_id = LLMService.chat(judge_profile, [], reason, 0, "taoist_door_trust_judge")
+
+
+func _on_taoist_door_judge_reply(request_id: int, _session_id: int, npc_id: String, reply: Dictionary) -> void:
+	if request_id != _taoist_door_judge_request_id or npc_id != "taoist_door_trust_judge":
+		return
+	_taoist_door_judge_request_id = 0
+	var verdict := String(reply.get("text", "")).strip_edges()
+	var modifier := _parse_taoist_trust_modifier(verdict, _taoist_door_pending_reason)
+	_finish_taoist_door_trust_check(modifier, verdict)
+
+
+func _on_taoist_door_judge_failed(request_id: int, _session_id: int, npc_id: String, _error: String) -> void:
+	if request_id != _taoist_door_judge_request_id or npc_id != "taoist_door_trust_judge":
+		return
+	_taoist_door_judge_request_id = 0
+	_taoist_door_pending_reason = ""
+	_taoist_door_ui.open_paged_text("紧锁的后室", ["门后的声音暂时沉寂下来，来意评估未能完成。你今晚仍可以重新敲门。"])
+
+
+func _parse_taoist_trust_modifier(verdict: String, reason: String) -> int:
+	var pattern := RegEx.new()
+	if pattern.compile("(?i)MODIFIER\\s*([+-]?\\d+)") == OK:
+		var matched := pattern.search(verdict)
+		if matched != null:
+			return clampi(int(matched.get_string(1)), -5, 5)
+	# 仅在模型没有遵守输出格式时兜底，正常流程始终采用模型给出的修正。
+	return SkillSystem._reason_modifier(reason)
+
+
+func _taoist_trust_verdict_explanation(verdict: String) -> String:
+	var separator := verdict.find("：")
+	if separator < 0:
+		separator = verdict.find(":")
+	return verdict.substr(separator + 1).strip_edges() if separator >= 0 else verdict.strip_edges()
+
+
+func _finish_taoist_door_trust_check(modifier: int, verdict: String) -> void:
+	var reason := _taoist_door_pending_reason
+	_taoist_door_pending_reason = ""
+	var check_result := SkillSystem.perform_trust_check_with_modifier(reason, modifier)
+	TimeSystem.on_dialogue_turn_completed()
+	var pages: Array[String] = [CheckSystem.result_to_display_text(check_result)]
+	var explanation := _taoist_trust_verdict_explanation(verdict)
+	if bool(check_result.get("passed", false)):
+		GameState.set_investigation_state("night_li_rear_room_unlocked", true)
+		GameState.add_affinity("li_leshui_night", 1)
+		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
+		_taoist_in_rear_room = true
+		_refresh_taoist_temple_state()
+		pages.append("[color=sea_green]对方接受了你的来意。[/color] %s\n\n门锁从里面轻响一声，后室向你永久开放。" % explanation)
+	else:
+		GameState.set_investigation_state("night_li_trust_check_failed_day", TimeSystem.current_day)
+		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
+		pages.append("[color=indian_red]对方仍不信任你。[/color] %s\n\n门后不再回应。你只能明晚再来尝试。" % explanation)
+	_taoist_door_ui.open_paged_text("后室信任检定", pages)
 
 
 func _open_taoist_ritual_book() -> void:
@@ -2151,6 +2434,7 @@ func _create_farmland_hotspots() -> void:
 	var farmer := _create_mask_hotspot(
 		"FarmlandFarmer", "res://assets/scenes/masks/farmer_mask.png", Rect2(0.05, 0.18, 0.32, 0.72), "与农夫牛岚山交谈"
 	)
+	_scene_npc_hotspots["niu_lanshan"] = farmer
 	var bird := _create_mask_hotspot(
 		"FarmlandBirds", "res://assets/scenes/masks/farm_bird_mask.png", Rect2(0.33, 0.12, 0.50, 0.68), "查看啄食稻谷的麻雀"
 	)
@@ -2411,6 +2695,9 @@ func _create_mask_hotspot(node_name: String, mask_path: String, _area: Rect2, to
 
 func _leave_temporary_dorm(highlight: MaskInteractionHighlight) -> void:
 	highlight.hide_highlight()
+	if GameState.night_rest_required:
+		_show_scene_message("今晚必须休息", "已经 22:00，今晚不能再出门。请在临时宿舍休息，明早 09:00 再继续调查。")
+		return
 	if GameState.is_night_outing_time():
 		if not GameState.can_night_travel():
 			_show_scene_message("夜路太黑", "路太黑了，现在还不具备夜间出门的能力。")
@@ -2457,7 +2744,20 @@ func _rest_in_temporary_dorm(rest_ui: SceneItemInteraction, wake_ui: SceneItemIn
 			pages.append(raw_page)
 	rest_ui.close_interaction()
 	if not pages.is_empty():
+		if not String(report.get("ending_id", "")).is_empty():
+			wake_ui.paged_text_completed.connect(_on_morning_report_completed.bind(report), CONNECT_ONE_SHOT)
 		wake_ui.open_paged_text(String(report.get("title", "清晨")), pages)
+
+
+func _on_morning_report_completed(_interaction_id: String, report: Dictionary) -> void:
+	var ending_id := String(report.get("ending_id", "")).strip_edges()
+	if ending_id.is_empty() or GameState.is_game_ended():
+		return
+	if ending_id == "pollution_follower" and GameState.pollution < GameState.MAX_POLLUTION:
+		# pollution_changed 会由 EndingController 立即结算现有污染结局。
+		GameState.add_pollution(GameState.MAX_POLLUTION - GameState.pollution)
+	else:
+		EndingController.start_ending(ending_id)
 
 
 func _open_dorm_shower(highlight: MaskInteractionHighlight) -> void:
@@ -2592,6 +2892,12 @@ func _refresh_time_based_background() -> void:
 func _refresh_road_hermit_schedule() -> void:
 	if not _uses_road_hermit_schedule:
 		return
+	# 死亡优先于出没时段和“对话中暂缓离场”；否则击杀信号触发刷新时，
+	# 尚未关闭的对话会把人物错误地继续保留在场景中。
+	if NpcRegistry.is_npc_killed("mysterious_hermit"):
+		_road_hermit_departure_deferred = false
+		_set_road_hermit_visible(false)
+		return
 	var should_show := NpcRegistry.is_mysterious_hermit_road_time()
 	if not should_show and not _road_hermit_departure_deferred and _is_hermit_dialogue_open():
 		# 如果 18:00 到点时仍在交谈，本次进入场景期间不再切走人物。
@@ -2622,13 +2928,18 @@ func _set_road_hermit_visible(visible_now: bool) -> void:
 		)
 		(_road_hermit_nodes["button"] as Button).pressed.connect(_open_road_mysterious_hermit_dialogue)
 	(_road_hermit_nodes["highlight"] as MaskInteractionHighlight).hide_highlight()
-	(_road_hermit_nodes["button"] as Control).visible = visible_now
+	var hermit_button := _road_hermit_nodes["button"] as Button
+	hermit_button.visible = visible_now
+	var already_met_today := int(GameState.get_investigation_state(HERMIT_MET_DAY_STATE, -1)) == TimeSystem.current_day
+	hermit_button.disabled = not visible_now or (already_met_today and not SkillSystem.can_retry_hostile_attack("mysterious_hermit"))
 
 
 func _open_road_mysterious_hermit_dialogue() -> void:
 	if _road_hermit_nodes.is_empty():
 		return
 	(_road_hermit_nodes["highlight"] as MaskInteractionHighlight).hide_highlight()
+	if int(GameState.get_investigation_state(HERMIT_MET_DAY_STATE, -1)) == TimeSystem.current_day and not SkillSystem.can_retry_hostile_attack("mysterious_hermit"):
+		return
 	var dialogue_ui: Node = get_tree().get_first_node_in_group("dialogue_ui")
 	if dialogue_ui == null or (dialogue_ui.has_method("is_open") and dialogue_ui.is_open()):
 		return
@@ -2639,3 +2950,6 @@ func _open_road_mysterious_hermit_dialogue() -> void:
 	if profile.is_empty():
 		return
 	dialogue_ui.open_dialogue(profile)
+	GameState.set_investigation_state(HERMIT_MET_DAY_STATE, TimeSystem.current_day)
+	(_road_hermit_nodes["button"] as Button).disabled = not SkillSystem.can_retry_hostile_attack("mysterious_hermit")
+	GameState.save_game(GameState.AUTO_SAVE_PATH, false)
