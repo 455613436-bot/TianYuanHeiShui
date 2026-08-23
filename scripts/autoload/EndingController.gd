@@ -33,6 +33,7 @@ func _ready() -> void:
 	layer = 200
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	GameState.pollution_changed.connect(_on_pollution_changed)
+	GameState.load_completed.connect(_on_game_loaded)
 	TimeSystem.day_changed.connect(_on_day_changed)
 	call_deferred("evaluate_endings")
 
@@ -46,6 +47,12 @@ func _on_day_changed(new_day: int) -> void:
 	# 第8天的24:00就是第9天00:00。休息流程会跨越午夜，因此用换日信号保证必达。
 	if new_day >= 9:
 		evaluate_endings()
+
+
+func _on_game_loaded(_path: String) -> void:
+	# TimeSystem.load_from_dict() 恢复日期时不会发送 day_changed；读档完成后必须主动补做结局裁决。
+	# 此时 GameState、TimeSystem 与 NpcRegistry 均已恢复，可以安全读取祭坛和 NPC 存亡状态。
+	evaluate_endings()
 
 
 func on_altar_resolution_changed() -> void:

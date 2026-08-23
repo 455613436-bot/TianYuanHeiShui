@@ -2251,6 +2251,12 @@ func _open_taoist_inner_door() -> void:
 	if _is_taoist_temple_daytime():
 		_show_scene_message("后厅的门", "房门紧锁。白天的道士似乎不愿任何人进入后厅。")
 		return
+	var taoist_killed := NpcRegistry.is_npc_killed("li_leshui_day") or NpcRegistry.is_npc_killed("li_leshui_night")
+	if taoist_killed:
+		# 两个人格共享死亡状态；夜间后室已无人看守，不应再向不存在的人发起信任检定。
+		_taoist_in_rear_room = true
+		_refresh_taoist_temple_state()
+		return
 	if not bool(GameState.get_investigation_state("night_li_rear_room_unlocked", false)):
 		_open_taoist_door_trust_check()
 		return

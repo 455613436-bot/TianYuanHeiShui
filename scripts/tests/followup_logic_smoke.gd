@@ -339,8 +339,10 @@ func _run() -> void:
 	if temple_background.texture.resource_path != "res://assets/scenes/taoist_temple_empty.png":
 		_fail("Night temple front did not remain empty after shared death")
 		return
-	temple.set("_taoist_in_rear_room", true)
-	temple.call("_refresh_taoist_temple_state")
+	temple.call("_open_taoist_inner_door")
+	if not bool(temple.get("_taoist_in_rear_room")) or int(temple.get("_taoist_door_judge_request_id")) != 0:
+		_fail("Dead Taoist still caused the night rear-door trust check")
+		return
 	if temple_background.texture.resource_path != "res://assets/scenes/taoist_temple_rear_empty.png":
 		_fail("Night rear room did not switch to its empty scene after shared death")
 		return
@@ -371,6 +373,26 @@ func _run() -> void:
 	if EndingController.get_node_or_null("EndingOverlay") != null or scene_tree.paused:
 		_fail("Returning to the title screen did not remove the ending overlay")
 		return
+
+	# Regression: restoring a save does not emit TimeSystem.day_changed. The load-completed
+	# hook must still settle an overdue day-nine ending without requiring another midnight.
+	GameState.reset_for_new_game()
+	GameState.set_investigation_state("altar_resolution", "destroyed")
+	TimeSystem.current_day = 30
+	var overdue_ending_save := "user://followup_overdue_ending_smoke.json"
+	if GameState.save_game(overdue_ending_save, false) != OK:
+		_fail("Could not create the overdue-ending load regression save")
+		return
+	GameState.reset_for_new_game()
+	if GameState.load_game(overdue_ending_save, false) != OK:
+		_fail("Could not restore the overdue-ending load regression save")
+		return
+	if GameState.get_ending_id() != "sacrifice" or EndingController.get_node_or_null("EndingOverlay") == null or not scene_tree.paused:
+		_fail("Loading a day-thirty destroyed-altar save did not settle its overdue ending")
+		return
+	scene_tree.paused = false
+	EndingController.reset_for_new_game()
+	GameState.clear_save(overdue_ending_save)
 
 	print("FOLLOWUP_LOGIC_SMOKE_OK")
 	scene_tree.quit(0)
