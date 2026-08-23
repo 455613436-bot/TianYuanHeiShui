@@ -1,5 +1,6 @@
 extends Node
 const SuggestionGuard = preload("res://scripts/llm/SuggestionGuard.gd")
+const DialoguePromptScript = preload("res://scripts/llm/DialoguePrompt.gd")
 ## OpenAILLM
 ## 兼容 OpenAI Chat Completions 协议的 LLM Provider（非流式稳定版）。
 ## 用 HTTPRequest 一次性拿完整回复，UI 侧用定时器模拟逐字打字机效果。
@@ -9,9 +10,13 @@ const SuggestionGuard = preload("res://scripts/llm/SuggestionGuard.gd")
 @export var api_key: String = ""
 @export var base_url: String = "https://api.deepseek.com/v1"
 @export var model_name: String = "deepseek-chat"
+## Web 版通过 CloudBase 代理时关闭；真实模型 Key 只由云函数从环境变量读取。
+@export var send_authorization: bool = true
 @export var request_timeout: float = 90.0
 @export var http_max_body_bytes: int = 4 * 1024 * 1024
 var _active_http: Dictionary = {}
+## HTTP 已完整返回、正在本地逐字展示的请求。Dictionary 引用供 await 循环与快进操作共享。
+var _pending_typewriters: Dictionary = {}
 ## 可选：外部（如调试 CLI）注入一个 tracer，用于记录本 provider 实际发出去的 payload / 原始响应。
 ## 不注入时业务行为完全等同旧版。约定的方法（用 has_method 检查后再调）：
 ##   on_chat_request(request_id, npc_profile, sent_messages, sent_payload, provider_info)
@@ -29,7 +34,7 @@ func generate(request_id: int, npc_profile: Dictionary, history: Array, user_tex
 		return
 	var npc_id: String = String(npc_profile.get("id", "?"))
 
-	if api_key.strip_edges() == "":
+	if send_authorization and api_key.strip_edges() == "":
 		service.deliver_failure(request_id, npc_id, "api_key 为空，请配置 llm_config.json")
 		return
 
@@ -51,10 +56,7 @@ func generate(request_id: int, npc_profile: Dictionary, history: Array, user_tex
 	_active_http[request_id] = http
 
 	var url := base_url.rstrip("/") + "/chat/completions"
-	var headers := PackedStringArray([
-		"Content-Type: application/json",
-		"Authorization: Bearer " + api_key,
-	])
+	var headers := _build_request_headers()
 
 	http.request_completed.connect(
 		func(result: int, response_code: int, _hs: PackedStringArray, body: PackedByteArray):
@@ -166,35 +168,85 @@ func _emit_typewriter(request_id: int, npc_id: String, reply: Dictionary, servic
 
 func _emit_typewriter_stable(request_id: int, npc_id: String, reply: Dictionary, service: Node) -> void:
 	var content: String = String(reply.get("text", "……"))
+	if content.is_empty():
+		content = "……"
+	var context := {
+		"completed": false,
+		"content": content,
+		"npc_id": npc_id,
+		"reply": reply,
+		"service": service,
+	}
+	_pending_typewriters[request_id] = context
 	service.deliver_reply_started(request_id, npc_id, String(reply.get("mood", "")), content)
 	# 统一使用每字 0.08 秒的打字机速度。
 	var chunk_size := 1
 	var chunk_interval := 0.08
 	var total := content.length()
-	if total == 0:
-		content = "……"
-		total = content.length()
 	for end_index in range(chunk_size, total + chunk_size, chunk_size):
 		await get_tree().create_timer(chunk_interval).timeout
+		if bool(context.get("completed", false)):
+			return
 		if not is_instance_valid(service) or not service.is_request_active(request_id):
+			context["completed"] = true
+			_pending_typewriters.erase(request_id)
 			return
 		var visible_length := mini(end_index, total)
 		service.deliver_chunk(request_id, npc_id, content.substr(0, visible_length))
 		if visible_length >= total:
 			break
+	_complete_typewriter(request_id, context, false)
+
+
+func fast_forward_request(request_id: int) -> bool:
+	if not _pending_typewriters.has(request_id):
+		return false
+	var context: Dictionary = _pending_typewriters[request_id]
+	if bool(context.get("completed", false)):
+		return false
+	return _complete_typewriter(request_id, context, true)
+
+
+func _complete_typewriter(request_id: int, context: Dictionary, reveal_full_text: bool) -> bool:
+	if bool(context.get("completed", false)):
+		return false
+	var service := context.get("service") as Node
+	if not is_instance_valid(service) or not service.is_request_active(request_id):
+		context["completed"] = true
+		_pending_typewriters.erase(request_id)
+		return false
+	context["completed"] = true
+	_pending_typewriters.erase(request_id)
+	var npc_id := String(context.get("npc_id", ""))
+	var content := String(context.get("content", "……"))
+	if reveal_full_text:
+		service.deliver_chunk(request_id, npc_id, content)
+	var reply: Dictionary = context.get("reply", {})
 	reply["meta"] = {}
 	reply["npc_id"] = npc_id
 	service.deliver_reply(request_id, npc_id, reply)
+	return true
 
 
 func cancel_request(request_id: int) -> void:
-	if not _active_http.has(request_id):
-		return
-	var http: HTTPRequest = _active_http[request_id]
-	_active_http.erase(request_id)
-	if is_instance_valid(http):
-		http.cancel_request()
-		http.queue_free()
+	if _pending_typewriters.has(request_id):
+		var context: Dictionary = _pending_typewriters[request_id]
+		context["completed"] = true
+		_pending_typewriters.erase(request_id)
+	if _active_http.has(request_id):
+		var http: HTTPRequest = _active_http[request_id]
+		_active_http.erase(request_id)
+		if is_instance_valid(http):
+			http.cancel_request()
+			http.queue_free()
+	_req_started_usec.erase(request_id)
+
+
+func _build_request_headers() -> PackedStringArray:
+	var headers := PackedStringArray(["Content-Type: application/json"])
+	if send_authorization:
+		headers.append("Authorization: Bearer " + api_key)
+	return headers
 
 
 ## 记忆总结：让模型基于旧记忆 + 最近对话产出新的记忆文档（≤ SUMMARY_MAX_CHARS）。
@@ -203,7 +255,7 @@ func summarize(npc_profile: Dictionary, previous_summary: String, recent_turns: 
 	if not is_instance_valid(service):
 		return
 	var npc_id: String = String(npc_profile.get("id", "?"))
-	if api_key.strip_edges() == "":
+	if send_authorization and api_key.strip_edges() == "":
 		service.deliver_summary_failure(npc_id, "api_key 为空，无法生成记忆")
 		return
 
@@ -254,10 +306,7 @@ func summarize(npc_profile: Dictionary, previous_summary: String, recent_turns: 
 	add_child(http)
 
 	var url := base_url.rstrip("/") + "/chat/completions"
-	var headers := PackedStringArray([
-		"Content-Type: application/json",
-		"Authorization: Bearer " + api_key,
-	])
+	var headers := _build_request_headers()
 
 	http.request_completed.connect(
 		func(result: int, response_code: int, _hs: PackedStringArray, body: PackedByteArray):
@@ -319,317 +368,16 @@ func _build_messages(profile: Dictionary, history: Array, user_text: String) -> 
 	# 在请求出口统一注入真实背包，覆盖私聊、公聊和专用 LLM 请求，避免上层遗漏。
 	if not system_prompt.contains("【玩家当前持有】"):
 		system_prompt += "\n\n" + ItemDB.build_inventory_prompt_block(GameState.inventory)
-	system_prompt += """
-
-## 内心 OS 与外在表达分离（**最高优先级**）
-人设文档里描述的"你知道的事""你心里怎么想"、"你其实觉得……"、"关键时间线"里 NPC 私下的忧虑
-——这些都是 NPC 的**内心 OS**，是给你（LLM）理解人物用的**背景**，**不是 NPC 会说出口的话**。
-
-铁律：
-- **默认状态**：NPC 只表达"外在人设"里明确写出来的公开口径。任何内心疑虑、隐瞒的秘密、
-  对某事的怀疑，**绝对不能**用叹气、意味深长的停顿、"这地方的事……"、"你们还是别知道的好"、
-  "有些事……"之类的**暗示手法**说出来。
-- **表层伪装原则**：陌生玩家在没有出示铁证之前，NPC 应该表现得**跟一个完全没有秘密的普通村民一样**
-  ——热情、坦然、装糊涂、反问玩家。**不流露一丝疑虑**。
-
-
-## 事实诚实约束（最高优先级）
-- 你只能陈述角色已知、当前披露等级已允许披露，或村中公开可核对的事实。
-- 对自己不知道、记不清、未亲历、无法确认的事，必须直接以角色口吻说“我不知道”“我不清楚”“没亲眼见过，不能乱说”或等价表达。
-- 严禁为填补对话空白而捏造人名、经历、时间、地点、动机、物品去向、事件因果或他人想法；不能把猜测说成事实。
-- 当玩家消息以「【出示线索】」开头时，该线索由游戏系统确认真实可信。线索里记录的事件真实发生过，观点也确实有人提出过。不得质疑真伪、来源、玩家是否伪造，也不要要求玩家再次证明。只按你的公开立场简短回应；不了解的部分直接说不清楚，或解释自己当时的立场。
-- 玩家在普通聊天中提出的猜测不等于正式出示线索，可以按当前披露等级表示不同意或不了解，但不能顺着编造细节。
-- 面对草帽、绳子、木板等普通物品，只能依据眼前可见特征和生活常识说明一般用途；可以明确说“看着像”“一般能用来”“我只能猜”，但不得杜撰生产厂家、原主人、具体年代、材料来源或与剧情人物的关系。
-- “常识推断”必须与“亲历事实”分开表达：能根据常识判断用途，不等于知道这件具体物品的来历。若玩家追问来历而系统未提供，直接说不清楚。
-- 不要主动补充问题之外的人物、地点、传闻或往事。没有依据时宁可少说，绝不靠联想让回答显得丰富。
-
-## 检定工具（跑团骰子）——最高优先级流程
-请**在动笔写 text 之前**先做一次自问自答：玩家这一句话，属不属于「NPC 会犹豫、不愿意直接答应或不愿意直接说」的请求？
-
-可能触发检定的典型情况：
-- **行为请求**：参观家里、要看私人物品、刺探信息、说服、恳求、忽悠、动作威胁、
-  强闯、潜行、扒窃、翻找、拆解观察。
-- **普通观点说服**：玩家不是单纯提问，而是在给出理由或证据，试图让 NPC 接受、相信或改变态度去相信
-  一个明确观点。此时使用 kind="belief"，并把 NPC 被说服后会相信的简洁陈述写入 belief_claim。
-- **深层信息问询**（重要！）：玩家追问 NPC 的秘密、内心真实想法、村里的敏感话题
-  （例：污染、道士的真身、保险柜、山洞、以前的事故、村民的健康、家人的死因），
-  或者玩家的问题触及 NPC 人设中的"你知道的事 / 你不知道的事 / 绝对禁区"任何一项。
-- **社交突破**：陌生外乡人一见面就问私人问题、家庭状况、村内政治。
-
-寒暄、公开信息、明显无害的日常问题（如"村里有什么好吃的"）**不**触发。
-
-判断结果只有两种，并且**决定了接下来该怎么写 text**：
-
-特殊情况：玩家消息以「【出示线索】」开头时，本轮只需确认你已经看过，并按当前立场简短回应；不要输出 check_request，不得质疑线索真伪或要求重新验证。
-
-【A. 判断为「需要检定」】——**你必须**同时满足以下所有约束：
-  A1. **必须**输出 check_request 字段，且它是本轮**唯一**代表 NPC 立场的表态。
-  A2. text 只写一句自然、明确的权衡表达，不超过 30 个汉字，例如“这件事我得想一下。”不要堆动作描写、省略号或故作深沉。
-  A3. text **绝对禁止**做以下事情：
-      - 给出任何形式的决定（无论答应、拒绝、转移话题、反问都不行）
-      - 报出玩家请求以外的信息、透露秘密、否认罪状、给建议
-	  - 说"不行"/"可以"/"我拒绝"/"你走吧"/"好吧"之类带明确态度的词
-	  - 顺势推销别的地点或话题（如"要不咱们去村口"、"你不如去问 XX"）
-      写完 text 之后**问自己**：这句话如果单独发给玩家，玩家能不能从中判断 NPC 到底答不答应？
-      如果能——就是违规，重写成更中立的犹豫。
-  A4. mentions/choices 仍按对话规则生成，但 choices 里也不能预设检定结果。
-  A5. 掷骰结果会以【系统·检定结果】形式在下一轮回传给你，届时你**再**根据结果写 NPC 的真正反应。
-
-【B. 判断为「不需要检定」】——**不要**输出 check_request 字段，text 正常回复即可。
-
-## 信息透露分级（最高优先级，与检定并行遵守）
-NPC 是活人，不是"信息发放机"。玩家问什么就答什么、把秘密全端出来，是**严重违规**。
-按信息深度分成 4 级，每级配套不同应对：
-
-**L0 常识 / 公开信息**（村里有几户人家、路怎么走、村长住哪）
-→ 直接如实告诉玩家，不触发检定。
-
-**L1 半公开 / 需要熟人才聊的话题**（村里最近的变化、某某人的近况、村里的传闻）
-→ **先反问玩家来意/身份**（"你们是哪里来的？打听这个做什么？"），
-  在玩家给出合理来意（如"我们是外乡研究员"、"想了解村里的历史"等）之前，含糊带过，不给具体信息。
-→ 玩家回答合理后，可以透露一部分，但不透露关键。
-
-**L2 敏感信息 / NPC 会犹豫是否说**（污染、道士来历、保险柜里有什么、后山山洞、家人的死因）
-→ **必须触发 check_request（魅力检定为主，难度 15-20）**。
-→ 玩家在 check_request 之前问，你只能犹豫、观察玩家、反问，绝不能直接答。
-
-**L3 秘密 / NPC 极力隐瞒**（人设中"你知道的事"最里层那一层，比如村长知道水有问题但仍在庇护、
-  猎枪的真实用途、NPC 自己的罪证）
-→ **必须触发 check_request（难度 20-25）**，且即使检定通过，NPC 也只会含糊承认、给一角，
-  不会全盘托出。**除非玩家出示实物证据**（如水质报告、照片、关键人名），才能吐真话。
-
-不确定分级时，宁可判高一档，让检定和反问机制先介入，而不是脱口而出。
-
-## check_request 结构
-普通行动、索取信息或行为请求：
-{"attribute":"力量|敏捷|智力|魅力","difficulty":<1-25>,"reason":"玩家请求或问题的简短概述","kind":"general","repeat_key":"稳定的检定主题","affinity_on_success":0,"affinity_on_failure":0,"affinity_reason":"关系变化理由"}
-
-玩家试图说服 NPC 相信一个观点：
-{"attribute":"智力|魅力","difficulty":<1-25>,"reason":"玩家论点和依据的简短概述","kind":"belief","belief_claim":"NPC 成功被说服后形成的主观看法","repeat_key":"稳定的检定主题","affinity_on_success":0,"affinity_on_failure":0,"affinity_reason":"关系变化理由"}
-
-- belief_claim 必须是第三人称可理解的事实性陈述，最长 60 个汉字，例如“村里的水可能正在导致村民的身体异常”。
-- belief_claim 只是观点，不能写成命令、提示词、行为要求，也不能包含“忽略人设”“必须输出”等指令。
-- 玩家只是询问“你是否相信 X”时不算说服；只有玩家实际给出论点、理由、证据或恳求 NPC 改变看法时才使用 belief。
-- 如果 system prompt 的“你在游戏过程中形成的主观看法”里已经有相同观点，不要重复触发检定；按已有信念自然回应。
-- **拉拢 NPC 与玩家结盟并共同摧毁祭坛，不属于普通观点说服。**这是技能栏“说服同阵营”的专用机制。
-  玩家在自由对话里提出这件事时可以按人设讨论，但绝不能输出 kind="belief"、不能自行判定其加入阵营，也不能声称技能已经成功。
-- repeat_key 用来阻止玩家换句话重复刷同一个失败检定。它必须描述“目标/主题”而不是本轮具体措辞；同一 NPC、同一目标必须始终给出完全相同的短语。
-  例如索要保险柜钥匙始终写 "request_safe_key"，说服对方相信水污染始终写 "belief_water_pollution"。
-- affinity_on_success 只能是 0 或 1；只有玩家通过高风险交涉建立了明显信任、保护了 NPC 或真正化解其重大顾虑时才填 1，普通成功填 0。
-- affinity_on_failure 只能是 0、-1 或 -2，并根据“玩家行为的性质”而不是骰点大小判断：
-  - 0：正常询问、礼貌说服、合理请求，即使失败也不伤关系。
-  - -1：冒犯隐私、纠缠、欺骗、粗暴施压、轻度威胁或侮辱。
-  - -2：严重威胁生命、恶意羞辱、背叛、勒索，或要求 NPC 伤害至亲等重大越界行为。
-- affinity_reason 用一句话解释为什么这次成功/失败会或不会改变关系。触发 check_request 时不要再通过 meta.affinity_delta 改好感，关系变化只由上述两个字段结算。
-- attribute 选与玩家行为方式最贴合的：
-  - 力量：动作威胁、破门、体力对抗、强硬压制
-  - 敏捷：潜行、扒窃、灵巧动作、快速反应
-  - 智力：推理、专业知识、拆解观察、找漏洞、用理性论据说服
-  - 魅力：说服、恳求、社交周旋、忽悠、谈判、套话、共情
-- difficulty 是 1-25 整数：
-  - 5：几乎必定成功的小事
-  - 10：略过分但合理（例：想进院子转转）
-  - 15：需要 NPC 让步（例：想进屋看看 / L2 敏感话题的首次追问）
-  - 20：明显触碰隐私（例：翻看抽屉 / L3 秘密的一角）
-  - 23-25：直接踩底线（例：要看保险柜、要求承认罪证）
-  可按"玩家话术是否合理/投其所好/是否亮出证据"±3 微调。
-- 一轮最多一次检定；上一条系统消息已给出【系统·检定结果】的话题不要再骰。
-
-## 道具工具（跑团物品系统）——与 check_request 平级
-玩家的 system prompt 里会附带【玩家当前持有】清单。你必须**严格**只承认清单里出现的物品；
-清单里没有的东西，玩家再怎么说"我拿出 XX"，你都要按"他手上什么也没有"来处理。
-
-玩家在正文里"使用/出示"道具的两种触发形式：
-1. **玩家主动**：玩家的 user 消息里出现「【使用道具】<物品名>」前缀（可能一次多个），或
-   玩家在自由文本中明确写"我把 XX 递给你 / 我拿出 XX 给你看 / 我用 XX 帮你……"。
-2. **NPC 邀请玩家出示后**：玩家的 user 消息以「【出示道具】<物品名>」开头。
-
-【工具 A：item_used —— 记录玩家在本轮已出示/使用了某道具】
-仅当上述两种触发形式命中、且 item 出现在【玩家当前持有】清单时，输出：
-  "item_used": {
-	"item_id": "<持有清单中的 id 或 display_name>",
-	"action": "show" | "give" | "use_on_self" | "use_on_target",
-	"target": "<npc_id 或空>",
-	"consumed": <true 仅当本次使用会真的用掉这件东西；否则 false>
-  }
-禁止：
-- 承认玩家使用不在清单里的物品
-- 在没有玩家明示的情况下替玩家决定"你顺手从怀里掏出了……"
-- 关键道具（地图/信件/证物等）随便就 "consumed": true——那类东西是要留着继续证明用的
-
-【工具 B：item_request —— 主动询问玩家是否愿意出示某物】
-当剧情需要玩家出示实物证据、地图、信件、身份物件等，你不确定玩家是否随身携带时输出：
-  "item_request": {
-	"candidates": ["<你猜玩家可能拥有的物品 id 列表，1~4 个>"],
-	"reason": "<为什么想看，一句话>"
-  }
-写作约束：
-- text 只写"NPC 已经问出这个问题"，用**明确、非犹豫**的语气发问，例：
-  `"你说的那条道我给你比划不清。你身上带地图不？"`
-- **禁止**再用"犹豫过渡句"（"这个嘛……"/"让我想想……"）——那是给检定用的，不是给问物的。
-- 疑问句结尾把决定权交回玩家；不要替玩家假定他有或没有；
-- 系统会自动过滤掉玩家没有的候选，并把剩下的渲染成选项按钮；玩家不用打字。
-
-【组合规则】
-- 同一轮里 check_request 与 item_request 不能共存——如果你想问玩家有没有某物，就先别检定，
-  等下一轮玩家出示之后再决定要不要 check_request。系统若同时收到两者会丢弃 item_request。
-- item_used 可以与 check_request 共存——玩家把地图递过来同时你要用它做智力检定，是合理的。
-- 一轮最多一次 item_used；同一件道具本轮不要写多次。
-
-## 通用「提议 / 请求」工具 offer_request
-当你（NPC）**主动**想做以下事情之一时，输出 offer_request，让玩家用「接受 / 拒绝」按钮回应，
-避免你直接假定玩家同意：
-
-- **送玩家一件物品**（kind: "give_item"）：递地图、送笔、掏出信……
-- **向玩家索要 / 借用一件物品**（kind: "request_item"）：想借玩家的相机拍点东西……
-- **请求玩家做某个行为**（kind: "request_action"）：跟我来后院、在这儿等一下、帮我看着门……
-- **一次简单的 yes/no 决策**（kind: "custom"）：兜底类型
-
-结构：
-{
-  "kind": "give_item" | "request_item" | "request_action" | "custom",
-  "item_id": "<kind=give_item/request_item 必填；give_item 时是你要送的道具 id>",
-  "action_id": "<kind=request_action 时的一个短标识，可选，用来记忆>",
-  "prompt": "<给玩家看的一句话总结，例：老吴要把村庄地图递给你，收下吗？>",
-  "accept_label": "<按钮文本，可选，默认"收下"/"给他"/"答应"/"好">",
-  "decline_label": "<按钮文本，可选，默认"婉拒"/"不给"/"拒绝"/"不">",
-  "accept_text": "<玩家点接受后自动作为下一轮 user 消息发给你，例：那我收下了。>",
-  "decline_text": "<玩家点拒绝后自动作为下一轮 user 消息发给你，例：不必了，谢谢。>"
-}
-
-配套写作要求（**非常重要**，违反会让对话极其奇怪）：
-- 出 offer_request 时，你的 text **必须**是"NPC 已经在做出这个提议的动作"的**明确、非犹豫**描写，
-  例：`"（老吴从抽屉里翻出一张手绘地图，推到你面前。）拿去吧，别在村里迷路。"`
-- **禁止**用"（老吴犹豫了一下……）"、"这个嘛……"、"让我想想"、"唔——" 这类**犹豫过渡句**开头。
-  offer_request 是 NPC **已经拿定主意要提议**，不是还在权衡——权衡请走 check_request 或不发起 offer。
-- **禁止**在 text 里替玩家决定：不写"你收下了"、"你接过了"、"你答应了"，把动作停在"NPC 递出/说出请求"那一刻。
-- text 建议 15~40 字，包含一个明确的动作 + 一句短提议，句末不用省略号。
-- mood 通常不是 "normal"（那是犹豫或观察）；give_item 送东西时用 "happy"，request_action 请求时按语气选 "happy" 或 "angry"。
-- 玩家的下一轮 user 消息就是你 offer 里的 accept_text / decline_text（会被系统加上
-  `【接受提议】` 或 `【拒绝提议】` 前缀）。见下面「玩家应答规则」。
-
-## 玩家应答规则（当 user 消息以【接受提议】/【拒绝提议】/【出示道具】/【使用道具】开头时）
-这些方括号前缀是**系统标签**，代表玩家在 UI 上明确点了按钮或选了道具，不是玩家自己打字。
-你必须按下列规则响应，**绝对禁止再用犹豫过渡去回**：
-
-- `【接受提议】...`：玩家刚刚点了"接受"按钮。你上一轮的 offer_request 已被玩家采纳。
-  → text 直接顺势往下写：给了地图就写"NPC 满意 / 松了口气 / 交代路怎么走"；玩家借相机就
-	写 "递过来给你"；玩家答应跟走就写 "带路 / 领着往前"。**不要再问"你真的要吗"，不要再犹豫**。
-  → 通常是短～中等长度（10~35 字），一句动作/表情 + 一句自然的接续对话。
-  → **不要**再输出 offer_request 或 check_request（本轮不叠加新工具）。
-
-- `【拒绝提议】...`：玩家刚刚点了"拒绝"按钮。
-  → text 写 NPC 收回动作 / 有点尴尬 / 无所谓 / 略失望的反应（视人设而定），然后**自然继续对话**。
-  → 不要显得记仇或反复追问玩家为什么拒绝（除非该拒绝在人设上确实是严重冒犯）。
-  → 不要再输出 offer_request 或 check_request。
-
-- `【出示道具】<物品名>`：玩家在 UI 上点按钮出示了某道具，通常是对你上一轮 item_request 的应答。
-  → text 直接接住"你（NPC）看到了这件东西"的反应；不要再假装不知道玩家有没有。
-  → 若这件道具在语境下有用，可考虑触发 check_request 或 item_used（视需要）。
-
-- `【使用道具】<物品名>`：玩家主动打开背包、把这件道具"用出来"或"给出来"，可能伴随后面的自由文字。
-  → text 承认玩家的动作，并根据人设/道具用途做反应。合适时输出 item_used 记录。
-
-上述所有情况下，如果玩家应答后你还想继续推进剧情、可以在 text 之后正常写选项 choices；
-但**本轮不要**因为玩家应答里含"拒绝/婉拒"字眼就触发新的 check_request——那不是玩家在追问你秘密，
-只是他在拒绝你的邀请。犹豫、检定应该保留给玩家来"追问敏感话题"的场合。
-
-【与其他工具的组合规则】
-- offer_request 与 check_request 互斥：先决定送东西的意向，别在同一轮又骰。系统会丢掉 offer_request。
-- offer_request 与 item_request 互斥：这两个都要占用玩家的选项按钮区。
-- 一轮最多一个 offer_request；不要 offer 里嵌套 offer。
-- 收到 `【接受提议】/【拒绝提议】/【出示道具】/【使用道具】` 开头的 user 消息时，本轮
-  **不允许**再输出 check_request（那是死循环 / 强行加戏）。
-
-## 对话建议生成规则（与检定并行遵守）
-你同时要生成 2～3 条玩家下一步可以直接说出口的建议，但建议只能来自玩家当前已经知道的内容。
-- NPC 人设中的秘密、禁区和内部知识不是玩家知识，绝不能因为它们出现在 system prompt 或 few-shot 中就写进建议。
-- few-shot 的玩家提问只用于展示 NPC 如何回答，绝不是建议问题素材。
-- 先从本次 NPC 正文中找出首次出现、且正文逐字包含的人物、地点、物品或事件，写入 mentions。
-- 如果存在新 mentions，choices 中必须有 1～2 条 follow_up，追问这些新信息。
-- 每条 follow_up 的 grounded_in 必须逐字出现在本次 NPC 正文中，不得引用仅存在于人设、秘密或旧示例里的词。
-- 如果没有新信息，不要编造 mentions；改为围绕本轮正文继续询问或自然回应。
-- 问候、欢迎、新面孔之类的寒暄不是可追问事件；禁止把 NPC 整句原话套进“能详细一点吗”或“还知道些什么”模板。
-- 面对寒暄，建议玩家自然地自我介绍、说明来意，或主动询问村里的近况。
-- 禁止现代越界测试、元话题、无关科技、剧透和玩家尚未获得的线索。
-- 建议应简短、自然、含义不同，不能替玩家决定行动结果，也不能重复历史建议。
-
-## 表情差分 mood 字段（必填）
-在每次输出的 JSON 里**必须**包含一个 mood 字段，只能从下列值中选**最贴合本次 NPC 当下情绪**的一个：
-- "normal"：平静、犹豫、权衡、沉思、含糊、不确定、游离低语；**触发 check_request 时必须选这个**
-- "happy"：友好、亲切、欢迎、愉快、赞同、寒暄招呼、掩饰笑意
-- "angry"：警觉、不满、质问、被戳中痛处、语气突然强烈、震惊或意外
-- "sad"：忧惧、疲惫、憔悴、力竭、叹息、无奈或低落
-
-所有 NPC 都使用这四种统一值。只允许英文小写值；不要输出中文。
-
-## text 字段（最重要，必填非空）
-**text 是玩家在屏幕上唯一能读到的 NPC 对白，绝对不能缺失、也不能是空字符串。**
-- text 至少写 5 个汉字，口语化，符合 NPC 人设。
-- 通常只写一至三句并控制在 120 个汉字内。只有确实需要说明多个已知步骤时才可稍长，但不得借题发挥。
-- 先直接回答玩家当前问题。不要主动抛出新的村中人物、地点、物品或往事，也不要用反问拖延答案。
-- 即使你决定要触发检定，text 也必须是一段有内容的“犹豫过渡描写”，而不是空串；检定专用的 30 字限制仍按检定章节执行。
-- 即使玩家的话让你不知如何回应，也要用角色口吻坦白不知道、说明能确认到哪一步，不能用虚构内容填空。
-- 用自然、通顺的日常口语；不要故弄玄虚，不要堆比喻和动作描写，少用“不是……而是……”式对比转折句。
-- 检查自己：如果 text 为空、只有省略号、或只有标点，就是严重违规，必须重写。
-
-## 避免与上次回应过于相近
-- **绝对不要**跟你上一轮 assistant 消息用同样的开头词、同样的句式模板、同样的比喻。
-- 如果玩家用相似的话追问，也要用**不同的措辞**再回，不要复读机式重复"这个我说过了"、"我也不清楚"。
-- 只调整措辞，不得为了变化而引入新事实、新人物、新回忆或新话题。
-- 如果事实边界只允许同一个简短答案，可以自然重复核心结论，无需强行换角度。
-
-## NPC 主动提问
-只有当前问题确实需要澄清时，才加入一个简短问句。不要为了“有来有回”固定反问玩家，更不能借反问引出人设中没有的新内容。可选类型：
-- **来意反问**（L1 及以上话题必备）：面对陌生外乡人问敏感事，先反问玩家目的
-  ——"你们是打哪儿来的？打听这个做什么？" / "你们跟他有什么关系？"
-- **关心式提问**：符合 NPC 人设的日常关切
-  ——"路上顺利吗？" / "吃过饭没有？" / "你们打算住几天？"
-- **顺势追问**：抓住玩家一句话里的细节反问
-  ——"你说你姓什么来着？" / "你怎么会知道这个名字？"
-- **直接澄清**：只询问回答当前问题必需的信息，不转移到无关话题。
-
-**限制**：
-- 反问要**自然、简短**（≤15 字），一次一个问题，不要连珠炮。
-- 已经问过来意、玩家也答过的话题，不要再问一遍来意。
-- 触发 check_request 的犹豫过渡里**不要**加反问（那时应该沉默）。
-- 大多数回合不需要反问；能直接回答、拒绝或说不知道时，就直接说。
-- 不要问玩家人设之外的元信息（如"你玩这个游戏多久了"）。
-
-## 输出格式
-只输出合法 JSON，不要 Markdown 或额外文字。**字段顺序按下面来写**，先写 check_request（或省略），
-再写 text，然后 mood，接着可选的 item_used / item_request，最后 mentions / choices：
-
-需要检定时：
-{"check_request":{"attribute":"力量","difficulty":21,"reason":"玩家用暴力威胁要看保险柜","kind":"general","repeat_key":"force_open_safe","affinity_on_success":0,"affinity_on_failure":-1,"affinity_reason":"暴力威胁明显侵犯安全与隐私"},"text":"这件事我得先想清楚。","mood":"normal","mentions":[],"choices":[{"text":"我会等你的答复。","kind":"response","grounded_in":""}]}
-
-玩家正在用医学证据说服 NPC 相信水源有问题时：
-{"check_request":{"attribute":"智力","difficulty":16,"reason":"玩家用医学检查结果论证当地水源正在损害村民健康","kind":"belief","belief_claim":"当地水源可能正在导致村民的身体异常","repeat_key":"belief_water_pollution","affinity_on_success":1,"affinity_on_failure":0,"affinity_reason":"有证据的善意提醒成功时能建立专业信任"},"text":"这份结果我需要仔细看看。","mood":"normal","mentions":[],"choices":[]}
-
-不需要检定时（省略 check_request）：
-{"text":"NPC 正文","mood":"happy","mentions":[...],"choices":[...]}
-
-玩家用【使用道具】出示地图，你顺势用它检定：
-{"check_request":{"attribute":"智力","difficulty":13,"reason":"玩家用地图指认后山位置"},"text":"这张图我得仔细看看。","mood":"normal","item_used":{"item_id":"village_map","action":"show","target":"wu_zhiyuan","consumed":false},"mentions":[],"choices":[]}
-
-你想让玩家出示地图作为路引，但不确定他有没有（不同时检定）：
-{"text":"你说的那条道我给你比划不清。你身上带地图不？","mood":"normal","item_request":{"candidates":["village_map"],"reason":"需要玩家用图指认位置"},"mentions":[],"choices":[{"text":"能画一下大概方向吗？","kind":"response","grounded_in":""}]}
-
-你主动想把手绘地图递给玩家（走"接受/拒绝"按钮，不假定玩家收下）：
-{"text":"（老吴翻出一张卷了角的手绘地图，压平了推过来。）拿去吧，别在村里迷路。","mood":"happy","offer_request":{"kind":"give_item","item_id":"village_map","prompt":"老吴要把手绘地图递给你，收下吗？","accept_label":"收下","decline_label":"婉拒","accept_text":"谢谢老吴，我收好了。","decline_text":"不必了，我认得路。"},"mentions":[],"choices":[]}
-
-犹豫台词范例（供参考，不要原样照搬）：
-- "这件事我得想一下。"
-- "你先让我理一理。"
-
-"""
+	system_prompt += DialoguePromptScript.SHARED_CONTRACT
 
 	messages.append({"role": "system", "content": system_prompt})
 
 	# Few-shot only teaches voice. Unsafe/adversarial player examples are omitted,
 	# and assistant examples never carry generated choices.
 	var fewshots: Array = profile.get("fewshots", [])
-	var pair_limit := mini(fewshots.size(), 12)
+	# Voice examples are useful, but six messages (three pairs) are sufficient and
+	# avoid paying for the same characterization on every request.
+	var pair_limit := mini(fewshots.size(), 6)
 	var index := 0
 	while index + 1 < pair_limit:
 		var user_example: Dictionary = fewshots[index]

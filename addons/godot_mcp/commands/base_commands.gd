@@ -13,6 +13,7 @@ const RUNTIME_RES := "mcp_runtime_res.json"
 const SCREENSHOT_REQ := "mcp_screenshot_req.json"
 const SCREENSHOT_RES := "mcp_screenshot_res.png"
 const SCREENSHOT_META := "mcp_screenshot_meta.json"
+const RUNTIME_BRIDGE_DISABLED_MESSAGE := "Runtime MCP bridge is disabled for this project; editor MCP commands remain available."
 
 
 func get_commands() -> Dictionary:
@@ -44,34 +45,15 @@ func _user_file(name: String) -> String:
 
 
 func _runtime_call(action: String, params: Dictionary = {}, timeout_sec: float = 5.0) -> Dictionary:
-	if not editor_plugin.get_editor_interface().is_playing_scene():
-		return _err("Game is not running. Use play_scene first.", -32010)
-	var req_path := _user_file(RUNTIME_REQ)
-	var res_path := _user_file(RUNTIME_RES)
-	if FileAccess.file_exists(res_path):
-		DirAccess.remove_absolute(res_path)
-	var file := FileAccess.open(req_path, FileAccess.WRITE)
-	file.store_string(JSON.stringify({"action": action, "params": params}))
-	file.close()
-	var elapsed := 0.0
-	while elapsed < timeout_sec:
-		await editor_plugin.get_tree().create_timer(0.05).timeout
-		elapsed += 0.05
-		if FileAccess.file_exists(res_path):
-			var text := FileAccess.get_file_as_string(res_path)
-			DirAccess.remove_absolute(res_path)
-			var data = JSON.parse_string(text)
-			if data is Dictionary:
-				if data.has("error"):
-					return _err(str(data["error"]))
-				return _ok(data.get("result", data))
-	return _err("Runtime request timed out", -32011)
+	return _err(RUNTIME_BRIDGE_DISABLED_MESSAGE, -32012, {"action": action, "params": params, "timeout": timeout_sec})
 
 
-func _queue_input(events: Array) -> void:
+func _queue_input(events: Array) -> bool:
 	var bridge = _get_input_bridge()
 	if bridge:
 		bridge.queue_events(events)
+		return true
+	return false
 
 
 func _get_input_bridge() -> Node:
@@ -79,6 +61,8 @@ func _get_input_bridge() -> Node:
 
 
 func _request_screenshot(target: String = "editor") -> Dictionary:
+	if target != "editor":
+		return _err(RUNTIME_BRIDGE_DISABLED_MESSAGE, -32012, {"target": target})
 	var req_path := _user_file(SCREENSHOT_REQ)
 	var res_path := _user_file(SCREENSHOT_RES)
 	var meta_path := _user_file(SCREENSHOT_META)

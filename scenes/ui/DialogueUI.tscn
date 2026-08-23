@@ -11,8 +11,8 @@
 [ext_resource type="Texture2D" uid="uid://c85nasqe8ppka" path="res://assets/ui/btn_retry.png" id="15_btn_retry"]
 [ext_resource type="Texture2D" uid="uid://jqexew1m5bk6" path="res://assets/ui/choice_bg.png" id="16_choice_bg"]
 [ext_resource type="Texture2D" uid="uid://xnpnkc8tnxlb" path="res://assets/ui/choice_bg_hover.png" id="17_choice_hover"]
-[ext_resource type="FontFile" uid="uid://cn3n7glq50pbs" path="res://assets/fonts/SourceHanSerifSC-Bold.otf" id="19_font_bold"]
-[ext_resource type="FontFile" path="res://assets/fonts/SourceHanSerifSC-Heavy.otf" id="20_font_heavy"]
+[ext_resource type="Font" path="res://assets/fonts/game_font.tres" id="19_font_bold"]
+[ext_resource type="Font" path="res://assets/fonts/game_font.tres" id="20_font_heavy"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_dlg"]
 bg_color = Color(0, 0, 0, 0)
@@ -147,13 +147,20 @@ theme_override_styles/hover = SubResource("StyleBoxTexture_choice_hover")
 theme_override_styles/focus = SubResource("StyleBoxTexture_choice_hover")
 
 [node name="RegenerateChoices" type="Button" parent="RootPanel/HBox/Center/ChoiceRow"]
-custom_minimum_size = Vector2(112, 40)
+custom_minimum_size = Vector2(168, 40)
 layout_mode = 2
-tooltip_text = "只重新生成对话选项，不追加 NPC 正文"
+tooltip_text = "只重新生成推荐回答，不追加 NPC 正文"
 theme_override_colors/font_color = Color(0.2, 0.15, 0.1, 1)
+theme_override_colors/font_hover_color = Color(0.15, 0.1, 0.06, 1)
+theme_override_colors/font_pressed_color = Color(0.12, 0.08, 0.04, 1)
+theme_override_colors/font_disabled_color = Color(0.35, 0.3, 0.24, 0.55)
 theme_override_fonts/font = ExtResource("19_font_bold")
-theme_override_font_sizes/font_size = 20
-text = "⟳"
+theme_override_font_sizes/font_size = 18
+theme_override_styles/normal = SubResource("StyleBoxTexture_choice_normal")
+theme_override_styles/pressed = SubResource("StyleBoxTexture_choice_normal")
+theme_override_styles/hover = SubResource("StyleBoxTexture_choice_hover")
+theme_override_styles/focus = SubResource("StyleBoxTexture_choice_hover")
+text = "⟳ 重新生成"
 
 [node name="TokenRow" type="HFlowContainer" parent="RootPanel/HBox/Center"]
 visible = false
@@ -224,7 +231,7 @@ theme_override_constants/separation = 16
 [node name="Investigate" type="TextureButton" parent="Actions"]
 custom_minimum_size = Vector2(160, 48)
 layout_mode = 2
-tooltip_text = "打开线索册"
+tooltip_text = "打开线索册（J）"
 texture_normal = ExtResource("10_btn_inv")
 texture_hover = ExtResource("10_btn_inv")
 ignore_texture_size = true
@@ -233,7 +240,7 @@ stretch_mode = 5
 [node name="OpenBag" type="TextureButton" parent="Actions"]
 custom_minimum_size = Vector2(160, 48)
 layout_mode = 2
-tooltip_text = "选择要在本轮对话里使用的道具（可选多个）"
+tooltip_text = "打开背包（I）；对话中可选择要使用的道具"
 texture_normal = ExtResource("11_btn_give")
 texture_hover = ExtResource("11_btn_give")
 ignore_texture_size = true

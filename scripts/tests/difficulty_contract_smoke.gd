@@ -16,6 +16,10 @@ func _run() -> void:
 	if int(capped.get("raw_difficulty", 0)) != CheckSystem.RAW_DIFFICULTY_MAX:
 		_fail("Raw difficulty 30 did not clamp to the contract maximum")
 		return
+	var modifier_breakdown := CheckSystem.get_check_breakdown("力量", 30, 99)
+	if int(modifier_breakdown.get("item_modifier", 0)) != 15:
+		_fail("Item modifier did not clamp to the new fifteen-point contract")
+		return
 
 	var preview := SkillSystem.get_attack_preview("li_leshui_day")
 	if int(preview.get("base_difficulty", 0)) != CheckSystem.RAW_DIFFICULTY_MAX:
@@ -28,6 +32,24 @@ func _run() -> void:
 		return
 	if int(attack.get("final_difficulty", 0)) != int(preview.get("final_difficulty", 0)):
 		_fail("Attack execution and preview use different final difficulties")
+		return
+
+	GameState.add_item("hunting_rifle")
+	var rifle_preview := SkillSystem.get_attack_preview("li_leshui_day", "hunting_rifle")
+	var rifle_attack := SkillSystem.perform_attack_check("li_leshui_day", "hunting_rifle")
+	if int(rifle_preview.get("weapon_reduction", 0)) != 15 or int(rifle_attack.get("item_modifier", 0)) != 15:
+		_fail("Hunting rifle did not apply the documented fifteen-point reduction")
+		return
+	if int(rifle_preview.get("final_difficulty", 0)) != int(rifle_attack.get("final_difficulty", 0)):
+		_fail("Hunting rifle preview and execution use different final difficulties")
+		return
+	var altar_rifle_preview := SkillSystem.get_altar_attack_preview("hunting_rifle")
+	var altar_rifle_attack := SkillSystem.perform_altar_attack_check("hunting_rifle")
+	if int(altar_rifle_preview.get("weapon_reduction", 0)) != 15 or int(altar_rifle_attack.get("item_modifier", 0)) != 15:
+		_fail("Altar attack still caps the hunting rifle at ten")
+		return
+	if int(altar_rifle_preview.get("final_difficulty", 0)) != int(altar_rifle_attack.get("final_difficulty", 0)):
+		_fail("Altar rifle preview and execution use different final difficulties")
 		return
 
 	var clinic_scene := load("res://scenes/locations/AbandonedClinic.tscn") as PackedScene

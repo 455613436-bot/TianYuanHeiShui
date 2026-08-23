@@ -185,18 +185,17 @@ func get_attack_preview(npc_id: String, weapon_id: String = "") -> Dictionary:
 		story_reduction_reasons.append("祭坛已被摧毁")
 	base_difficulty = maxi(CheckSystem.RAW_DIFFICULTY_MIN, base_difficulty - story_reduction)
 	var reduction := _attack_weapon_reduction(weapon_id)
-	var attribute := GameState.get_attribute("strength")
-	var final_difficulty := clampi(base_difficulty - attribute - reduction, CheckSystem.MIN_DIFFICULTY, CheckSystem.MAX_DIFFICULTY)
+	var breakdown := CheckSystem.get_check_breakdown("strength", base_difficulty, reduction)
 	return {
-		"base_difficulty": base_difficulty,
+		"base_difficulty": int(breakdown.get("raw_difficulty", base_difficulty)),
 		"offering_penalty": offering_penalty,
 		"seal_reduction": story_reduction,
 		"story_reduction_reason": "、".join(story_reduction_reasons),
-		"weapon_reduction": reduction,
+		"weapon_reduction": int(breakdown.get("item_modifier", reduction)),
 		"weapon_id": weapon_id,
 		"weapon_name": "徒手" if weapon_id.is_empty() else ItemDB.get_display_name(weapon_id),
-		"strength": attribute,
-		"final_difficulty": final_difficulty,
+		"strength": int(breakdown.get("attribute_value", 0)),
+		"final_difficulty": int(breakdown.get("final_difficulty", CheckSystem.MIN_DIFFICULTY)),
 	}
 
 
@@ -217,17 +216,15 @@ func perform_attack_check(npc_id: String, weapon_id: String = "") -> Dictionary:
 
 func get_altar_attack_preview(weapon_id: String = "") -> Dictionary:
 	var base_difficulty := 20
-	# CheckSystem 对物品修正的有效范围是 -10..10；预览使用相同的有效值，
-	# 避免攻击确认页显示的最终难度与实际掷骰不一致。
-	var reduction := mini(_attack_weapon_reduction(weapon_id), 10)
-	var attribute := GameState.get_attribute("strength")
+	var reduction := _attack_weapon_reduction(weapon_id)
+	var breakdown := CheckSystem.get_check_breakdown("strength", base_difficulty, reduction)
 	return {
-		"base_difficulty": base_difficulty,
-		"weapon_reduction": reduction,
+		"base_difficulty": int(breakdown.get("raw_difficulty", base_difficulty)),
+		"weapon_reduction": int(breakdown.get("item_modifier", reduction)),
 		"weapon_id": weapon_id,
 		"weapon_name": "徒手" if weapon_id.is_empty() else ItemDB.get_display_name(weapon_id),
-		"strength": attribute,
-		"final_difficulty": clampi(base_difficulty - attribute - reduction, CheckSystem.MIN_DIFFICULTY, CheckSystem.MAX_DIFFICULTY),
+		"strength": int(breakdown.get("attribute_value", 0)),
+		"final_difficulty": int(breakdown.get("final_difficulty", CheckSystem.MIN_DIFFICULTY)),
 	}
 
 

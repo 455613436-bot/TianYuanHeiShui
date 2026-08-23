@@ -160,6 +160,14 @@ func is_request_active(request_id: int) -> bool:
 	return _inflight.has(request_id)
 
 
+func fast_forward_request(request_id: int) -> bool:
+	if not _inflight.has(request_id) or _provider == null:
+		return false
+	if not _provider.has_method("fast_forward_request"):
+		return false
+	return bool(_provider.fast_forward_request(request_id))
+
+
 ## ─── 记忆总结通道 ──────────────────────────────────────────────
 ## 由 MemoryStore/DialogueUI 触发，用于把最近若干轮对话浓缩到 NPC 的记忆文档里。
 ## 与常规对话请求隔离，不占用 request_id 序列，不影响 UI 的 pending state。

@@ -12,7 +12,7 @@ const ROW_TEXTURES := {
 }
 const MINUS_TEXTURE := preload("res://assets/ui/attribute_allocation/button_minus.png")
 const PLUS_TEXTURE := preload("res://assets/ui/attribute_allocation/button_plus.png")
-const UI_FONT := preload("res://assets/fonts/SourceHanSerifSC-SemiBold.otf")
+const UI_FONT := preload("res://assets/fonts/SourceHanSerifSC-Game.otf")
 
 @onready var remaining_label: Label = $Paper/Content/RemainingFrame/RemainingLabel
 @onready var start_btn: TextureButton = $Paper/Content/Footer/StartBtn

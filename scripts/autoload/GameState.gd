@@ -51,7 +51,8 @@ var inventory: Array[String] = []
 var clues: Dictionary = {}
 ## 场景资料线索册，元素为 {id, title, summary, image_path, linked_clue_ids}，按发现顺序保存。
 var document_clues: Array[Dictionary] = []
-## 玩家四维属性，0-5；首次启动前为空 -> attributes_allocated()==false 时应该跳转到属性分配 UI
+## 玩家四维基础属性；初始分配为 0-5，剧情永久成长可以突破 5。
+## 首次启动前为空 -> attributes_allocated()==false 时应该跳转到属性分配 UI。
 var attributes: Dictionary = {}
 var attributes_locked_in: bool = false
 ## 持久性属性调整用于未清洁惩罚；每天增益单独结算，不污染初始属性分配。
@@ -686,14 +687,25 @@ func rest_at_location(location_id: String) -> bool:
 
 
 func _apply_morning_status(completed_day: int) -> Dictionary:
+	var previous_daily_bonuses: Dictionary = daily_attribute_bonuses.duplicate(true)
+	var before_values := _attribute_values_snapshot()
+	var charisma_adjustment_before := int(attribute_adjustments.get("charisma", 0))
 	daily_attribute_bonuses = {}
 	# 每天早九点结算前一日清洁状态：未洗澡降低魅力，洗澡则维持初始魅力。
-	if has_showered_on_day(completed_day):
+	var showered := has_showered_on_day(completed_day)
+	if showered:
 		attribute_adjustments["charisma"] = 0
 	else:
 		var base_charisma := int(attributes.get("charisma", 0))
 		var current_adjustment := int(attribute_adjustments.get("charisma", 0))
 		attribute_adjustments["charisma"] = max(-base_charisma, current_adjustment - 1)
+	var charisma_adjustment_after := int(attribute_adjustments.get("charisma", 0))
+	var cleanliness := {
+		"showered": showered,
+		"charisma_adjustment_before": charisma_adjustment_before,
+		"charisma_adjustment_after": charisma_adjustment_after,
+		"charisma_adjustment_delta": charisma_adjustment_after - charisma_adjustment_before,
+	}
 
 	var report := {
 		"day": TimeSystem.current_day,
@@ -701,47 +713,129 @@ func _apply_morning_status(completed_day: int) -> Dictionary:
 		"title": "清晨",
 		"pages": [],
 		"ending_id": "",
+		"attribute_changes": [],
+		"cleanliness": cleanliness,
 	}
-	var offering_gained: PackedStringArray = []
+	var pages: Array[String] = []
 	if bool(ritual_offering_days.get(str(completed_day), false)):
 		for key in ATTRIBUTE_KEYS:
-			if _grant_daily_attribute_bonus(key):
-				offering_gained.append("%s +1" % ATTRIBUTE_LABELS.get(key, key))
-		if not offering_gained.is_empty():
-			report["show"] = true
-			report["pages"] = ["昨夜祭台上的供品似乎仍在回应你。\n\n[color=sea_green]今日增益：%s[/color]" % "、".join(offering_gained)]
+			_grant_daily_attribute_bonus(key)
+		pages.append("昨夜祭台上的供品似乎仍在回应你。它带来的力量只在今天有效。")
 	# 兼容已经看过最高侵蚀文本、却因旧逻辑未结算结局的存档：达到最高阶段后，
 	# 即使当天没有再次接触水，下一次清晨也会重新显示最终文本并进入结局。
-	if not has_contacted_water_on_day(completed_day) and water_contact_count < 6:
-		attributes_changed.emit()
-		return report
+	if has_contacted_water_on_day(completed_day) or water_contact_count >= 6:
+		var level := _water_contact_level()
+		pages.append(_water_contact_text(level))
+		match level:
+			1:
+				_grant_daily_attribute_bonus("agility")
+			2:
+				_grant_daily_attribute_bonus("agility")
+				_grant_daily_attribute_bonus("strength")
+			3, 4:
+				for key in ATTRIBUTE_KEYS:
+					_grant_daily_attribute_bonus(key)
+			5:
+				# 由宿舍清晨弹窗在玩家确认这段文字后触发，避免结局遮住阶段文本。
+				report["ending_id"] = "pollution_follower"
 
-	var level := _water_contact_level()
-	var text := _water_contact_text(level)
-	var gained: PackedStringArray = []
-	match level:
-		1:
-			if _grant_daily_attribute_bonus("agility"):
-				gained.append("敏捷 +1")
-		2:
-			if _grant_daily_attribute_bonus("agility"):
-				gained.append("敏捷 +1")
-			if _grant_daily_attribute_bonus("strength"):
-				gained.append("力量 +1")
-		3, 4:
-			for key in ATTRIBUTE_KEYS:
-				if _grant_daily_attribute_bonus(key):
-					gained.append("%s +1" % ATTRIBUTE_LABELS.get(key, key))
-		5:
-			# 最高水侵蚀阶段过去只显示异变文字，却没有接入污染结局。
-			# 由宿舍清晨弹窗在玩家确认这段文字后触发，避免结局遮住阶段文本。
-			report["ending_id"] = "pollution_follower"
-	if not gained.is_empty():
-		text += "\n\n[color=sea_green]今日增益：%s[/color]" % "、".join(gained)
-	report["show"] = true
-	report["pages"] = [text]
+	var after_values := _attribute_values_snapshot()
+	var attribute_changes := _build_morning_attribute_changes(
+		before_values,
+		after_values,
+		previous_daily_bonuses,
+		daily_attribute_bonuses
+	)
+	report["attribute_changes"] = attribute_changes
+	var status_page := _format_morning_attribute_status(attribute_changes, cleanliness)
+	if not status_page.is_empty():
+		pages.append(status_page)
+	report["show"] = not pages.is_empty()
+	report["pages"] = pages
 	attributes_changed.emit()
 	return report
+
+
+func _attribute_values_snapshot() -> Dictionary:
+	var values := {}
+	for key in ATTRIBUTE_KEYS:
+		values[key] = get_attribute(key)
+	return values
+
+
+func _build_morning_attribute_changes(
+	before_values: Dictionary,
+	after_values: Dictionary,
+	previous_bonuses: Dictionary,
+	current_bonuses: Dictionary
+) -> Array[Dictionary]:
+	var changes: Array[Dictionary] = []
+	for key in ATTRIBUTE_KEYS:
+		var before := int(before_values.get(key, 0))
+		var after := int(after_values.get(key, 0))
+		var previous_bonus := int(previous_bonuses.get(key, 0))
+		var current_bonus := int(current_bonuses.get(key, 0))
+		if before == after and previous_bonus == 0 and current_bonus == 0:
+			continue
+		var status := "maintained"
+		if current_bonus == 0 and previous_bonus > 0:
+			status = "expired"
+		elif previous_bonus == 0 and current_bonus > 0:
+			status = "added"
+		elif current_bonus > previous_bonus:
+			status = "increased"
+		elif current_bonus < previous_bonus:
+			status = "reduced"
+		elif current_bonus == 0:
+			status = "increased" if after > before else "reduced"
+		changes.append({
+			"key": key,
+			"label": String(ATTRIBUTE_LABELS.get(key, key)),
+			"before": before,
+			"after": after,
+			"previous_bonus": previous_bonus,
+			"current_bonus": current_bonus,
+			"status": status,
+		})
+	return changes
+
+
+func _format_morning_attribute_status(changes: Array[Dictionary], cleanliness: Dictionary) -> String:
+	if changes.is_empty() and int(cleanliness.get("charisma_adjustment_delta", 0)) == 0:
+		return ""
+	var lines: PackedStringArray = [
+		"[b]清晨状态结算[/b]",
+		"每日临时加成会在下一次清晨重新结算，不会永久累计。",
+	]
+	var cleanliness_delta := int(cleanliness.get("charisma_adjustment_delta", 0))
+	if cleanliness_delta < 0:
+		lines.append("[color=indian_red]昨日未洗澡：魅力持续调整 %d。洗澡后可恢复。[/color]" % cleanliness_delta)
+	elif cleanliness_delta > 0:
+		lines.append("[color=sea_green]清洁状态改善：魅力持续调整 +%d。[/color]" % cleanliness_delta)
+	for change in changes:
+		var label := String(change.get("label", "属性"))
+		var before := int(change.get("before", 0))
+		var after := int(change.get("after", 0))
+		var previous_bonus := int(change.get("previous_bonus", 0))
+		var current_bonus := int(change.get("current_bonus", 0))
+		match String(change.get("status", "")):
+			"added":
+				lines.append("新增临时加成：%s +%d（%d → %d）" % [label, current_bonus, before, after])
+			"increased":
+				if current_bonus > 0:
+					lines.append("临时加成提升：%s +%d → +%d（%d → %d）" % [label, previous_bonus, current_bonus, before, after])
+				else:
+					lines.append("属性变化：%s（%d → %d）" % [label, before, after])
+			"maintained":
+				lines.append("维持临时加成：%s +%d（%d → %d）" % [label, current_bonus, before, after])
+			"reduced":
+				if current_bonus > 0:
+					lines.append("临时加成降低：%s +%d → +%d（%d → %d）" % [label, previous_bonus, current_bonus, before, after])
+				else:
+					lines.append("属性变化：%s（%d → %d）" % [label, before, after])
+			"expired":
+				lines.append("昨日临时加成失效：%s（%d → %d）" % [label, before, after])
+	return "\n".join(lines)
 
 
 func _grant_daily_attribute_bonus(key: String) -> bool:
@@ -766,15 +860,15 @@ func _water_contact_level() -> int:
 func _water_contact_text(level: int) -> String:
 	match level:
 		1:
-			return "你脑海中浮现出一段模糊的儿时记忆，随之而来的是一种难以言喻的幸福感，它恰到好处地将你温柔地包裹。你手脚变得轻快，各种担忧和疲惫也一扫而空。"
+			return "清晨醒来时，你想起一段并不存在的童年：窗外有水声，某个模糊的声音在反复呼唤你的名字。记忆很快消失，只留下异常轻快的脚步和挥之不去的安宁。"
 		2:
-			return "有一个瞬间，你似乎回到了温暖、黑暗、湿润的子宫，急切地想与那流动的血肉贴合。下一刻你回到了熟悉的村庄，正用力呼吸着附近潮湿的空气。你擦掉额头上的汗珠，感受着一阵令人兴奋的眩晕。"
+			return "你梦见自己站在一片没有倒影的黑水前。水面下传来缓慢而整齐的敲击声，像在模仿你的心跳。醒来后，村庄的道路显得比昨天更熟悉，仿佛有什么东西替你记住了这里。"
 		3:
-			return "低头抬头间，你感到焕然一新，仿佛身体重新被注入了更有力量的血液，它们汩汩地涌向每一块肌肉。身上的衣服穿着很紧，你想挣开衣服，用皮肤感受这块你无比着迷的土地。你的耳边响起难以分辨的低语。"
+			return "清晨的村庄短暂出现了重影。屋檐、树影和远山都朝同一个方向微微倾斜，耳边的低语开始组成零碎词句。几秒后景象恢复正常，但你无法确定哪一层才是真实。"
 		4:
-			return "你的根在地下紧握，你的叶与白云相触。你感知着身边一切事物的力量，他们也都欣欣向荣，像你一样。你不禁迈着大步前进，脚下的频率使你难以保持平衡。你的五官变得肿胀，你的衣服也崩开了。你只想与这离不开的地方融为一体。"
+			return "你醒来时确信自己已经在村里生活了很多年。陌生人的面孔变得亲切，地图上的危险地点也显得值得依赖。直到钟声响起，那些不属于你的记忆才像退潮一样散去。"
 		_:
-			return "耳边的声音如此清晰、亲切：利库伊！生命之源！利库伊利库伊利库伊利库伊……海又升起，让水淹没。"
+			return "耳边的低语终于清晰：利库伊，生命之源。它不断重复这句话，并试图替你解释每一处异常。你知道那不是自己的念头，却越来越难以拒绝。"
 
 
 func change_scene(scene_path: String, remember_return: bool = false, autosave: bool = true) -> Error:
@@ -1034,14 +1128,35 @@ func get_manual_save_path(slot: int) -> String:
 	return "user://save_%02d.json" % safe_slot
 
 
+func get_manual_save_availability() -> Dictionary:
+	if is_game_ended():
+		return {"allowed": false, "reason": "结局阶段不能保存。"}
+	if not attributes_allocated():
+		return {"allowed": false, "reason": "完成初始属性分配后才能保存。"}
+	var scene_path := current_scene_path.strip_edges()
+	var is_exploration_scene := (
+		scene_path == MAP_SCENE
+		or scene_path.begins_with("res://scenes/locations/")
+		or scene_path.begins_with("res://scenes/main/")
+	)
+	if not is_exploration_scene:
+		return {"allowed": false, "reason": "当前阶段不能保存。"}
+	return {"allowed": true, "reason": ""}
+
+
 func get_save_metadata(path: String) -> Dictionary:
 	var result := {
 		"path": path,
 		"exists": FileAccess.file_exists(path),
 		"valid": false,
+		"save_kind": "",
 		"saved_at_unix": 0,
 		"saved_at_text": "",
 		"current_scene": "",
+		"location_id": "",
+		"location_name": "",
+		"day": 0,
+		"minute_of_day": 0,
 		"player_name": "",
 	}
 	if not result["exists"]:
@@ -1057,9 +1172,21 @@ func get_save_metadata(path: String) -> Dictionary:
 	if not (version is int or version is float) or not READABLE_SAVE_VERSIONS.has(int(version)):
 		return result
 	result["valid"] = true
+	result["save_kind"] = _safe_string(parsed.get("save_kind", "manual"), "manual")
 	result["saved_at_unix"] = _safe_int(parsed.get("saved_at_unix", 0), 0)
 	result["saved_at_text"] = _safe_string(parsed.get("saved_at_text", ""), "")
-	result["current_scene"] = _safe_string(parsed.get("current_scene", ""), "")
+	var scene_path := _safe_string(parsed.get("current_scene", ""), "")
+	result["current_scene"] = scene_path
+	var metadata_scene := scene_path
+	if scene_path == MAP_SCENE:
+		metadata_scene = _safe_string(parsed.get("map_return_scene", DEFAULT_MAP_RETURN_SCENE), DEFAULT_MAP_RETURN_SCENE)
+	var location_id := NpcRegistry.location_id_for_scene(metadata_scene)
+	result["location_id"] = location_id
+	result["location_name"] = NpcRegistry.get_location_name(location_id) if not location_id.is_empty() else ("村庄地图" if scene_path == MAP_SCENE else "未知地点")
+	var time_data: Variant = parsed.get("time_system", {})
+	if time_data is Dictionary:
+		result["day"] = maxi(1, _safe_int(time_data.get("current_day", 1), 1))
+		result["minute_of_day"] = clampi(_safe_int(time_data.get("minute_of_day", 0), 0), 0, TimeSystem.MINUTES_PER_DAY - 1)
 	result["player_name"] = _safe_string(parsed.get("player_name", ""), "")
 	return result
 

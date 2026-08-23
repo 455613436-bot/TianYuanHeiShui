@@ -29,6 +29,8 @@ extends Node
 const CFG_PATH_USER := "user://llm_config.json"
 const CFG_PATH_PROJECT := "res://llm_config.json"
 const OpenAILLMScript := preload("res://scripts/llm/OpenAILLM.gd")
+const WEB_PROXY_BASE_URL := "https://tianyuan-d2gp9x5bs80abb529-1313548210.ap-shanghai.app.tcloudbase.com/siyuan-llm-proxy/v1"
+const WEB_PROXY_MODEL := "qwen-flash"
 
 ## 各家 API 的默认 base_url + 默认模型名映射
 const PRESETS := {
@@ -48,6 +50,12 @@ func _ready() -> void:
 
 
 func _auto_detect_and_apply() -> void:
+	# 浏览器中的任何配置文件和请求头都可被玩家读取。Web 版只能访问
+	# CloudBase 代理，真实 QWEN_API_KEY 由云函数环境变量提供。
+	if OS.has_feature("web"):
+		apply_web_proxy()
+		return
+
 	# 1. 项目内 res://llm_config.json（最方便，直接放项目根即可）
 	if _try_load_from(CFG_PATH_PROJECT):
 		return
@@ -101,8 +109,8 @@ func apply_dict(cfg: Dictionary) -> void:
 
 
 ## 装载一个 OpenAI 兼容 Provider
-func apply_openai_compatible(api_key: String, base_url: String, model: String) -> void:
-	if api_key.strip_edges() == "":
+func apply_openai_compatible(api_key: String, base_url: String, model: String, send_authorization: bool = true) -> void:
+	if send_authorization and api_key.strip_edges() == "":
 		push_warning("[LLMConfig] api_key 为空，忽略切换请求")
 		return
 	if base_url.strip_edges() == "":
@@ -115,8 +123,14 @@ func apply_openai_compatible(api_key: String, base_url: String, model: String) -
 	p.api_key = api_key
 	p.base_url = base_url
 	p.model_name = model
+	p.send_authorization = send_authorization
 	LLMService.set_provider(p)
-	print("[LLMConfig] Provider -> OpenAI 兼容: %s (%s)" % [base_url, model])
+	var route_kind := "直连" if send_authorization else "CloudBase 代理"
+	print("[LLMConfig] Provider -> %s: %s (%s)" % [route_kind, base_url, model])
+
+
+func apply_web_proxy() -> void:
+	apply_openai_compatible("", WEB_PROXY_BASE_URL, WEB_PROXY_MODEL, false)
 
 
 ## 主动切回 Mock（调试用）

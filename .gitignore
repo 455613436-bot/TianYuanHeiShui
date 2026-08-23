@@ -5,6 +5,11 @@ llm_trace/
 .godot/
 .vscode/
 
+# Generated Web export and local tool caches
+dist/
+tools/__pycache__/
+*.pyc
+
 # Original asset folder (used as source, not in game)
 ui切图/
 
@@ -13,4 +18,3 @@ ui切图/
 
 # LLM config (contains API key)
 llm_config.json
-

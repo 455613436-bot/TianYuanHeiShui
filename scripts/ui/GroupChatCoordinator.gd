@@ -261,6 +261,12 @@ func is_active() -> bool:
 	return _active
 
 
+func fast_forward_current_reply() -> bool:
+	if not _active or _active_request_id == 0:
+		return false
+	return LLMService.fast_forward_request(_active_request_id)
+
+
 func current_round() -> int:
 	return _round
 

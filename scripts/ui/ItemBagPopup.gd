@@ -35,6 +35,7 @@ var _selection_mode: String = "dialogue"
 
 
 func _ready() -> void:
+	add_to_group("investigation_ui")
 	close_btn.pressed.connect(_on_close_pressed)
 	_apply_shared_panel_style()
 
@@ -42,7 +43,6 @@ func _ready() -> void:
 ## 打开弹窗；inventory 是玩家背包 id 数组；disabled_ids 是已经插入过输入区、要变灰的 id
 func open_ui(inventory: Array, disabled_ids: Array, allow_use: bool = true) -> void:
 	visible = true
-	add_to_group("investigation_ui")
 	_selection_mode = "dialogue" if allow_use else "browse"
 	title_label.text = "打开背包 · 使用或检视物品" if allow_use else "背包"
 	hint_label.text = "提示：使用可把道具加入当前对话；检视可查看详细说明。" if allow_use else "查看当前持有的全部物品。"
@@ -68,6 +68,18 @@ func close_ui() -> void:
 		_inspect_popup.close_ui()
 	visible = false
 	closed.emit()
+
+
+func is_ui_open() -> bool:
+	return visible
+
+
+func close_top_ui() -> void:
+	close_ui()
+
+
+func shortcut_page_id() -> String:
+	return "inventory" if _selection_mode in ["dialogue", "browse"] else _selection_mode
 
 
 func _rebuild(inventory: Array) -> void:
@@ -251,15 +263,3 @@ func _on_inspect_closed() -> void:
 
 func _on_close_pressed() -> void:
 	close_ui()
-
-
-func _unhandled_input(event: InputEvent) -> void:
-	if not visible:
-		return
-	# 若检视弹窗开着，让它自己吃 Esc（它 layer 更高）
-	if is_instance_valid(_inspect_popup) and _inspect_popup.visible:
-		return
-	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_ESCAPE:
-			close_ui()
-			get_viewport().set_input_as_handled()

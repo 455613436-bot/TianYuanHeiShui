@@ -44,6 +44,7 @@ var _force_acknowledgement := false
 func _ready() -> void:
 	layer = 20
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	add_to_group("modal_ui")
 	_build_shell()
 
 
@@ -329,6 +330,20 @@ func close_interaction() -> void:
 		SceneItemInteraction.show_content_added_toast(String(deferred_clue_entry.get("title", "资料")), "线索册")
 	if closing_document:
 		document_closed.emit()
+
+
+func is_ui_open() -> bool:
+	return _overlay != null and _overlay.visible
+
+
+func close_top_ui() -> void:
+	if _force_acknowledgement:
+		return
+	close_interaction()
+
+
+func can_close_for_navigation() -> bool:
+	return not _force_acknowledgement and not _waiting_for_result
 
 
 ## 通用顶部加入通知，今后的线索、背包物品和技能系统均可复用。
@@ -658,15 +673,3 @@ func _show() -> void:
 func _on_dimmer_input(event: InputEvent) -> void:
 	if not _force_acknowledgement and event is InputEventMouseButton and event.pressed:
 		close_interaction()
-
-
-func _unhandled_input(event: InputEvent) -> void:
-	if _overlay == null or not _overlay.visible:
-		return
-	if event.is_action_pressed("cancel_or_back"):
-		if _force_acknowledgement:
-			get_viewport().set_input_as_handled()
-			return
-		close_interaction()
-		get_viewport().set_input_as_handled()
-		return

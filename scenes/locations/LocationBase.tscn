@@ -131,7 +131,7 @@ offset_top = 24.0
 offset_right = -24.0
 offset_bottom = 76.0
 grow_horizontal = 0
-text = "打开地图  M / Esc"
+text = "打开地图  M"
 theme_override_font_sizes/font_size = 19
 
 [node name="NpcSpawner" type="Node2D" parent="."]

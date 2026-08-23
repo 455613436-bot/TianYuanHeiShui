@@ -6,7 +6,7 @@
 [ext_resource type="Texture2D" path="res://assets/ui/attribute_allocation/remaining_frame.png" id="4_remaining"]
 [ext_resource type="Texture2D" path="res://assets/ui/attribute_allocation/button_reset.png" id="5_reset"]
 [ext_resource type="Texture2D" path="res://assets/ui/attribute_allocation/button_start.png" id="6_start"]
-[ext_resource type="FontFile" path="res://assets/fonts/SourceHanSerifSC-SemiBold.otf" id="7_font"]
+[ext_resource type="Font" path="res://assets/fonts/game_font.tres" id="7_font"]
 
 [node name="AttributeAllocation" type="Control"]
 layout_mode = 3
@@ -103,7 +103,7 @@ offset_bottom = 124.0
 theme_override_colors/font_color = Color(0.295, 0.22, 0.13, 0.9)
 theme_override_fonts/font = ExtResource("7_font")
 theme_override_font_sizes/font_size = 12
-text = "你可以分配属性点来塑造你的调查员，不同的属性将影响你在思源村的经历与选择"
+text = "初始属性每项 0–5、总计 10；剧情永久成长可突破 5 且无最终硬上限；每日临时加成次日刷新"
 horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 2

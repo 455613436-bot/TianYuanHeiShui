@@ -7,26 +7,30 @@ var _recording: Array = []
 
 func get_commands() -> Dictionary:
 	return {
-		"get_game_scene_tree": _get_game_scene_tree,
-		"get_game_node_properties": _get_game_node_properties,
-		"set_game_node_property": _set_game_node_property,
-		"execute_game_script": _execute_game_script,
-		"capture_frames": _capture_frames,
-		"monitor_properties": _monitor_properties,
-		"start_recording": _start_recording,
-		"stop_recording": _stop_recording,
-		"replay_recording": _replay_recording,
-		"find_nodes_by_script": _find_nodes_by_script,
-		"get_autoload": _get_autoload,
-		"batch_get_properties": _batch_get_properties,
-		"find_ui_elements": _find_ui_elements,
-		"click_button_by_text": _click_button_by_text,
-		"wait_for_node": _wait_for_node,
-		"find_nearby_nodes": _find_nearby_nodes,
-		"navigate_to": _navigate_to,
-		"move_to": _move_to,
-		"watch_signals": _watch_signals,
+		"get_game_scene_tree": _runtime_disabled,
+		"get_game_node_properties": _runtime_disabled,
+		"set_game_node_property": _runtime_disabled,
+		"execute_game_script": _runtime_disabled,
+		"capture_frames": _runtime_disabled,
+		"monitor_properties": _runtime_disabled,
+		"start_recording": _runtime_disabled,
+		"stop_recording": _runtime_disabled,
+		"replay_recording": _runtime_disabled,
+		"find_nodes_by_script": _runtime_disabled,
+		"get_autoload": _runtime_disabled,
+		"batch_get_properties": _runtime_disabled,
+		"find_ui_elements": _runtime_disabled,
+		"click_button_by_text": _runtime_disabled,
+		"wait_for_node": _runtime_disabled,
+		"find_nearby_nodes": _runtime_disabled,
+		"navigate_to": _runtime_disabled,
+		"move_to": _runtime_disabled,
+		"watch_signals": _runtime_disabled,
 	}
+
+
+func _runtime_disabled(params: Dictionary) -> Dictionary:
+	return _err(RUNTIME_BRIDGE_DISABLED_MESSAGE, -32012, {"params": params})
 
 
 func _get_game_scene_tree(_p: Dictionary) -> Dictionary:

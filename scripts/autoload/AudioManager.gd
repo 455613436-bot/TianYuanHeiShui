@@ -45,6 +45,7 @@ var _current_track_path := ""
 var _bgm_tween: Tween
 var _bgm_bus_tween: Tween
 var _map_bgm_ducked := false
+var _web_bgm_retry_attempted := false
 
 
 func _ready() -> void:
@@ -57,6 +58,18 @@ func _ready() -> void:
 	if not get_tree().node_added.is_connected(_on_tree_node_added):
 		get_tree().node_added.connect(_on_tree_node_added)
 	call_deferred("_scan_current_scene_buttons")
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not OS.has_feature("web") or _web_bgm_retry_attempted:
+		return
+	var is_unlock_input: bool = (
+		(event is InputEventMouseButton and event.pressed)
+		or (event is InputEventScreenTouch and event.pressed)
+		or (event is InputEventKey and event.pressed and not event.echo)
+	)
+	if is_unlock_input:
+		retry_current_bgm_if_needed()
 
 
 func _ensure_audio_bus(bus_name: StringName) -> void:
@@ -168,6 +181,30 @@ func play_location_bgm(location_id: String) -> void:
 		_play_bgm("fallback:%s" % location_id, FALLBACK_BGM_PATH)
 		return
 	_play_bgm("location:%s" % location_id, path)
+
+
+func retry_current_bgm_if_needed() -> bool:
+	if _bgm_players.is_empty():
+		return false
+	var active_player := _bgm_players[_active_bgm_index]
+	if not OS.has_feature("web"):
+		return active_player.playing
+	if _web_bgm_retry_attempted:
+		return active_player.playing
+	_web_bgm_retry_attempted = true
+	if _current_track_key.is_empty() or _current_track_path.is_empty():
+		return false
+	var track_key := _current_track_key
+	var track_path := _current_track_path
+	if _bgm_tween != null and _bgm_tween.is_valid():
+		_bgm_tween.kill()
+	for player in _bgm_players:
+		player.stop()
+		player.volume_db = -80.0
+	_current_track_key = ""
+	_current_track_path = ""
+	_play_bgm(track_key, track_path)
+	return _bgm_players[_active_bgm_index].playing
 
 
 func _play_bgm(track_key: String, path: String) -> void:
@@ -321,10 +358,12 @@ func _bind_button(node: Node) -> void:
 
 
 func _on_button_pressed(button: BaseButton) -> void:
+	retry_current_bgm_if_needed()
 	play_sfx(_button_effect_id(button))
 
 
 func _on_option_selected(_index: int, option: OptionButton) -> void:
+	retry_current_bgm_if_needed()
 	var explicit_id := String(option.get_meta(BUTTON_SFX_META, "")).strip_edges()
 	play_sfx(explicit_id if not explicit_id.is_empty() else "select")
 

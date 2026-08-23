@@ -28,6 +28,7 @@ var _submitted := false
 func _ready() -> void:
 	layer = 20
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	add_to_group("modal_ui")
 	_build_shell()
 
 
@@ -337,6 +338,18 @@ func close_interaction() -> void:
 	closed.emit()
 
 
+func is_ui_open() -> bool:
+	return _overlay != null and _overlay.visible
+
+
+func close_top_ui() -> void:
+	close_interaction()
+
+
+func can_close_for_navigation() -> bool:
+	return true
+
+
 func _reset() -> void:
 	if _rows_box != null:
 		for child in _rows_box.get_children():
@@ -354,11 +367,3 @@ func _reset() -> void:
 func _on_dimmer_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed:
 		close_interaction()
-
-
-func _unhandled_input(event: InputEvent) -> void:
-	if _overlay == null or not _overlay.visible:
-		return
-	if event.is_action_pressed("cancel_or_back"):
-		close_interaction()
-		get_viewport().set_input_as_handled()

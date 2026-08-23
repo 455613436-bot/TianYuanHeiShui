@@ -14,45 +14,50 @@ func get_commands() -> Dictionary:
 
 
 func _simulate_key(params: Dictionary) -> Dictionary:
-	_queue_input([{
+	if not _queue_input([{
 		"type": "key",
 		"keycode": int(params.get("keycode", KEY_SPACE)),
 		"pressed": params.get("pressed", true),
-	}])
+	}]):
+		return _err(RUNTIME_BRIDGE_DISABLED_MESSAGE, -32012)
 	return _ok({"queued": true})
 
 
 func _simulate_mouse_click(params: Dictionary) -> Dictionary:
-	_queue_input([{
+	if not _queue_input([{
 		"type": "mouse_click",
 		"x": float(params.get("x", 0)),
 		"y": float(params.get("y", 0)),
 		"button": int(params.get("button", MOUSE_BUTTON_LEFT)),
-	}])
+	}]):
+		return _err(RUNTIME_BRIDGE_DISABLED_MESSAGE, -32012)
 	return _ok({"queued": true})
 
 
 func _simulate_mouse_move(params: Dictionary) -> Dictionary:
-	_queue_input([{
+	if not _queue_input([{
 		"type": "mouse_move",
 		"x": float(params.get("x", 0)),
 		"y": float(params.get("y", 0)),
-	}])
+	}]):
+		return _err(RUNTIME_BRIDGE_DISABLED_MESSAGE, -32012)
 	return _ok({"queued": true})
 
 
 func _simulate_action(params: Dictionary) -> Dictionary:
-	_queue_input([{
+	if not _queue_input([{
 		"type": "action",
 		"action": str(params.get("action", "")),
 		"pressed": params.get("pressed", true),
-	}])
+	}]):
+		return _err(RUNTIME_BRIDGE_DISABLED_MESSAGE, -32012)
 	return _ok({"queued": true})
 
 
 func _simulate_sequence(params: Dictionary) -> Dictionary:
 	var events: Array = params.get("events", [])
-	_queue_input(events)
+	if not _queue_input(events):
+		return _err(RUNTIME_BRIDGE_DISABLED_MESSAGE, -32012)
 	return _ok({"queued": events.size()})
 
 

@@ -1,7 +1,7 @@
 [gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/AttributeStatusHud.gd" id="1_hud"]
-[ext_resource type="FontFile" path="res://assets/fonts/SourceHanSerifSC-SemiBold.otf" id="2_font"]
+[ext_resource type="Font" path="res://assets/fonts/game_font.tres" id="2_font"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBox_attributes"]
 bg_color = Color(0.035, 0.04, 0.035, 0.78)

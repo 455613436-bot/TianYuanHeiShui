@@ -21,6 +21,8 @@ const MIN_DIFFICULTY: int = 1
 const MAX_DIFFICULTY: int = 30
 const RAW_DIFFICULTY_MIN: int = 1
 const RAW_DIFFICULTY_MAX: int = 30
+const ITEM_MODIFIER_MIN: int = -15
+const ITEM_MODIFIER_MAX: int = 15
 const ATTRIBUTE_ALIASES := {
 	# 中文
 	"力量": "strength",
@@ -60,14 +62,14 @@ func normalize_attribute(attribute_raw: String) -> String:
 
 func perform_check(attribute_raw: String, raw_difficulty: int, item_modifier: int = 0, reason: String = "") -> Dictionary:
 	## 主入口：返回完整结果 dict，UI 直接读用
-	var attribute := normalize_attribute(attribute_raw)
-	if attribute == "":
-		return _error_result("未知属性：%s" % attribute_raw)
-
-	var difficulty := clampi(raw_difficulty, RAW_DIFFICULTY_MIN, RAW_DIFFICULTY_MAX)
-	var attr_value := GameState.get_attribute(attribute)
-	var mod: int = clampi(item_modifier, -10, 10)
-	var final_difficulty := clampi(difficulty - attr_value - mod, MIN_DIFFICULTY, MAX_DIFFICULTY)
+	var breakdown := get_check_breakdown(attribute_raw, raw_difficulty, item_modifier)
+	if not bool(breakdown.get("ok", false)):
+		return breakdown
+	var attribute := String(breakdown.get("attribute", ""))
+	var difficulty := int(breakdown.get("raw_difficulty", RAW_DIFFICULTY_MIN))
+	var attr_value := int(breakdown.get("attribute_value", 0))
+	var mod := int(breakdown.get("item_modifier", 0))
+	var final_difficulty := int(breakdown.get("final_difficulty", MIN_DIFFICULTY))
 	var roll := _rng.randi_range(1, DIE_SIDES)
 
 	var passed := false
@@ -102,6 +104,25 @@ func perform_check(attribute_raw: String, raw_difficulty: int, item_modifier: in
 	}
 	check_performed.emit(result)
 	return result
+
+
+func get_check_breakdown(attribute_raw: String, raw_difficulty: int, item_modifier: int = 0) -> Dictionary:
+	## 预览与实际掷骰共享的纯计算入口，避免 UI 和裁决各自维护修正上限。
+	var attribute := normalize_attribute(attribute_raw)
+	if attribute == "":
+		return _error_result("未知属性：%s" % attribute_raw)
+	var difficulty := clampi(raw_difficulty, RAW_DIFFICULTY_MIN, RAW_DIFFICULTY_MAX)
+	var attr_value := GameState.get_attribute(attribute)
+	var mod := clampi(item_modifier, ITEM_MODIFIER_MIN, ITEM_MODIFIER_MAX)
+	return {
+		"ok": true,
+		"attribute": attribute,
+		"attribute_label": GameState.ATTRIBUTE_LABELS.get(attribute, attribute),
+		"raw_difficulty": difficulty,
+		"attribute_value": attr_value,
+		"item_modifier": mod,
+		"final_difficulty": clampi(difficulty - attr_value - mod, MIN_DIFFICULTY, MAX_DIFFICULTY),
+	}
 
 
 func result_to_display_text(result: Dictionary) -> String:

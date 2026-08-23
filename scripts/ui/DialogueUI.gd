@@ -114,16 +114,23 @@ var _fixed_event_outcome: Dictionary = {}
 var _fixed_typewriter_generation := 0
 var _fixed_typewriter_running := false
 var _fixed_typewriter_history_index := -1
+var _fixed_choice_typewriter_generation := 0
+var _fixed_choice_typewriter_running := false
+var _fixed_choice_typewriter_history_index := -1
+var _fixed_choice_typewriter_full_text := ""
+var _fixed_choice_typewriter_choice_text := ""
 
 
 func _ready() -> void:
 	add_to_group("dialogue_ui")
-	btn_investigate.tooltip_text = "打开线索册"
+	btn_investigate.tooltip_text = "打开线索册（J）"
+	history_label.tooltip_text = "NPC 出字时点击可立即显示完整回复"
 	get_viewport().size_changed.connect(_apply_responsive_layout)
 	send_btn.pressed.connect(_on_send)
 	retry_btn.pressed.connect(_on_retry)
 	regenerate_btn.pressed.connect(_on_regenerate_choices)
 	input_edit.text_submitted.connect(func(_text): _on_send())
+	history_label.gui_input.connect(_on_dialogue_fast_forward_input)
 	btn_investigate.pressed.connect(_on_open_clue_book_pressed)
 	btn_bag.pressed.connect(_on_open_bag_pressed)
 	btn_skill.pressed.connect(_on_open_skill_menu)
@@ -150,7 +157,10 @@ func _ready() -> void:
 
 
 func _apply_responsive_layout() -> void:
-	var viewport_size := get_viewport().get_visible_rect().size
+	var viewport := get_viewport()
+	if viewport == null:
+		return
+	var viewport_size := viewport.get_visible_rect().size
 	if viewport_size.x <= 0.0 or viewport_size.y <= 0.0:
 		return
 	# 所有位置/大小均在 Godot 编辑器中通过 tscn 定义，代码不再强制覆盖。
@@ -173,6 +183,39 @@ func is_ui_open() -> bool:
 
 
 func close_top_ui() -> void:
+	close_dialogue()
+
+
+func request_fast_forward() -> bool:
+	if _fixed_typewriter_running:
+		return _fast_forward_fixed_story_page()
+	if _fixed_choice_typewriter_running:
+		return _fast_forward_fixed_choice_reply()
+	if _group_mode:
+		for node in get_tree().get_nodes_in_group("group_chat_ui"):
+			if node.has_method("fast_forward_current_reply") and bool(node.fast_forward_current_reply()):
+				return true
+		return false
+	if _current_request_id != 0:
+		return LLMService.fast_forward_request(_current_request_id)
+	return false
+
+
+func _on_dialogue_fast_forward_input(event: InputEvent) -> void:
+	if (
+		event is InputEventMouseButton
+		and event.button_index == MOUSE_BUTTON_LEFT
+		and event.pressed
+		and request_fast_forward()
+	):
+		history_label.accept_event()
+
+
+func prepare_for_map_navigation() -> void:
+	if is_instance_valid(_bag_popup) and _bag_popup.has_method("close_ui"):
+		_bag_popup.close_ui()
+	if is_instance_valid(_clue_book_popup) and _clue_book_popup.has_method("close_ui"):
+		_clue_book_popup.close_ui()
 	close_dialogue()
 
 func open_dialogue(profile: Dictionary) -> void:
@@ -318,6 +361,29 @@ func _type_fixed_story_event_page(full_text: String, generation: int, history_in
 		history[history_index]["text"] = full_text.substr(0, visible_characters)
 		_redraw_history()
 	if generation != _fixed_typewriter_generation or _active_fixed_event.is_empty():
+		return
+	_complete_fixed_story_page()
+
+
+func _fast_forward_fixed_story_page() -> bool:
+	if (
+		not _fixed_typewriter_running
+		or _active_fixed_event.is_empty()
+		or _fixed_event_page_index < 0
+		or _fixed_event_page_index >= _fixed_event_pages.size()
+		or _fixed_typewriter_history_index < 0
+		or _fixed_typewriter_history_index >= history.size()
+	):
+		return false
+	_fixed_typewriter_generation += 1
+	history[_fixed_typewriter_history_index]["text"] = _fixed_event_pages[_fixed_event_page_index]
+	_redraw_history()
+	_complete_fixed_story_page()
+	return true
+
+
+func _complete_fixed_story_page() -> void:
+	if not _fixed_typewriter_running or _active_fixed_event.is_empty():
 		return
 	_fixed_typewriter_running = false
 	_fixed_typewriter_history_index = -1
@@ -534,6 +600,11 @@ func close_dialogue() -> void:
 	_fixed_typewriter_generation += 1
 	_fixed_typewriter_running = false
 	_fixed_typewriter_history_index = -1
+	_fixed_choice_typewriter_generation += 1
+	_fixed_choice_typewriter_running = false
+	_fixed_choice_typewriter_history_index = -1
+	_fixed_choice_typewriter_full_text = ""
+	_fixed_choice_typewriter_choice_text = ""
 	_session_id += 1
 	_group_mode = false
 	_group_finished = false
@@ -580,8 +651,8 @@ func _change_state(next_state: DialogueState) -> void:
 	retry_btn.disabled = state != DialogueState.ERROR
 	btn_investigate.disabled = not can_use_persistent_actions
 	btn_bag.disabled = not can_use_persistent_actions
-	btn_investigate.tooltip_text = "打开线索册"
-	btn_bag.tooltip_text = "打开背包"
+	btn_investigate.tooltip_text = "打开线索册（J）"
+	btn_bag.tooltip_text = "打开背包（I）"
 	# 右下角原有技能按钮是唯一入口：场景中可直接使用，对话中则锁定当前 NPC。
 	btn_skill.disabled = _group_mode or state in [DialogueState.WAITING_LLM, DialogueState.STREAMING, DialogueState.OPENING] or not _active_fixed_event.is_empty()
 	btn_leave.disabled = not open
@@ -706,15 +777,57 @@ func _submit_fixed_choice_reply(choice_text: String, reply_text: String) -> void
 	_append_history("user", choice_text)
 	_apply_mood(MoodPortraitUtil.resolve_mood("", reply_text, String(current_npc.get("id", ""))))
 	_append_history("npc", "")
-	var history_index := history.size() - 1
+	_fixed_choice_typewriter_generation += 1
+	_fixed_choice_typewriter_running = true
+	_fixed_choice_typewriter_history_index = history.size() - 1
+	_fixed_choice_typewriter_full_text = reply_text
+	_fixed_choice_typewriter_choice_text = choice_text
 	_hide_choices()
 	_change_state(DialogueState.STREAMING)
+	_type_fixed_choice_reply(reply_text, _fixed_choice_typewriter_generation, _fixed_choice_typewriter_history_index)
+
+
+func _type_fixed_choice_reply(reply_text: String, generation: int, history_index: int) -> void:
 	for visible_characters in range(1, reply_text.length() + 1):
 		await get_tree().create_timer(FIXED_STORY_TYPEWRITER_INTERVAL).timeout
-		if state == DialogueState.CLOSED or history_index >= history.size():
+		if (
+			generation != _fixed_choice_typewriter_generation
+			or not _fixed_choice_typewriter_running
+			or state == DialogueState.CLOSED
+			or history_index < 0
+			or history_index >= history.size()
+		):
 			return
 		history[history_index]["text"] = reply_text.substr(0, visible_characters)
 		_redraw_history()
+	if generation != _fixed_choice_typewriter_generation:
+		return
+	_complete_fixed_choice_reply()
+
+
+func _fast_forward_fixed_choice_reply() -> bool:
+	if (
+		not _fixed_choice_typewriter_running
+		or _fixed_choice_typewriter_history_index < 0
+		or _fixed_choice_typewriter_history_index >= history.size()
+	):
+		return false
+	_fixed_choice_typewriter_generation += 1
+	history[_fixed_choice_typewriter_history_index]["text"] = _fixed_choice_typewriter_full_text
+	_redraw_history()
+	_complete_fixed_choice_reply()
+	return true
+
+
+func _complete_fixed_choice_reply() -> void:
+	if not _fixed_choice_typewriter_running:
+		return
+	var choice_text := _fixed_choice_typewriter_choice_text
+	var reply_text := _fixed_choice_typewriter_full_text
+	_fixed_choice_typewriter_running = false
+	_fixed_choice_typewriter_history_index = -1
+	_fixed_choice_typewriter_full_text = ""
+	_fixed_choice_typewriter_choice_text = ""
 	MemoryStore.append_turn(String(current_npc.get("id", "")), choice_text, reply_text, [])
 	TimeSystem.on_dialogue_turn_completed()
 	GameState.save_game(GameState.AUTO_SAVE_PATH, false)
@@ -1510,12 +1623,21 @@ func _redraw_check_entry(entry: Dictionary) -> void:
 
 ## 原“调查环境”按钮改为线索册入口；按钮贴图可在后续直接替换。
 func _on_open_clue_book_pressed() -> void:
+	open_journal_page()
+
+
+func open_journal_page() -> bool:
 	if _group_mode or state in [DialogueState.WAITING_LLM, DialogueState.STREAMING]:
-		return
+		return false
 	var popup := _get_or_create_clue_book_popup()
 	if popup == null:
-		return
-	popup.open_ui(GameState.get_clue_book_entries(), true)
+		return false
+	if popup.has_method("is_ui_open") and popup.is_ui_open():
+		popup.close_ui()
+		return true
+	var allow_present := is_open() and state in [DialogueState.WAITING_PLAYER, DialogueState.ERROR] and _active_fixed_event.is_empty()
+	popup.open_ui(GameState.get_clue_book_entries(), allow_present)
+	return true
 
 
 func _get_or_create_clue_book_popup() -> ClueBookPopup:
@@ -1609,13 +1731,21 @@ func _get_or_create_clue_document_viewer() -> SceneItemInteraction:
 
 ## 玩家点击右侧"打开背包"按钮
 func _on_open_bag_pressed() -> void:
+	open_inventory_page()
+
+
+func open_inventory_page() -> bool:
 	if _group_mode or state in [DialogueState.WAITING_LLM, DialogueState.STREAMING]:
-		return
+		return false
 	var popup := _get_or_create_bag_popup()
 	if popup == null:
-		return
+		return false
+	if popup.has_method("is_ui_open") and popup.is_ui_open():
+		popup.close_ui()
+		return true
 	popup.set_meta("bound_dialogue", self)
-	popup.open_ui(GameState.inventory, _pending_item_tokens)
+	popup.open_ui(GameState.inventory, _pending_item_tokens, is_open())
+	return true
 
 
 func _get_or_create_bag_popup() -> CanvasLayer:

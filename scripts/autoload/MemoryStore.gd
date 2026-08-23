@@ -20,7 +20,9 @@ const MAX_TURNS: int = 15               ## 每个 NPC 保留的最大轮次
 const SUMMARIZE_EVERY_TURNS: int = 5    ## 每累积多少轮触发一次总结
 const GLOBAL_MEMORY_LIMIT: int = 40     ## 全局记忆条目上限（滑动窗口）
 const SUMMARY_MAX_CHARS: int = 2000     ## 单个 NPC 记忆文档最长字符数（LLM 输出会被截断）
-const NPC_TURNS_TO_SEND_LLM: int = 15   ## 每次请求送给 LLM 的最近轮次数
+const NPC_TURNS_TO_SEND_LLM: int = 10   ## 每次请求只送最近轮次；完整历史仍保留 15 轮
+const GLOBAL_MEMORY_PROMPT_LIMIT: int = 12
+const SUMMARY_PROMPT_MAX_CHARS: int = 1200
 const MEM_VERSION: int = 1
 const MAX_BELIEFS_PER_NPC: int = 12
 const BELIEF_CLAIM_MAX_CHARS: int = 120
@@ -179,11 +181,14 @@ func add_global_memory(text: String, tags: Array = []) -> void:
 	global_memory_added.emit(entry)
 
 
-func get_global_memory_text() -> String:
+func get_global_memory_text(max_entries: int = GLOBAL_MEMORY_LIMIT) -> String:
 	if global_memory.is_empty():
 		return ""
 	var lines: PackedStringArray = []
-	for entry in global_memory:
+	var safe_limit := clampi(max_entries, 1, GLOBAL_MEMORY_LIMIT)
+	var start_index := maxi(0, global_memory.size() - safe_limit)
+	for index in range(start_index, global_memory.size()):
+		var entry: Dictionary = global_memory[index]
 		var text := String((entry as Dictionary).get("text", ""))
 		if text != "":
 			lines.append("- " + text)
@@ -313,11 +318,13 @@ func build_memory_prompt_block(npc_id: String) -> String:
 	var belief_block: String = _build_belief_prompt_block(npc_id)
 	if not belief_block.is_empty():
 		parts.append(belief_block)
-	var global_text := get_global_memory_text()
+	var global_text := get_global_memory_text(GLOBAL_MEMORY_PROMPT_LIMIT)
 	if global_text != "":
 		parts.append("## 村庄共享记忆（所有村民共知的近期事件）\n" + global_text)
 	var summary := get_summary(npc_id)
 	if summary != "":
+		if summary.length() > SUMMARY_PROMPT_MAX_CHARS:
+			summary = summary.substr(0, SUMMARY_PROMPT_MAX_CHARS - 1).strip_edges() + "…"
 		parts.append("## 你（该 NPC）与玩家的既往关键印象\n" + summary)
 	if parts.is_empty():
 		return ""

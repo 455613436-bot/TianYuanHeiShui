@@ -19,15 +19,18 @@ var _title_label: Label
 var _allow_present := false
 var _action_mode := false
 var _action_label := "使用"
+var _shortcut_page := "journal"
 
 
 func _ready() -> void:
 	layer = 20
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	add_to_group("investigation_ui")
 	_build_shell()
 
 
 func open_ui(entries: Array[Dictionary], allow_present: bool = false) -> void:
+	_shortcut_page = "journal"
 	_allow_present = allow_present
 	_action_mode = false
 	if _title_label != null:
@@ -46,6 +49,7 @@ func open_ui(entries: Array[Dictionary], allow_present: bool = false) -> void:
 
 ## 复用线索册卡片布局展示技能、任务等通用操作列表。
 func open_action_list(entries: Array[Dictionary], title: String, hint: String, action_label: String = "使用") -> void:
+	_shortcut_page = "action"
 	_allow_present = false
 	_action_mode = true
 	_action_label = action_label.strip_edges() if not action_label.strip_edges().is_empty() else "使用"
@@ -63,6 +67,18 @@ func close_ui() -> void:
 	if _overlay != null:
 		_overlay.hide()
 	closed.emit()
+
+
+func is_ui_open() -> bool:
+	return _overlay != null and _overlay.visible
+
+
+func close_top_ui() -> void:
+	close_ui()
+
+
+func shortcut_page_id() -> String:
+	return _shortcut_page
 
 
 func _build_shell() -> void:
@@ -247,11 +263,3 @@ func _build_row(entry: Dictionary) -> Control:
 func _on_backdrop_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed:
 		close_ui()
-
-
-func _unhandled_input(event: InputEvent) -> void:
-	if _overlay == null or not _overlay.visible:
-		return
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
-		close_ui()
-		get_viewport().set_input_as_handled()

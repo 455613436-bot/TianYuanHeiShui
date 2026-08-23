@@ -98,7 +98,7 @@ texture_hover = ExtResource("6_settings")
 texture_focused = ExtResource("6_settings")
 ignore_texture_size = true
 stretch_mode = 5
-tooltip_text = "设置"
+tooltip_text = "设置（Esc）"
 
 [node name="QuitBtn" type="TextureButton" parent="Menu"]
 layout_mode = 0

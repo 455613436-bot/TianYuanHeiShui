@@ -37,7 +37,7 @@ var _time_refresh_scheduled := false
 
 func _ready() -> void:
 	var location_scene := get_parent()
-	var scene_location_id := String(location_scene.get("location_id")) if location_scene != null else ""
+	var scene_location_id := str(location_scene.get("location_id")) if location_scene != null else ""
 	if MASK_ONLY_LOCATIONS.has(scene_location_id):
 		spawning_enabled = false
 	elif location_scene != null and location_scene.has_method("should_use_npc_spawner"):
@@ -74,7 +74,7 @@ func get_location_id() -> String:
 	var scene := get_tree().current_scene
 	if scene == null:
 		return ""
-	var path := String(scene.scene_file_path)
+	var path := str(scene.scene_file_path)
 	return NpcRegistry.location_id_for_scene(path)
 
 
@@ -123,7 +123,7 @@ func _refresh_npcs_for_time() -> void:
 func _spawned_ids() -> Array[String]:
 	var ids: Array[String] = []
 	for raw_id in _spawned.keys():
-		ids.append(String(raw_id))
+		ids.append(str(raw_id))
 	ids.sort()
 	return ids
 

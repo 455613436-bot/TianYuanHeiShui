@@ -15,12 +15,26 @@ var _total_points := 0
 func _ready() -> void:
 	layer = 30
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	add_to_group("modal_ui")
 	for key in GameState.ATTRIBUTE_KEYS:
 		var value := int(GameState.attributes.get(key, 0))
 		_values[key] = value
 		_total_points += value
 	_build_ui()
 	_refresh()
+
+
+func is_ui_open() -> bool:
+	return _overlay != null and _overlay.visible
+
+
+func close_top_ui() -> void:
+	completed.emit(false)
+	queue_free()
+
+
+func can_close_for_navigation() -> bool:
+	return true
 
 
 func _build_ui() -> void:

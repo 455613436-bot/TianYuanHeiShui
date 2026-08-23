@@ -2,7 +2,7 @@
 
 ; 项目默认主题：把思源宋体 Bold 作为所有 Control 的默认字体。
 ; 单个节点若仍设置 theme_override_fonts/xxx，则以节点覆盖为准。
-[ext_resource type="FontFile" uid="uid://cn3n7glq50pbs" path="res://assets/fonts/SourceHanSerifSC-Bold.otf" id="1_default_font"]
+[ext_resource type="Font" path="res://assets/fonts/game_font.tres" id="1_default_font"]
 
 [resource]
 default_font = ExtResource("1_default_font")

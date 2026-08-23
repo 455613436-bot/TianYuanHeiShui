@@ -22,20 +22,20 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -330.0
-offset_top = -250.0
-offset_right = 330.0
-offset_bottom = 250.0
+offset_left = -350.0
+offset_top = -340.0
+offset_right = 350.0
+offset_bottom = 340.0
 grow_horizontal = 2
 grow_vertical = 2
 
 [node name="VBox" type="VBoxContainer" parent="Dimmer/Panel"]
 layout_mode = 2
-theme_override_constants/separation = 12
+theme_override_constants/separation = 10
 
 [node name="Title" type="Label" parent="Dimmer/Panel/VBox"]
 layout_mode = 2
-custom_minimum_size = Vector2(0, 56)
+custom_minimum_size = Vector2(0, 48)
 horizontal_alignment = 1
 vertical_alignment = 1
 theme_override_font_sizes/font_size = 30
@@ -43,55 +43,108 @@ theme_override_font_sizes/font_size = 30
 [node name="Separator1" type="HSeparator" parent="Dimmer/Panel/VBox"]
 layout_mode = 2
 
-[node name="Options" type="GridContainer" parent="Dimmer/Panel/VBox"]
+[node name="Tabs" type="TabContainer" parent="Dimmer/Panel/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+current_tab = 0
+
+[node name="Display" type="VBoxContainer" parent="Dimmer/Panel/VBox/Tabs"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Options" type="GridContainer" parent="Dimmer/Panel/VBox/Tabs/Display"]
 layout_mode = 2
 columns = 2
 theme_override_constants/h_separation = 16
 theme_override_constants/v_separation = 12
 
-[node name="ResolutionLabel" type="Label" parent="Dimmer/Panel/VBox/Options"]
+[node name="ResolutionLabel" type="Label" parent="Dimmer/Panel/VBox/Tabs/Display/Options"]
 layout_mode = 2
 custom_minimum_size = Vector2(150, 44)
 vertical_alignment = 1
 
-[node name="ResolutionOption" type="OptionButton" parent="Dimmer/Panel/VBox/Options"]
+[node name="ResolutionOption" type="OptionButton" parent="Dimmer/Panel/VBox/Tabs/Display/Options"]
 layout_mode = 2
 custom_minimum_size = Vector2(280, 44)
 size_flags_horizontal = 3
 
-[node name="ModeLabel" type="Label" parent="Dimmer/Panel/VBox/Options"]
+[node name="ModeLabel" type="Label" parent="Dimmer/Panel/VBox/Tabs/Display/Options"]
 layout_mode = 2
 custom_minimum_size = Vector2(150, 44)
 vertical_alignment = 1
 
-[node name="ModeOption" type="OptionButton" parent="Dimmer/Panel/VBox/Options"]
+[node name="ModeOption" type="OptionButton" parent="Dimmer/Panel/VBox/Tabs/Display/Options"]
 layout_mode = 2
 custom_minimum_size = Vector2(280, 44)
 size_flags_horizontal = 3
 
-[node name="ApplyButton" type="Button" parent="Dimmer/Panel/VBox"]
+[node name="ApplyButton" type="Button" parent="Dimmer/Panel/VBox/Tabs/Display"]
 layout_mode = 2
 custom_minimum_size = Vector2(0, 46)
 
-[node name="StatusLabel" type="Label" parent="Dimmer/Panel/VBox"]
+[node name="StatusLabel" type="Label" parent="Dimmer/Panel/VBox/Tabs/Display"]
 layout_mode = 2
 custom_minimum_size = Vector2(0, 46)
 horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 2
 
-[node name="HintLabel" type="Label" parent="Dimmer/Panel/VBox"]
+[node name="HintLabel" type="Label" parent="Dimmer/Panel/VBox/Tabs/Display"]
 layout_mode = 2
-custom_minimum_size = Vector2(0, 48)
+custom_minimum_size = Vector2(0, 64)
 horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 2
 modulate = Color(0.75, 0.78, 0.72, 1)
 
+[node name="SaveManagement" type="VBoxContainer" parent="Dimmer/Panel/VBox/Tabs"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="SaveHint" type="Label" parent="Dimmer/Panel/VBox/Tabs/SaveManagement"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 42)
+text = "探索场景可保存和读取；标题页只能读取。"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+modulate = Color(0.75, 0.78, 0.72, 1)
+
+[node name="Scroll" type="ScrollContainer" parent="Dimmer/Panel/VBox/Tabs/SaveManagement"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="List" type="VBoxContainer" parent="Dimmer/Panel/VBox/Tabs/SaveManagement/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="GlobalStatusLabel" type="Label" parent="Dimmer/Panel/VBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 36)
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
 [node name="MainMenuButton" type="Button" parent="Dimmer/Panel/VBox"]
 layout_mode = 2
-custom_minimum_size = Vector2(0, 48)
+custom_minimum_size = Vector2(0, 44)
 
 [node name="CloseButton" type="Button" parent="Dimmer/Panel/VBox"]
 layout_mode = 2
-custom_minimum_size = Vector2(0, 48)
+custom_minimum_size = Vector2(0, 44)
+
+[node name="SaveConfirm" type="ConfirmationDialog" parent="."]
+process_mode = 3
+title = "覆盖存档"
+dialog_text = "该槽位已有存档，确定覆盖吗？"
+ok_button_text = "覆盖"
+cancel_button_text = "取消"
+
+[node name="LoadConfirm" type="ConfirmationDialog" parent="."]
+process_mode = 3
+title = "读取存档"
+dialog_text = "读取后会放弃当前未保存的进度，确定继续吗？"
+ok_button_text = "读取"
+cancel_button_text = "取消"

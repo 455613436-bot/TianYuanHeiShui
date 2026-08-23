@@ -10,6 +10,7 @@ var _dialogue_connected := false
 
 func _ready() -> void:
 	layer = 12
+	add_to_group("group_chat_ui")
 	$RootPanel.visible = false
 
 
@@ -94,3 +95,9 @@ func is_ui_open() -> bool:
 func close_top_ui() -> void:
 	if is_instance_valid(_dialogue_ui) and _dialogue_ui.is_open():
 		_dialogue_ui.close_dialogue()
+
+
+func fast_forward_current_reply() -> bool:
+	if _coordinator == null or not _coordinator.has_method("fast_forward_current_reply"):
+		return false
+	return bool(_coordinator.fast_forward_current_reply())

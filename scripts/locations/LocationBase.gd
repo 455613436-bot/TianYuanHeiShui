@@ -267,8 +267,8 @@ func _refresh_map_access() -> void:
 		return_button.tooltip_text = "路太黑了，现在还不具备夜间出门的能力。"
 		return_button.text = "夜间无法出门"
 	else:
-		return_button.tooltip_text = "打开地图"
-		return_button.text = "打开地图  M / Esc"
+		return_button.tooltip_text = "打开地图（M）"
+		return_button.text = "打开地图  M"
 
 
 func _enforce_night_location_return() -> void:
@@ -2729,7 +2729,7 @@ func _open_rest_confirmation(highlight: MaskInteractionHighlight, rest_ui: Scene
 	rest_ui.open_choice({
 		"id": "dorm_rest",
 		"title": "休息",
-		"description": "现在休息将直接推进到明天早上 09:00。确定要睡下吗？",
+		"description": "现在休息将直接推进到明天早上 09:00，并结算清洁状态、水接触和每日临时增益。确定要睡下吗？",
 		"choices": [
 			{"id": "confirm_rest", "label": "确定休息"},
 			{"id": "leave", "label": "离开", "close": true},
@@ -2788,7 +2788,7 @@ func _open_dorm_shower(highlight: MaskInteractionHighlight) -> void:
 	shower_ui.open_choice({
 		"id": "dorm_shower",
 		"title": "淋浴",
-		"description": "洗澡每天只能进行一次。若前一天没有洗澡，次日早上九点魅力会降低 1；洗澡则会恢复到初始设定的魅力。",
+		"description": "洗澡每天只能进行一次。洗澡可避免魅力下降，但会接触村内水源并累计污染影响；污染状态将在次日清晨结算。",
 		"choices": [
 			{"id": "shower", "label": "洗澡"},
 			{"id": "leave", "label": "离开", "close": true},

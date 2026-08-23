@@ -18,6 +18,7 @@ var _current_item_id: String = ""
 
 
 func _ready() -> void:
+	add_to_group("modal_ui")
 	close_btn.pressed.connect(_on_close_pressed)
 
 
@@ -51,14 +52,13 @@ func close_ui() -> void:
 	closed.emit()
 
 
-func _on_close_pressed() -> void:
+func is_ui_open() -> bool:
+	return visible
+
+
+func close_top_ui() -> void:
 	close_ui()
 
 
-func _unhandled_input(event: InputEvent) -> void:
-	if not visible:
-		return
-	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_ESCAPE:
-			close_ui()
-			get_viewport().set_input_as_handled()
+func _on_close_pressed() -> void:
+	close_ui()
