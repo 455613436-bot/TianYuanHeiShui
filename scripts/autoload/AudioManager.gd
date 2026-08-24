@@ -14,7 +14,9 @@ const FALLBACK_BGM_PATH := "res://assets/audio/bgm/field_path.ogg"
 const BGM_BUS_NAME := &"BGM"
 const SFX_BUS_NAME := &"SFX"
 const BGM_FADE_SECONDS := 1.2
-const BGM_TARGET_DB := -14.0
+## Web 浏览器和系统音量通常比桌面版更保守；-14dB 容易被误认为没有播放。
+## 仍保持低于短促 UI 音效的环境声比例，但提升到可明确听见的水平。
+const BGM_TARGET_DB := -7.0
 ## 地图打开时保留当前曲目，线性响度降至原来的 70%。
 const MAP_BGM_DUCK_DB := -3.0980392
 const MAP_BGM_DUCK_SECONDS := 0.2
