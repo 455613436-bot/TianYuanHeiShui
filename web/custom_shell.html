@@ -91,7 +91,7 @@ body {
 	image-rendering: pixelated;
 }
 
-#status-progress, #status-notice, #start-game-button, #unlock-audio-button {
+#status-progress, #status-notice, #status-message {
 	display: none;
 }
 
@@ -99,6 +99,16 @@ body {
 	bottom: 10%;
 	width: 50%;
 	margin: 0 auto;
+}
+
+#status-message {
+	position: relative;
+	z-index: 3;
+	margin-top: auto;
+	margin-bottom: 1rem;
+	color: #f0e4c8;
+	font: 600 1.05rem/1.25 "Noto Serif SC", "Microsoft YaHei", serif;
+	letter-spacing: 0.08em;
 }
 
 #status-notice {
@@ -115,29 +125,6 @@ body {
 	z-index: 2;
 }
 
-#start-game-button, #unlock-audio-button {
-	position: relative;
-	z-index: 3;
-	min-width: min(28rem, calc(100% - 3rem));
-	margin-top: auto;
-	margin-bottom: 12%;
-	padding: 0.9rem 1.5rem;
-	border: 1px solid #b99a67;
-	border-radius: 0.35rem;
-	color: #f0e4c8;
-	background: rgba(48, 38, 27, 0.94);
-	font: 600 1.05rem/1.25 "Noto Serif SC", "Microsoft YaHei", serif;
-	cursor: pointer;
-}
-
-#start-game-button:hover,
-#start-game-button:focus-visible,
-#unlock-audio-button:hover,
-#unlock-audio-button:focus-visible {
-	background: rgba(72, 55, 37, 0.98);
-	outline: 2px solid rgba(208, 179, 126, 0.75);
-	outline-offset: 3px;
-}
 		</style>
 		$GODOT_HEAD_INCLUDE
 	</head>
@@ -149,8 +136,7 @@ body {
 			<div id="status">
 				<img id="status-splash" class="$GODOT_SPLASH_CLASSES" src="$GODOT_SPLASH" alt="">
 				<progress id="status-progress"></progress>
-				<button id="start-game-button" type="button">点击进入游戏</button>
-				<button id="unlock-audio-button" type="button">点击开启声音</button>
+				<div id="status-message">正在编译着色器…</div>
 				<div id="status-notice"></div>
 			</div>
 		</div>
@@ -235,40 +221,13 @@ if (window.visualViewport) {
 
 const GODOT_CONFIG = $GODOT_CONFIG;
 const GODOT_THREADS_ENABLED = $GODOT_THREADS_ENABLED;
-
-// Godot 在加载 PCK/WASM 后才创建 AudioContext。记录实例后在“加载完成”的
-// 真实点击里 resume，避免浏览器把最开始的加载点击视为已过期的用户手势。
-const tianyuanAudioContexts = [];
-const NativeAudioContext = window.AudioContext || window.webkitAudioContext;
-if (NativeAudioContext) {
-	class TianyuanAudioContext extends NativeAudioContext {
-		constructor(...args) {
-			super(...args);
-			tianyuanAudioContexts.push(this);
-		}
-	}
-	window.AudioContext = TianyuanAudioContext;
-	if (window.webkitAudioContext === NativeAudioContext) {
-		window.webkitAudioContext = TianyuanAudioContext;
-	}
-}
-
-window.tianyuanResumeAudio = async function () {
-	if (tianyuanAudioContexts.length === 0) {
-		return false;
-	}
-	await Promise.allSettled(tianyuanAudioContexts.map((context) => context.resume()));
-	return tianyuanAudioContexts.some((context) => context.state === 'running');
-};
-
 const engine = new Engine(GODOT_CONFIG);
 
 (function () {
 	const statusOverlay = document.getElementById('status');
 	const statusProgress = document.getElementById('status-progress');
 	const statusNotice = document.getElementById('status-notice');
-	const startGameButton = document.getElementById('start-game-button');
-	const unlockAudioButton = document.getElementById('unlock-audio-button');
+	const statusMessage = document.getElementById('status-message');
 
 	let initializing = true;
 	let statusMode = '';
@@ -285,8 +244,7 @@ const engine = new Engine(GODOT_CONFIG);
 		}
 		statusOverlay.style.visibility = 'visible';
 		statusProgress.style.display = mode === 'progress' ? 'block' : 'none';
-		startGameButton.style.display = mode === 'ready' ? 'block' : 'none';
-		unlockAudioButton.style.display = mode === 'audio-ready' ? 'block' : 'none';
+		statusMessage.style.display = mode === 'progress' ? 'block' : 'none';
 		statusNotice.style.display = mode === 'notice' ? 'block' : 'none';
 		statusMode = mode;
 	}
@@ -343,12 +301,11 @@ const engine = new Engine(GODOT_CONFIG);
 			displayFailureNotice(`当前浏览器缺少运行游戏所需功能：\n${missing.join('\n')}`);
 		}
 	} else {
-		const startGameOnce = () => {
+		const startGame = () => {
 			if (gameStarted) {
 				return;
 			}
 			gameStarted = true;
-			startGameButton.disabled = true;
 			setStatusMode('progress');
 			engine.startGame({
 				canvas: gameCanvas,
@@ -362,26 +319,11 @@ const engine = new Engine(GODOT_CONFIG);
 					}
 				},
 			}).then(() => {
-				setStatusMode('audio-ready');
-				unlockAudioButton.focus();
+				setStatusMode('hidden');
 			}, displayFailureNotice);
 		};
-		const unlockAudioOnce = async () => {
-			unlockAudioButton.disabled = true;
-			const resumed = await window.tianyuanResumeAudio();
-			if (!resumed) {
-				unlockAudioButton.disabled = false;
-				setStatusNotice('浏览器尚未准备好音频，请再点击一次。');
-				setStatusMode('audio-ready');
-				return;
-			}
-			setStatusMode('hidden');
-			gameCanvas.focus();
-		};
-		startGameButton.addEventListener('click', startGameOnce, { once: true });
-		unlockAudioButton.addEventListener('click', unlockAudioOnce);
-		setStatusMode('ready');
-		startGameButton.focus();
+		setStatusMode('progress');
+		startGame();
 	}
 }());
 		</script>

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static release checks for the Web user-gesture audio gate."""
+"""Static release checks for the Web automatic loading shell."""
 
 from __future__ import annotations
 
@@ -9,19 +9,13 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_MARKERS = (
-    'id="start-game-button"',
-    'id="unlock-audio-button"',
-    "点击进入游戏",
-    "点击开启声音",
-    "const tianyuanAudioContexts = [];",
-    "window.tianyuanResumeAudio = async function ()",
+    'id="status-message"',
+    "正在编译着色器…",
     "let gameStarted = false;",
-    "const startGameOnce = () =>",
+    "const startGame = () =>",
     "if (gameStarted)",
-    "startGameButton.addEventListener('click', startGameOnce, { once: true });",
-    "unlockAudioButton.addEventListener('click', unlockAudioOnce);",
-    "setStatusMode('audio-ready');",
-    "setStatusMode('ready');",
+    "setStatusMode('progress');",
+    "startGame();",
 )
 
 
@@ -32,10 +26,10 @@ def validate(path: Path) -> None:
         raise SystemExit(f"WEB_SHELL_MISSING path={path} markers={missing}")
     if text.count("engine.startGame({") != 1:
         raise SystemExit(f"WEB_SHELL_START_COUNT path={path} count={text.count('engine.startGame({')}")
-    listener_index = text.index("startGameButton.addEventListener")
-    ready_index = text.index("setStatusMode('ready');", listener_index)
-    if ready_index < listener_index:
-        raise SystemExit(f"WEB_SHELL_READY_ORDER path={path}")
+    start_index = text.index("const startGame = () =>")
+    invocation_index = text.rindex("startGame();")
+    if invocation_index < start_index:
+        raise SystemExit(f"WEB_SHELL_AUTOSTART_ORDER path={path}")
     print(f"WEB_SHELL_OK path={path}")
 
 
