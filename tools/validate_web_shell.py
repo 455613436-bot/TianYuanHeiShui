@@ -10,11 +10,17 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_MARKERS = (
     'id="start-game-button"',
-    "点击进入游戏（启用声音）",
+    'id="unlock-audio-button"',
+    "点击进入游戏",
+    "点击开启声音",
+    "const tianyuanAudioContexts = [];",
+    "window.tianyuanResumeAudio = async function ()",
     "let gameStarted = false;",
     "const startGameOnce = () =>",
     "if (gameStarted)",
     "startGameButton.addEventListener('click', startGameOnce, { once: true });",
+    "unlockAudioButton.addEventListener('click', unlockAudioOnce);",
+    "setStatusMode('audio-ready');",
     "setStatusMode('ready');",
 )
 

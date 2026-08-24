@@ -91,7 +91,7 @@ body {
 	image-rendering: pixelated;
 }
 
-#status-progress, #status-notice, #start-game-button {
+#status-progress, #status-notice, #start-game-button, #unlock-audio-button {
 	display: none;
 }
 
@@ -115,7 +115,7 @@ body {
 	z-index: 2;
 }
 
-#start-game-button {
+#start-game-button, #unlock-audio-button {
 	position: relative;
 	z-index: 3;
 	min-width: min(28rem, calc(100% - 3rem));
@@ -131,7 +131,9 @@ body {
 }
 
 #start-game-button:hover,
-#start-game-button:focus-visible {
+#start-game-button:focus-visible,
+#unlock-audio-button:hover,
+#unlock-audio-button:focus-visible {
 	background: rgba(72, 55, 37, 0.98);
 	outline: 2px solid rgba(208, 179, 126, 0.75);
 	outline-offset: 3px;
@@ -147,7 +149,8 @@ body {
 			<div id="status">
 				<img id="status-splash" class="$GODOT_SPLASH_CLASSES" src="$GODOT_SPLASH" alt="">
 				<progress id="status-progress"></progress>
-				<button id="start-game-button" type="button">点击进入游戏（启用声音）</button>
+				<button id="start-game-button" type="button">点击进入游戏</button>
+				<button id="unlock-audio-button" type="button">点击开启声音</button>
 				<div id="status-notice"></div>
 			</div>
 		</div>
@@ -232,6 +235,32 @@ if (window.visualViewport) {
 
 const GODOT_CONFIG = $GODOT_CONFIG;
 const GODOT_THREADS_ENABLED = $GODOT_THREADS_ENABLED;
+
+// Godot 在加载 PCK/WASM 后才创建 AudioContext。记录实例后在“加载完成”的
+// 真实点击里 resume，避免浏览器把最开始的加载点击视为已过期的用户手势。
+const tianyuanAudioContexts = [];
+const NativeAudioContext = window.AudioContext || window.webkitAudioContext;
+if (NativeAudioContext) {
+	class TianyuanAudioContext extends NativeAudioContext {
+		constructor(...args) {
+			super(...args);
+			tianyuanAudioContexts.push(this);
+		}
+	}
+	window.AudioContext = TianyuanAudioContext;
+	if (window.webkitAudioContext === NativeAudioContext) {
+		window.webkitAudioContext = TianyuanAudioContext;
+	}
+}
+
+window.tianyuanResumeAudio = async function () {
+	if (tianyuanAudioContexts.length === 0) {
+		return false;
+	}
+	await Promise.allSettled(tianyuanAudioContexts.map((context) => context.resume()));
+	return tianyuanAudioContexts.some((context) => context.state === 'running');
+};
+
 const engine = new Engine(GODOT_CONFIG);
 
 (function () {
@@ -239,6 +268,7 @@ const engine = new Engine(GODOT_CONFIG);
 	const statusProgress = document.getElementById('status-progress');
 	const statusNotice = document.getElementById('status-notice');
 	const startGameButton = document.getElementById('start-game-button');
+	const unlockAudioButton = document.getElementById('unlock-audio-button');
 
 	let initializing = true;
 	let statusMode = '';
@@ -256,6 +286,7 @@ const engine = new Engine(GODOT_CONFIG);
 		statusOverlay.style.visibility = 'visible';
 		statusProgress.style.display = mode === 'progress' ? 'block' : 'none';
 		startGameButton.style.display = mode === 'ready' ? 'block' : 'none';
+		unlockAudioButton.style.display = mode === 'audio-ready' ? 'block' : 'none';
 		statusNotice.style.display = mode === 'notice' ? 'block' : 'none';
 		statusMode = mode;
 	}
@@ -331,10 +362,24 @@ const engine = new Engine(GODOT_CONFIG);
 					}
 				},
 			}).then(() => {
-				setStatusMode('hidden');
+				setStatusMode('audio-ready');
+				unlockAudioButton.focus();
 			}, displayFailureNotice);
 		};
+		const unlockAudioOnce = async () => {
+			unlockAudioButton.disabled = true;
+			const resumed = await window.tianyuanResumeAudio();
+			if (!resumed) {
+				unlockAudioButton.disabled = false;
+				setStatusNotice('浏览器尚未准备好音频，请再点击一次。');
+				setStatusMode('audio-ready');
+				return;
+			}
+			setStatusMode('hidden');
+			gameCanvas.focus();
+		};
 		startGameButton.addEventListener('click', startGameOnce, { once: true });
+		unlockAudioButton.addEventListener('click', unlockAudioOnce);
 		setStatusMode('ready');
 		startGameButton.focus();
 	}
