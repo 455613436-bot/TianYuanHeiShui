@@ -1,5 +1,5 @@
 extends Node
-## Regression coverage for global Esc/M/I/J routing and dialogue-to-map navigation.
+## Regression coverage for global Esc/B/M/I/J routing and dialogue-to-map navigation.
 
 const MAIN_SCENE := preload("res://scenes/main/Main.tscn")
 const SCENE_INTERACTION_SCRIPT := preload("res://scripts/ui/SceneItemInteraction.gd")
@@ -12,19 +12,22 @@ func _ready() -> void:
 func _run() -> void:
 	GameState.reset_for_new_game()
 	MemoryStore.reset()
-	var expected_actions := {
-		"cancel_or_back": KEY_ESCAPE,
+	var expected_action_keys := {
+		"cancel_or_back": [KEY_ESCAPE, KEY_B],
 		"open_map": KEY_M,
 		"open_inventory": KEY_I,
 		"open_journal": KEY_J,
 	}
-	for action_name: String in expected_actions:
+	for action_name: String in expected_action_keys:
 		if not InputMap.has_action(action_name):
 			_fail("Missing input action: %s" % action_name)
 			return
-		if not _action_has_key(action_name, int(expected_actions[action_name])):
-			_fail("Input action %s is not bound to its expected key" % action_name)
-			return
+		var expected: Variant = expected_action_keys[action_name]
+		var expected_keys: Array = expected if expected is Array else [expected]
+		for keycode: int in expected_keys:
+			if not _action_has_key(action_name, keycode):
+				_fail("Input action %s is not bound to its expected key" % action_name)
+				return
 
 	var main := MAIN_SCENE.instantiate()
 	get_tree().root.add_child(main)
@@ -74,26 +77,28 @@ func _run() -> void:
 	if not is_instance_valid(inspect_popup) or not inspect_popup.is_ui_open():
 		_fail("Inventory inspect popup did not open")
 		return
-	InputManager.call("_handle_cancel")
+	_send_global_key(KEY_B)
 	if inspect_popup.is_ui_open() or not bag.is_ui_open() or not dialogue.is_open():
-		_fail("First Esc did not close only the item inspection")
+		_fail("B did not close only the item inspection")
 		return
-	InputManager.call("_handle_cancel")
+	_send_global_key(KEY_ESCAPE)
 	if bag.is_ui_open() or not dialogue.is_open():
-		_fail("Second Esc did not close only the inventory")
+		_fail("Esc did not close only the inventory")
 		return
-	InputManager.call("_handle_cancel")
+	_send_global_key(KEY_B)
 	if dialogue.is_open():
-		_fail("Third Esc did not close the dialogue")
+		_fail("B did not close the dialogue")
 		return
 
-	InputManager.call("_handle_cancel")
+	_send_global_key(KEY_ESCAPE)
 	var settings := _first_group_node("settings_menu")
 	if settings == null or not settings.is_ui_open():
 		_fail("Esc did not open settings when no other page was open")
 		return
 	settings.call("_configure_display_options_for_platform", true)
 	var settings_options := settings.get_node("Dimmer/Panel/VBox/Tabs/Display/Options") as GridContainer
+	var settings_panel := settings.get_node("Dimmer/Panel") as PanelContainer
+	var settings_tabs := settings.get_node("Dimmer/Panel/VBox/Tabs") as TabContainer
 	var resolution_option := settings.get_node("Dimmer/Panel/VBox/Tabs/Display/Options/ResolutionOption") as OptionButton
 	var mode_option := settings.get_node("Dimmer/Panel/VBox/Tabs/Display/Options/ModeOption") as OptionButton
 	var apply_button := settings.get_node("Dimmer/Panel/VBox/Tabs/Display/ApplyButton") as Button
@@ -109,9 +114,18 @@ func _run() -> void:
 	if mode_option.item_count != 2 or mode_option.get_item_text(1) != "浏览器全屏":
 		_fail("Web settings did not expose window/fullscreen choices")
 		return
-	InputManager.call("_handle_cancel")
+	await get_tree().process_frame
+	var display_panel_height := settings_panel.size.y
+	settings_tabs.current_tab = 1
+	await get_tree().process_frame
+	if settings_panel.size.y <= display_panel_height:
+		_fail("Save management did not expand beyond the compact display settings panel")
+		return
+	settings_tabs.current_tab = 0
+	await get_tree().process_frame
+	_send_global_key(KEY_B)
 	if settings.is_ui_open():
-		_fail("Esc did not close settings")
+		_fail("B did not close settings")
 		return
 
 	_open_test_dialogue(dialogue)
@@ -136,6 +150,10 @@ func _run() -> void:
 	if bag.is_ui_open():
 		_fail("I was intercepted while the dialogue text field had focus")
 		return
+	_send_global_key(KEY_B)
+	if not dialogue.is_open():
+		_fail("B interrupted dialogue text entry")
+		return
 	input_edit.release_focus()
 
 	InputManager.request_open_map()
@@ -158,9 +176,13 @@ func _run() -> void:
 	var forced_modal := SCENE_INTERACTION_SCRIPT.new()
 	main.add_child(forced_modal)
 	forced_modal.open_paged_text("必须确认", ["不可跳过。"], "shortcut_smoke", {}, true, "确认")
-	InputManager.call("_handle_cancel")
+	_send_global_key(KEY_ESCAPE)
 	if not forced_modal.is_ui_open():
 		_fail("Esc closed a mandatory interaction")
+		return
+	_send_global_key(KEY_B)
+	if not forced_modal.is_ui_open():
+		_fail("B closed a mandatory interaction")
 		return
 	if bool(InputManager.call("_close_optional_overlays_for_navigation")):
 		_fail("Mandatory interaction allowed map navigation")
@@ -185,12 +207,12 @@ func _run() -> void:
 		_fail("Dialogue overlays survived the scene transition")
 		return
 
-	InputManager.request_open_map()
+	_send_global_key(KEY_B)
 	await get_tree().process_frame
 	await get_tree().process_frame
 	current = get_tree().current_scene
 	if current == null or String(current.scene_file_path) != "res://scenes/main/Main.tscn":
-		_fail("M did not toggle WorldMap back to the source scene")
+		_fail("B did not return from WorldMap to the source scene")
 		return
 
 	print("INPUT_SHORTCUT_SMOKE_OK")
@@ -213,6 +235,14 @@ func _action_has_key(action_name: String, expected_keycode: int) -> bool:
 		if event is InputEventKey and ((event as InputEventKey).keycode == expected_keycode or (event as InputEventKey).physical_keycode == expected_keycode):
 			return true
 	return false
+
+
+func _send_global_key(keycode: int) -> void:
+	var key_event := InputEventKey.new()
+	key_event.pressed = true
+	key_event.keycode = keycode
+	key_event.physical_keycode = keycode
+	InputManager.call("_unhandled_input", key_event)
 
 
 func _fail(message: String) -> void:

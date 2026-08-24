@@ -41,6 +41,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and (not event.pressed or event.echo):
 		return
 	if event.is_action_pressed("cancel_or_back"):
+		# B 是全屏时 Esc 的替代返回键；文本输入期间必须保留给英文/拼音输入。
+		if _is_text_entry_focused() and _is_b_key(event):
+			return
 		_handle_cancel()
 		_consume()
 		return
@@ -217,6 +220,10 @@ func _is_text_entry_focused() -> bool:
 		return false
 	var focus_owner := viewport.gui_get_focus_owner()
 	return focus_owner is LineEdit or focus_owner is TextEdit
+
+
+func _is_b_key(event: InputEvent) -> bool:
+	return event is InputEventKey and ((event as InputEventKey).keycode == KEY_B or (event as InputEventKey).physical_keycode == KEY_B)
 
 
 func _consume() -> void:

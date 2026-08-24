@@ -38,7 +38,7 @@ vertical_alignment = 1
 [node name="CloseBtn" type="Button" parent="Center/Panel/VBox/Header"]
 custom_minimum_size = Vector2(40, 40)
 text = "✕"
-tooltip_text = "关闭 (Esc)"
+tooltip_text = "关闭 (Esc / B)"
 theme_override_font_sizes/font_size = 20
 
 ; ── 主体：左侧大图 + 右侧描述 ──

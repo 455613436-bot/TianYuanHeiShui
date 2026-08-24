@@ -125,7 +125,7 @@ func _build_shell() -> void:
 	_title_label.add_theme_color_override("font_color", Color(1.0, 0.92, 0.68, 1.0))
 	header.add_child(_title_label)
 	var close_button := Button.new()
-	close_button.text = "关闭 (Esc)"
+	close_button.text = "关闭 (Esc / B)"
 	close_button.custom_minimum_size = Vector2(96, 36)
 	close_button.pressed.connect(close_ui)
 	header.add_child(close_button)

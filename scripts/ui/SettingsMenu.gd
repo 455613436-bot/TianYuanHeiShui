@@ -4,6 +4,8 @@ extends CanvasLayer
 const SETTINGS_VERSION := 1
 const SETTINGS_PATH := "user://settings.json"
 const TITLE_SCREEN_SCENE := "res://scenes/ui/TitleScreen.tscn"
+const DISPLAY_PANEL_MAX_HEIGHT := 470.0
+const SAVE_PANEL_MAX_HEIGHT := 680.0
 const RESOLUTIONS := [
 	Vector2i(1280, 720),
 	Vector2i(1600, 900),
@@ -37,7 +39,7 @@ var _pending_slot := 0
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	add_to_group("settings_menu")
-	title_label.text = "设置（Esc）"
+	title_label.text = "设置（Esc / B）"
 	tabs.set_tab_title(0, "显示设置")
 	tabs.set_tab_title(1, "存档管理")
 	resolution_label.text = "分辨率"
@@ -47,7 +49,7 @@ func _ready() -> void:
 	hint_label.text = "游戏进度会自动保存；也可以在“存档管理”中使用 5 个手动槽位。"
 	global_status_label.text = ""
 	main_menu_button.text = "返回主菜单"
-	close_button.text = "返回游戏（Esc）"
+	close_button.text = "返回游戏（Esc / B）"
 	for resolution in RESOLUTIONS:
 		resolution_option.add_item("%d × %d" % [resolution.x, resolution.y])
 	mode_option.add_item("窗口模式")
@@ -55,6 +57,7 @@ func _ready() -> void:
 	mode_option.add_item("全屏模式")
 	_configure_display_options_for_platform()
 	apply_button.pressed.connect(_on_apply_pressed)
+	tabs.tab_changed.connect(_on_tab_changed)
 	main_menu_button.pressed.connect(_on_main_menu_pressed)
 	close_button.pressed.connect(close_top_ui)
 	save_confirm.confirmed.connect(_on_save_confirmed)
@@ -90,6 +93,10 @@ func close_top_ui() -> void:
 func _close_settings_ui() -> void:
 	visible = false
 	get_tree().paused = _was_paused
+
+
+func _on_tab_changed(_tab_index: int) -> void:
+	_apply_responsive_layout()
 
 
 func _on_apply_pressed() -> void:
@@ -351,7 +358,8 @@ func _apply_responsive_layout() -> void:
 	if viewport_size.x <= 0.0 or viewport_size.y <= 0.0:
 		return
 	var panel_width := minf(700.0, viewport_size.x - 32.0)
-	var panel_height := minf(680.0, viewport_size.y - 32.0)
+	var preferred_height := SAVE_PANEL_MAX_HEIGHT if tabs.current_tab == 1 else DISPLAY_PANEL_MAX_HEIGHT
+	var panel_height := minf(preferred_height, viewport_size.y - 32.0)
 	panel.offset_left = -panel_width * 0.5
 	panel.offset_right = panel_width * 0.5
 	panel.offset_top = -panel_height * 0.5
