@@ -91,7 +91,93 @@ autowrap_mode = 2
 
 [node name="HintLabel" type="Label" parent="Dimmer/Panel/VBox/Tabs/Display"]
 layout_mode = 2
-custom_minimum_size = Vector2(0, 64)
+custom_minimum_size = Vector2(0, 82)
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+modulate = Color(0.75, 0.78, 0.72, 1)
+
+[node name="AudioSettings" type="VBoxContainer" parent="Dimmer/Panel/VBox/Tabs"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="AudioHint" type="Label" parent="Dimmer/Panel/VBox/Tabs/AudioSettings"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 44)
+text = "音量设置会自动保存。网页首次点击游戏画面后才能播放声音。"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+modulate = Color(0.75, 0.78, 0.72, 1)
+
+[node name="AudioOptions" type="GridContainer" parent="Dimmer/Panel/VBox/Tabs/AudioSettings"]
+layout_mode = 2
+columns = 3
+theme_override_constants/h_separation = 12
+theme_override_constants/v_separation = 12
+
+[node name="MasterVolumeLabel" type="Label" parent="Dimmer/Panel/VBox/Tabs/AudioSettings/AudioOptions"]
+layout_mode = 2
+custom_minimum_size = Vector2(130, 44)
+text = "总音量"
+vertical_alignment = 1
+
+[node name="MasterVolumeSlider" type="HSlider" parent="Dimmer/Panel/VBox/Tabs/AudioSettings/AudioOptions"]
+layout_mode = 2
+custom_minimum_size = Vector2(360, 44)
+size_flags_horizontal = 3
+
+[node name="MasterVolumeValue" type="Label" parent="Dimmer/Panel/VBox/Tabs/AudioSettings/AudioOptions"]
+layout_mode = 2
+custom_minimum_size = Vector2(64, 44)
+horizontal_alignment = 2
+vertical_alignment = 1
+
+[node name="BgmVolumeLabel" type="Label" parent="Dimmer/Panel/VBox/Tabs/AudioSettings/AudioOptions"]
+layout_mode = 2
+custom_minimum_size = Vector2(130, 44)
+text = "音乐音量"
+vertical_alignment = 1
+
+[node name="BgmVolumeSlider" type="HSlider" parent="Dimmer/Panel/VBox/Tabs/AudioSettings/AudioOptions"]
+layout_mode = 2
+custom_minimum_size = Vector2(360, 44)
+size_flags_horizontal = 3
+
+[node name="BgmVolumeValue" type="Label" parent="Dimmer/Panel/VBox/Tabs/AudioSettings/AudioOptions"]
+layout_mode = 2
+custom_minimum_size = Vector2(64, 44)
+horizontal_alignment = 2
+vertical_alignment = 1
+
+[node name="SfxVolumeLabel" type="Label" parent="Dimmer/Panel/VBox/Tabs/AudioSettings/AudioOptions"]
+layout_mode = 2
+custom_minimum_size = Vector2(130, 44)
+text = "音效音量"
+vertical_alignment = 1
+
+[node name="SfxVolumeSlider" type="HSlider" parent="Dimmer/Panel/VBox/Tabs/AudioSettings/AudioOptions"]
+layout_mode = 2
+custom_minimum_size = Vector2(360, 44)
+size_flags_horizontal = 3
+
+[node name="SfxVolumeValue" type="Label" parent="Dimmer/Panel/VBox/Tabs/AudioSettings/AudioOptions"]
+layout_mode = 2
+custom_minimum_size = Vector2(64, 44)
+horizontal_alignment = 2
+vertical_alignment = 1
+
+[node name="MuteCheck" type="CheckButton" parent="Dimmer/Panel/VBox/Tabs/AudioSettings"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 44)
+
+[node name="ResetAudioButton" type="Button" parent="Dimmer/Panel/VBox/Tabs/AudioSettings"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 44)
+
+[node name="AudioStatusLabel" type="Label" parent="Dimmer/Panel/VBox/Tabs/AudioSettings"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 42)
 horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 2

@@ -102,13 +102,17 @@ body {
 }
 
 #status-message {
-	position: relative;
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 50%;
 	z-index: 3;
-	margin-top: auto;
-	margin-bottom: 1rem;
+	margin: 0;
 	color: #f0e4c8;
-	font: 600 1.05rem/1.25 "Noto Serif SC", "Microsoft YaHei", serif;
-	letter-spacing: 0.08em;
+	font: 700 clamp(1.5rem, 3vw, 2.25rem)/1.25 "Noto Serif SC", "Microsoft YaHei", serif;
+	letter-spacing: 0.12em;
+	text-align: center;
+	transform: translateY(-50%);
 }
 
 #status-notice {
@@ -125,6 +129,24 @@ body {
 	z-index: 2;
 }
 
+#audio-unlock-notice {
+	position: absolute;
+	left: 50%;
+	bottom: 8%;
+	z-index: 4;
+	display: none;
+	padding: 0.65rem 1rem;
+	border: 1px solid rgba(221, 196, 148, 0.75);
+	border-radius: 0.35rem;
+	background: rgba(18, 22, 19, 0.82);
+	color: #f0e4c8;
+	font: 600 clamp(0.9rem, 1.8vw, 1.1rem)/1.25 "Noto Serif SC", "Microsoft YaHei", serif;
+	letter-spacing: 0.06em;
+	text-align: center;
+	transform: translateX(-50%);
+	pointer-events: none;
+}
+
 		</style>
 		$GODOT_HEAD_INCLUDE
 	</head>
@@ -139,6 +161,7 @@ body {
 				<div id="status-message">正在编译着色器…</div>
 				<div id="status-notice"></div>
 			</div>
+			<div id="audio-unlock-notice" aria-live="polite">点击任意位置开启声音</div>
 		</div>
 
 		<noscript>当前浏览器未启用 JavaScript，无法运行游戏。</noscript>
@@ -219,6 +242,80 @@ if (window.visualViewport) {
 	window.visualViewport.addEventListener('resize', resizeGameFrame, { passive: true });
 }
 
+const webAudioState = {
+	contexts: new Set(),
+	interacted: false,
+	unlocked: false,
+};
+
+function notifyWebAudioStateChange() {
+	window.dispatchEvent(new Event('tianyuanwebaudiostatechange'));
+}
+
+function refreshWebAudioState() {
+	const wasUnlocked = webAudioState.unlocked;
+	webAudioState.unlocked = webAudioState.contexts.size > 0
+		&& Array.from(webAudioState.contexts).every((context) => context.state === 'running');
+	if (wasUnlocked !== webAudioState.unlocked) {
+		notifyWebAudioStateChange();
+	}
+	return webAudioState.unlocked;
+}
+
+function trackAudioContext(context) {
+	webAudioState.contexts.add(context);
+	context.addEventListener('statechange', refreshWebAudioState);
+	if (webAudioState.interacted && context.state !== 'running') {
+		context.resume().then(refreshWebAudioState).catch(refreshWebAudioState);
+	}
+	refreshWebAudioState();
+	return context;
+}
+
+(function installAudioContextTracking() {
+	const NativeAudioContext = window.AudioContext || window.webkitAudioContext;
+	if (!NativeAudioContext) {
+		return;
+	}
+	function TrackingAudioContext(...args) {
+		return trackAudioContext(new NativeAudioContext(...args));
+	}
+	TrackingAudioContext.prototype = NativeAudioContext.prototype;
+	Object.setPrototypeOf(TrackingAudioContext, NativeAudioContext);
+	try {
+		if (window.AudioContext) {
+			window.AudioContext = TrackingAudioContext;
+		} else {
+			window.webkitAudioContext = TrackingAudioContext;
+		}
+	} catch (_error) {
+		// Browsers that expose a read-only constructor still receive Godot's native resume path.
+	}
+}());
+
+window.tianyuanRequestWebAudioUnlock = function () {
+	webAudioState.interacted = true;
+	const contexts = Array.from(webAudioState.contexts);
+	if (contexts.length === 0) {
+		return false;
+	}
+	Promise.all(contexts.map((context) => context.state === 'running' ? Promise.resolve() : context.resume()))
+		.then(refreshWebAudioState)
+		.catch(refreshWebAudioState);
+	return true;
+};
+
+window.tianyuanIsWebAudioUnlocked = function () {
+	return webAudioState.unlocked;
+};
+
+for (const eventName of ['pointerdown', 'touchstart', 'keydown']) {
+	document.addEventListener(eventName, () => window.tianyuanRequestWebAudioUnlock(), {
+		capture: true,
+		passive: true,
+	});
+}
+
 const GODOT_CONFIG = $GODOT_CONFIG;
 const GODOT_THREADS_ENABLED = $GODOT_THREADS_ENABLED;
 const engine = new Engine(GODOT_CONFIG);
@@ -228,6 +325,7 @@ const engine = new Engine(GODOT_CONFIG);
 	const statusProgress = document.getElementById('status-progress');
 	const statusNotice = document.getElementById('status-notice');
 	const statusMessage = document.getElementById('status-message');
+	const audioUnlockNotice = document.getElementById('audio-unlock-notice');
 
 	let initializing = true;
 	let statusMode = '';
@@ -271,6 +369,12 @@ const engine = new Engine(GODOT_CONFIG);
 		setStatusMode('notice');
 		initializing = false;
 	}
+
+	function updateAudioUnlockNotice() {
+		audioUnlockNotice.style.display = window.tianyuanIsWebAudioUnlocked() ? 'none' : 'block';
+	}
+
+	window.addEventListener('tianyuanwebaudiostatechange', updateAudioUnlockNotice);
 
 	const missing = Engine.getMissingFeatures({
 		threads: GODOT_THREADS_ENABLED,
@@ -320,6 +424,7 @@ const engine = new Engine(GODOT_CONFIG);
 				},
 			}).then(() => {
 				setStatusMode('hidden');
+				updateAudioUnlockNotice();
 			}, displayFailureNotice);
 		};
 		setStatusMode('progress');

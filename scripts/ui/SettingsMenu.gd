@@ -6,6 +6,7 @@ const SETTINGS_PATH := "user://settings.json"
 const TITLE_SCREEN_SCENE := "res://scenes/ui/TitleScreen.tscn"
 const DISPLAY_PANEL_MAX_HEIGHT := 470.0
 const SAVE_PANEL_MAX_HEIGHT := 680.0
+const AUDIO_PANEL_MAX_HEIGHT := 540.0
 const RESOLUTIONS := [
 	Vector2i(1280, 720),
 	Vector2i(1600, 900),
@@ -24,6 +25,15 @@ const RESOLUTIONS := [
 @onready var apply_button: Button = $Dimmer/Panel/VBox/Tabs/Display/ApplyButton
 @onready var status_label: Label = $Dimmer/Panel/VBox/Tabs/Display/StatusLabel
 @onready var hint_label: Label = $Dimmer/Panel/VBox/Tabs/Display/HintLabel
+@onready var master_volume_slider: HSlider = $Dimmer/Panel/VBox/Tabs/AudioSettings/AudioOptions/MasterVolumeSlider
+@onready var master_volume_value: Label = $Dimmer/Panel/VBox/Tabs/AudioSettings/AudioOptions/MasterVolumeValue
+@onready var bgm_volume_slider: HSlider = $Dimmer/Panel/VBox/Tabs/AudioSettings/AudioOptions/BgmVolumeSlider
+@onready var bgm_volume_value: Label = $Dimmer/Panel/VBox/Tabs/AudioSettings/AudioOptions/BgmVolumeValue
+@onready var sfx_volume_slider: HSlider = $Dimmer/Panel/VBox/Tabs/AudioSettings/AudioOptions/SfxVolumeSlider
+@onready var sfx_volume_value: Label = $Dimmer/Panel/VBox/Tabs/AudioSettings/AudioOptions/SfxVolumeValue
+@onready var mute_check: CheckButton = $Dimmer/Panel/VBox/Tabs/AudioSettings/MuteCheck
+@onready var reset_audio_button: Button = $Dimmer/Panel/VBox/Tabs/AudioSettings/ResetAudioButton
+@onready var audio_status_label: Label = $Dimmer/Panel/VBox/Tabs/AudioSettings/AudioStatusLabel
 @onready var save_list: VBoxContainer = $Dimmer/Panel/VBox/Tabs/SaveManagement/Scroll/List
 @onready var global_status_label: Label = $Dimmer/Panel/VBox/GlobalStatusLabel
 @onready var main_menu_button: Button = $Dimmer/Panel/VBox/MainMenuButton
@@ -42,6 +52,7 @@ func _ready() -> void:
 	title_label.text = "设置（Esc / B）"
 	tabs.set_tab_title(0, "显示设置")
 	tabs.set_tab_title(1, "存档管理")
+	tabs.set_tab_title(2, "声音设置")
 	resolution_label.text = "分辨率"
 	mode_label.text = "窗口模式"
 	apply_button.text = "应用显示设置"
@@ -56,8 +67,14 @@ func _ready() -> void:
 	mode_option.add_item("无边框窗口")
 	mode_option.add_item("全屏模式")
 	_configure_display_options_for_platform()
+	_configure_audio_options()
 	apply_button.pressed.connect(_on_apply_pressed)
 	tabs.tab_changed.connect(_on_tab_changed)
+	master_volume_slider.value_changed.connect(_on_master_volume_changed)
+	bgm_volume_slider.value_changed.connect(_on_bgm_volume_changed)
+	sfx_volume_slider.value_changed.connect(_on_sfx_volume_changed)
+	mute_check.toggled.connect(_on_mute_toggled)
+	reset_audio_button.pressed.connect(_on_reset_audio_pressed)
 	main_menu_button.pressed.connect(_on_main_menu_pressed)
 	close_button.pressed.connect(close_top_ui)
 	save_confirm.confirmed.connect(_on_save_confirmed)
@@ -81,6 +98,7 @@ func open_ui() -> void:
 	get_tree().paused = true
 	_apply_responsive_layout()
 	_refresh_save_slots()
+	_refresh_audio_options()
 	close_button.grab_focus()
 
 
@@ -97,6 +115,61 @@ func _close_settings_ui() -> void:
 
 func _on_tab_changed(_tab_index: int) -> void:
 	_apply_responsive_layout()
+	if tabs.current_tab == 2:
+		_refresh_audio_options()
+
+
+func _configure_audio_options() -> void:
+	mute_check.text = "静音"
+	reset_audio_button.text = "恢复默认音量"
+	for slider in [master_volume_slider, bgm_volume_slider, sfx_volume_slider]:
+		slider.min_value = 0.0
+		slider.max_value = 100.0
+		slider.step = 1.0
+	_refresh_audio_options()
+
+
+func _refresh_audio_options() -> void:
+	var settings: Dictionary = AudioManager.get_audio_settings()
+	master_volume_slider.set_value_no_signal(float(settings.get("master_volume", 100.0)))
+	bgm_volume_slider.set_value_no_signal(float(settings.get("bgm_volume", 100.0)))
+	sfx_volume_slider.set_value_no_signal(float(settings.get("sfx_volume", 100.0)))
+	mute_check.set_pressed_no_signal(bool(settings.get("muted", false)))
+	_update_audio_volume_labels()
+	if _is_web_runtime() and not AudioManager.is_web_audio_unlocked():
+		audio_status_label.text = "网页声音尚未启用：点击游戏画面即可开启。"
+	else:
+		audio_status_label.text = "音量设置会自动保存。"
+
+
+func _update_audio_volume_labels() -> void:
+	master_volume_value.text = "%d%%" % roundi(master_volume_slider.value)
+	bgm_volume_value.text = "%d%%" % roundi(bgm_volume_slider.value)
+	sfx_volume_value.text = "%d%%" % roundi(sfx_volume_slider.value)
+
+
+func _on_master_volume_changed(value: float) -> void:
+	AudioManager.set_master_volume(value)
+	_update_audio_volume_labels()
+
+
+func _on_bgm_volume_changed(value: float) -> void:
+	AudioManager.set_bgm_volume(value)
+	_update_audio_volume_labels()
+
+
+func _on_sfx_volume_changed(value: float) -> void:
+	AudioManager.set_sfx_volume(value)
+	_update_audio_volume_labels()
+
+
+func _on_mute_toggled(pressed: bool) -> void:
+	AudioManager.set_muted(pressed)
+
+
+func _on_reset_audio_pressed() -> void:
+	AudioManager.reset_audio_settings()
+	_refresh_audio_options()
 
 
 func _on_apply_pressed() -> void:
@@ -325,7 +398,7 @@ func _configure_display_options_for_platform(force_web: Variant = null) -> void:
 	mode_option.add_item("浏览器窗口")
 	mode_option.add_item("浏览器全屏")
 	mode_option.select(1 if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN else 0)
-	hint_label.text = "所选尺寸超过浏览器空间时会自动缩小；选择全屏后若浏览器询问权限，请允许。进度会自动保存。"
+	hint_label.text = "所选尺寸超过浏览器空间时会自动缩小；选择全屏后若浏览器询问权限，请允许。\n浏览器全屏时，Esc 会退出全屏；请使用 B 键返回游戏。"
 
 
 func _apply_web_display_settings() -> void:
@@ -358,7 +431,11 @@ func _apply_responsive_layout() -> void:
 	if viewport_size.x <= 0.0 or viewport_size.y <= 0.0:
 		return
 	var panel_width := minf(700.0, viewport_size.x - 32.0)
-	var preferred_height := SAVE_PANEL_MAX_HEIGHT if tabs.current_tab == 1 else DISPLAY_PANEL_MAX_HEIGHT
+	var preferred_height := DISPLAY_PANEL_MAX_HEIGHT
+	if tabs.current_tab == 1:
+		preferred_height = SAVE_PANEL_MAX_HEIGHT
+	elif tabs.current_tab == 2:
+		preferred_height = AUDIO_PANEL_MAX_HEIGHT
 	var panel_height := minf(preferred_height, viewport_size.y - 32.0)
 	panel.offset_left = -panel_width * 0.5
 	panel.offset_right = panel_width * 0.5

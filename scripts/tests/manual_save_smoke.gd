@@ -48,6 +48,19 @@ func _run() -> void:
 	if save_list.get_child_count() != GameState.MANUAL_SAVE_SLOT_COUNT:
 		_fail("Settings menu did not build five save rows")
 		return
+	var tabs := settings.get_node("Dimmer/Panel/VBox/Tabs") as TabContainer
+	if tabs == null or tabs.get_tab_count() != 3 or tabs.get_tab_title(2) != "声音设置":
+		_fail("Settings menu did not expose the audio settings tab")
+		return
+	for control_path in [
+		"Dimmer/Panel/VBox/Tabs/AudioSettings/AudioOptions/MasterVolumeSlider",
+		"Dimmer/Panel/VBox/Tabs/AudioSettings/AudioOptions/BgmVolumeSlider",
+		"Dimmer/Panel/VBox/Tabs/AudioSettings/AudioOptions/SfxVolumeSlider",
+		"Dimmer/Panel/VBox/Tabs/AudioSettings/MuteCheck",
+	]:
+		if settings.get_node_or_null(control_path) == null:
+			_fail("Settings menu is missing audio control: %s" % control_path)
+			return
 	GameState.clear_save(TEST_SAVE_PATH)
 	print("MANUAL_SAVE_SMOKE_OK")
 	get_tree().quit(0)

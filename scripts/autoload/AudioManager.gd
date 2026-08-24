@@ -23,6 +23,9 @@ const MAP_BGM_DUCK_SECONDS := 0.2
 const SFX_TARGET_DB := -10.0
 const BGM_PLAYER_COUNT := 2
 const SFX_PLAYER_COUNT := 6
+const AUDIO_SETTINGS_PATH := "user://audio_settings.json"
+const AUDIO_SETTINGS_VERSION := 1
+const DEFAULT_VOLUME_PERCENT := 100.0
 
 const BUTTON_BOUND_META := &"_audio_manager_bound"
 const BUTTON_SFX_META := &"audio_sfx"
@@ -47,13 +50,21 @@ var _current_track_path := ""
 var _bgm_tween: Tween
 var _bgm_bus_tween: Tween
 var _map_bgm_ducked := false
+var _map_bgm_duck_db := 0.0
 var _web_bgm_retry_attempted := false
+var _web_audio_unlock_requested := false
+var _master_volume_percent := DEFAULT_VOLUME_PERCENT
+var _bgm_volume_percent := DEFAULT_VOLUME_PERCENT
+var _sfx_volume_percent := DEFAULT_VOLUME_PERCENT
+var _muted := false
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_ensure_audio_bus(BGM_BUS_NAME)
 	_ensure_audio_bus(SFX_BUS_NAME)
+	_load_audio_settings()
+	_apply_audio_settings()
 	_create_players()
 	_load_location_tracks()
 	_load_sfx_streams()
@@ -63,7 +74,7 @@ func _ready() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not OS.has_feature("web") or _web_bgm_retry_attempted:
+	if not OS.has_feature("web"):
 		return
 	var is_unlock_input: bool = (
 		(event is InputEventMouseButton and event.pressed)
@@ -71,6 +82,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		or (event is InputEventKey and event.pressed and not event.echo)
 	)
 	if is_unlock_input:
+		request_web_audio_unlock()
 		retry_current_bgm_if_needed()
 
 
@@ -81,6 +93,132 @@ func _ensure_audio_bus(bus_name: StringName) -> void:
 		bus_index = AudioServer.bus_count - 1
 		AudioServer.set_bus_name(bus_index, bus_name)
 	AudioServer.set_bus_send(bus_index, &"Master")
+
+
+func get_audio_settings() -> Dictionary:
+	return {
+		"master_volume": _master_volume_percent,
+		"bgm_volume": _bgm_volume_percent,
+		"sfx_volume": _sfx_volume_percent,
+		"muted": _muted,
+	}
+
+
+func set_master_volume(percent: float) -> void:
+	_master_volume_percent = clampf(percent, 0.0, 100.0)
+	_apply_audio_settings()
+	_save_audio_settings()
+
+
+func set_bgm_volume(percent: float) -> void:
+	_bgm_volume_percent = clampf(percent, 0.0, 100.0)
+	_apply_audio_settings()
+	_save_audio_settings()
+
+
+func set_sfx_volume(percent: float) -> void:
+	_sfx_volume_percent = clampf(percent, 0.0, 100.0)
+	_apply_audio_settings()
+	_save_audio_settings()
+
+
+func set_muted(muted: bool) -> void:
+	_muted = muted
+	_apply_audio_settings()
+	_save_audio_settings()
+
+
+func reset_audio_settings() -> void:
+	_master_volume_percent = DEFAULT_VOLUME_PERCENT
+	_bgm_volume_percent = DEFAULT_VOLUME_PERCENT
+	_sfx_volume_percent = DEFAULT_VOLUME_PERCENT
+	_muted = false
+	_apply_audio_settings()
+	_save_audio_settings()
+
+
+func request_web_audio_unlock() -> bool:
+	if not OS.has_feature("web"):
+		return true
+	var requested: Variant = JavaScriptBridge.eval("window.tianyuanRequestWebAudioUnlock ? window.tianyuanRequestWebAudioUnlock() : false;")
+	if not bool(requested):
+		return false
+	_web_audio_unlock_requested = true
+	call_deferred("_retry_bgm_after_web_audio_unlock")
+	return true
+
+
+func is_web_audio_unlocked() -> bool:
+	if not OS.has_feature("web"):
+		return true
+	var unlocked: Variant = JavaScriptBridge.eval("window.tianyuanIsWebAudioUnlocked ? window.tianyuanIsWebAudioUnlocked() : false;")
+	return bool(unlocked)
+
+
+func _retry_bgm_after_web_audio_unlock() -> void:
+	if not _web_audio_unlock_requested or not is_web_audio_unlocked():
+		return
+	_web_audio_unlock_requested = false
+	_web_bgm_retry_attempted = false
+	retry_current_bgm_if_needed()
+
+
+func _load_audio_settings() -> void:
+	if not FileAccess.file_exists(AUDIO_SETTINGS_PATH):
+		return
+	var file := FileAccess.open(AUDIO_SETTINGS_PATH, FileAccess.READ)
+	if file == null:
+		return
+	var json := JSON.new()
+	var parse_error := json.parse(file.get_as_text())
+	file.close()
+	if parse_error != OK or not json.data is Dictionary:
+		return
+	var data: Dictionary = json.data
+	if int(data.get("settings_version", 0)) != AUDIO_SETTINGS_VERSION:
+		return
+	_master_volume_percent = clampf(float(data.get("master_volume", DEFAULT_VOLUME_PERCENT)), 0.0, 100.0)
+	_bgm_volume_percent = clampf(float(data.get("bgm_volume", DEFAULT_VOLUME_PERCENT)), 0.0, 100.0)
+	_sfx_volume_percent = clampf(float(data.get("sfx_volume", DEFAULT_VOLUME_PERCENT)), 0.0, 100.0)
+	_muted = bool(data.get("muted", false))
+
+
+func _save_audio_settings() -> void:
+	var file := FileAccess.open(AUDIO_SETTINGS_PATH, FileAccess.WRITE)
+	if file == null:
+		push_warning("[AudioManager] 无法保存音频设置")
+		return
+	file.store_string(JSON.stringify({
+		"settings_version": AUDIO_SETTINGS_VERSION,
+		"master_volume": _master_volume_percent,
+		"bgm_volume": _bgm_volume_percent,
+		"sfx_volume": _sfx_volume_percent,
+		"muted": _muted,
+	}, "\t"))
+	file.close()
+
+
+func _apply_audio_settings() -> void:
+	var master_index := AudioServer.get_bus_index(&"Master")
+	if master_index >= 0:
+		AudioServer.set_bus_mute(master_index, _muted)
+		AudioServer.set_bus_volume_db(master_index, _percent_to_db(_master_volume_percent))
+	_apply_bgm_bus_volume()
+	var sfx_index := AudioServer.get_bus_index(SFX_BUS_NAME)
+	if sfx_index >= 0:
+		AudioServer.set_bus_volume_db(sfx_index, _percent_to_db(_sfx_volume_percent))
+
+
+func _apply_bgm_bus_volume() -> void:
+	var bgm_index := AudioServer.get_bus_index(BGM_BUS_NAME)
+	if bgm_index >= 0:
+		AudioServer.set_bus_volume_db(bgm_index, _percent_to_db(_bgm_volume_percent) + _map_bgm_duck_db)
+
+
+func _percent_to_db(percent: float) -> float:
+	if percent <= 0.0:
+		return -80.0
+	return linear_to_db(percent / 100.0)
 
 
 func _create_players() -> void:
@@ -167,13 +305,12 @@ func set_map_bgm_ducked(ducked: bool, seconds: float = MAP_BGM_DUCK_SECONDS) -> 
 	var target_db := MAP_BGM_DUCK_DB if ducked else 0.0
 	_bgm_bus_tween = create_tween()
 	_bgm_bus_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	_bgm_bus_tween.tween_method(_set_bgm_bus_volume, AudioServer.get_bus_volume_db(bus_index), target_db, maxf(seconds, 0.0))
+	_bgm_bus_tween.tween_method(_set_bgm_duck_db, _map_bgm_duck_db, target_db, maxf(seconds, 0.0))
 
 
-func _set_bgm_bus_volume(volume_db: float) -> void:
-	var bus_index := AudioServer.get_bus_index(BGM_BUS_NAME)
-	if bus_index >= 0:
-		AudioServer.set_bus_volume_db(bus_index, volume_db)
+func _set_bgm_duck_db(volume_db: float) -> void:
+	_map_bgm_duck_db = volume_db
+	_apply_bgm_bus_volume()
 
 
 func play_location_bgm(location_id: String) -> void:
@@ -360,11 +497,13 @@ func _bind_button(node: Node) -> void:
 
 
 func _on_button_pressed(button: BaseButton) -> void:
+	request_web_audio_unlock()
 	retry_current_bgm_if_needed()
 	play_sfx(_button_effect_id(button))
 
 
 func _on_option_selected(_index: int, option: OptionButton) -> void:
+	request_web_audio_unlock()
 	retry_current_bgm_if_needed()
 	var explicit_id := String(option.get_meta(BUTTON_SFX_META, "")).strip_edges()
 	play_sfx(explicit_id if not explicit_id.is_empty() else "select")
