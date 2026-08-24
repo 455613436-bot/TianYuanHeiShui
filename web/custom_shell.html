@@ -50,7 +50,7 @@ body {
 	outline: none;
 }
 
-#status, #status-splash, #status-progress {
+#status, #status-splash, #status-progress, #status-progress-info {
 	position: absolute;
 	left: 0;
 	right: 0;
@@ -72,8 +72,10 @@ body {
 }
 
 #status-splash {
-	max-height: 100%;
-	max-width: 100%;
+	top: 12%;
+	bottom: auto;
+	max-height: 42%;
+	max-width: 56%;
 	margin: auto;
 }
 
@@ -96,7 +98,7 @@ body {
 }
 
 #status-progress {
-	bottom: 10%;
+	bottom: 18%;
 	width: 50%;
 	margin: 0 auto;
 }
@@ -105,7 +107,7 @@ body {
 	position: absolute;
 	left: 0;
 	right: 0;
-	top: 50%;
+	top: 67%;
 	z-index: 3;
 	margin: 0;
 	color: #f0e4c8;
@@ -113,6 +115,16 @@ body {
 	letter-spacing: 0.12em;
 	text-align: center;
 	transform: translateY(-50%);
+}
+
+#status-progress-info {
+	bottom: 10%;
+	z-index: 3;
+	margin: 0;
+	color: #d8cfbb;
+	font: 500 clamp(0.8rem, 1.5vw, 1rem)/1.25 "Noto Sans SC", "Microsoft YaHei", sans-serif;
+	letter-spacing: 0.04em;
+	text-align: center;
 }
 
 #status-notice {
@@ -159,6 +171,7 @@ body {
 				<img id="status-splash" class="$GODOT_SPLASH_CLASSES" src="$GODOT_SPLASH" alt="">
 				<progress id="status-progress"></progress>
 				<div id="status-message">正在编译着色器…</div>
+				<div id="status-progress-info">正在准备资源…</div>
 				<div id="status-notice"></div>
 			</div>
 			<div id="audio-unlock-notice" aria-live="polite">点击任意位置开启声音</div>
@@ -323,6 +336,7 @@ const engine = new Engine(GODOT_CONFIG);
 (function () {
 	const statusOverlay = document.getElementById('status');
 	const statusProgress = document.getElementById('status-progress');
+	const statusProgressInfo = document.getElementById('status-progress-info');
 	const statusNotice = document.getElementById('status-notice');
 	const statusMessage = document.getElementById('status-message');
 	const audioUnlockNotice = document.getElementById('audio-unlock-notice');
@@ -343,6 +357,7 @@ const engine = new Engine(GODOT_CONFIG);
 		statusOverlay.style.visibility = 'visible';
 		statusProgress.style.display = mode === 'progress' ? 'block' : 'none';
 		statusMessage.style.display = mode === 'progress' ? 'block' : 'none';
+		statusProgressInfo.style.display = mode === 'progress' ? 'block' : 'none';
 		statusNotice.style.display = mode === 'notice' ? 'block' : 'none';
 		statusMode = mode;
 	}
@@ -372,6 +387,14 @@ const engine = new Engine(GODOT_CONFIG);
 
 	function updateAudioUnlockNotice() {
 		audioUnlockNotice.style.display = window.tianyuanIsWebAudioUnlocked() ? 'none' : 'block';
+	}
+
+	function formatTransferSize(bytes) {
+		const value = Math.max(0, Number(bytes) || 0);
+		if (value < 1024 * 1024) {
+			return `${Math.round(value / 1024)} KB`;
+		}
+		return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 	}
 
 	window.addEventListener('tianyuanwebaudiostatechange', updateAudioUnlockNotice);
@@ -417,9 +440,12 @@ const engine = new Engine(GODOT_CONFIG);
 					if (current > 0 && total > 0) {
 						statusProgress.value = current;
 						statusProgress.max = total;
+						const percent = Math.min(100, Math.round((current / total) * 100));
+						statusProgressInfo.textContent = `已加载 ${percent}% · ${formatTransferSize(current)} / ${formatTransferSize(total)}`;
 					} else {
 						statusProgress.removeAttribute('value');
 						statusProgress.removeAttribute('max');
+						statusProgressInfo.textContent = '正在准备资源…';
 					}
 				},
 			}).then(() => {

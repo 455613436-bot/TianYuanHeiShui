@@ -49,7 +49,7 @@ func _run() -> void:
 		_fail("Settings menu did not build five save rows")
 		return
 	var tabs := settings.get_node("Dimmer/Panel/VBox/Tabs") as TabContainer
-	if tabs == null or tabs.get_tab_count() != 3 or tabs.get_tab_title(2) != "声音设置":
+	if tabs == null or tabs.get_tab_count() != 3 or tabs.get_tab_title(1) != "声音设置" or tabs.get_tab_title(2) != "存档管理":
 		_fail("Settings menu did not expose the audio settings tab")
 		return
 	for control_path in [

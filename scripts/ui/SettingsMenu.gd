@@ -51,8 +51,8 @@ func _ready() -> void:
 	add_to_group("settings_menu")
 	title_label.text = "设置（Esc / B）"
 	tabs.set_tab_title(0, "显示设置")
-	tabs.set_tab_title(1, "存档管理")
-	tabs.set_tab_title(2, "声音设置")
+	tabs.set_tab_title(1, "声音设置")
+	tabs.set_tab_title(2, "存档管理")
 	resolution_label.text = "分辨率"
 	mode_label.text = "窗口模式"
 	apply_button.text = "应用显示设置"
@@ -115,7 +115,7 @@ func _close_settings_ui() -> void:
 
 func _on_tab_changed(_tab_index: int) -> void:
 	_apply_responsive_layout()
-	if tabs.current_tab == 2:
+	if tabs.current_tab == 1:
 		_refresh_audio_options()
 
 
@@ -432,9 +432,9 @@ func _apply_responsive_layout() -> void:
 		return
 	var panel_width := minf(700.0, viewport_size.x - 32.0)
 	var preferred_height := DISPLAY_PANEL_MAX_HEIGHT
-	if tabs.current_tab == 1:
+	if tabs.current_tab == 2:
 		preferred_height = SAVE_PANEL_MAX_HEIGHT
-	elif tabs.current_tab == 2:
+	elif tabs.current_tab == 1:
 		preferred_height = AUDIO_PANEL_MAX_HEIGHT
 	var panel_height := minf(preferred_height, viewport_size.y - 32.0)
 	panel.offset_left = -panel_width * 0.5
