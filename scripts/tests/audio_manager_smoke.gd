@@ -106,8 +106,20 @@ func _run() -> void:
 	if not bool(option.get_meta("_audio_manager_bound", false)):
 		_fail("Dynamic OptionButton was not bound to AudioManager")
 		return
+	var bgm_index_before_click := int(audio.get("_active_bgm_index"))
+	var bgm_players: Array = audio.get("_bgm_players") as Array
+	var bgm_player_before_click := bgm_players[bgm_index_before_click] as AudioStreamPlayer
+	var bgm_position_before_click := bgm_player_before_click.get_playback_position()
 	button.pressed.emit()
 	await get_tree().process_frame
+	var bgm_index_after_click := int(audio.get("_active_bgm_index"))
+	var bgm_player_after_click := bgm_players[bgm_index_after_click] as AudioStreamPlayer
+	if bgm_index_after_click != bgm_index_before_click or bgm_player_after_click != bgm_player_before_click:
+		_fail("Button SFX restarted or swapped the active BGM player")
+		return
+	if bgm_player_after_click.get_playback_position() + 0.01 < bgm_position_before_click:
+		_fail("Button SFX rewound the active BGM playback position")
+		return
 	var sfx_playing := false
 	var sfx_players: Array = audio.get("_sfx_players") as Array
 	for player in sfx_players:

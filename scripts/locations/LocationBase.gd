@@ -2729,7 +2729,7 @@ func _open_rest_confirmation(highlight: MaskInteractionHighlight, rest_ui: Scene
 	rest_ui.open_choice({
 		"id": "dorm_rest",
 		"title": "休息",
-		"description": "现在休息将直接推进到明天早上 09:00，并结算清洁状态、水接触和每日临时增益。确定要睡下吗？",
+		"description": "现在休息将直接推进到明天早上 09:00，并结算清洁状态和每日临时增益。确定要睡下吗？",
 		"choices": [
 			{"id": "confirm_rest", "label": "确定休息"},
 			{"id": "leave", "label": "离开", "close": true},

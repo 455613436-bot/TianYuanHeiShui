@@ -164,7 +164,7 @@ func _run() -> void:
 	dorm.call("_open_rest_confirmation", bed_highlight, rest_ui, wake_ui)
 	await get_tree().process_frame
 	var rest_body := rest_ui.get("_body_label") as RichTextLabel
-	if rest_body == null or not rest_body.text.contains("结算清洁状态、水接触和每日临时增益"):
+	if rest_body == null or not rest_body.text.contains("结算清洁状态和每日临时增益"):
 		_fail("Rest confirmation did not explain the morning settlement")
 		return
 	rest_ui.close_interaction()

@@ -51,7 +51,6 @@ var _bgm_tween: Tween
 var _bgm_bus_tween: Tween
 var _map_bgm_ducked := false
 var _map_bgm_duck_db := 0.0
-var _web_bgm_retry_attempted := false
 var _web_audio_unlock_requested := false
 var _master_volume_percent := DEFAULT_VOLUME_PERCENT
 var _bgm_volume_percent := DEFAULT_VOLUME_PERCENT
@@ -140,6 +139,10 @@ func reset_audio_settings() -> void:
 func request_web_audio_unlock() -> bool:
 	if not OS.has_feature("web"):
 		return true
+	# 解锁只需要发生一次。浏览器音频上下文已经运行后，不要在每次按钮点击时
+	# 重排 BGM 重试任务，否则短音效会连带触发背景音乐重新播放。
+	if is_web_audio_unlocked():
+		return true
 	var requested: Variant = JavaScriptBridge.eval("window.tianyuanRequestWebAudioUnlock ? window.tianyuanRequestWebAudioUnlock() : false;")
 	if not bool(requested):
 		return false
@@ -159,7 +162,6 @@ func _retry_bgm_after_web_audio_unlock() -> void:
 	if not _web_audio_unlock_requested or not is_web_audio_unlocked():
 		return
 	_web_audio_unlock_requested = false
-	_web_bgm_retry_attempted = false
 	retry_current_bgm_if_needed()
 
 
@@ -326,11 +328,14 @@ func retry_current_bgm_if_needed() -> bool:
 	if _bgm_players.is_empty():
 		return false
 	var active_player := _bgm_players[_active_bgm_index]
+	# 这是“补救未能启动的 Web BGM”，不是普通的重新播放入口。
+	# AudioStreamPlayer.playing 为 true 时必须保留当前播放位置。
+	if active_player.playing:
+		return true
 	if not OS.has_feature("web"):
-		return active_player.playing
-	if _web_bgm_retry_attempted:
-		return active_player.playing
-	_web_bgm_retry_attempted = true
+		return false
+	if not is_web_audio_unlocked():
+		return false
 	if _current_track_key.is_empty() or _current_track_path.is_empty():
 		return false
 	var track_key := _current_track_key
