@@ -23,6 +23,9 @@ const SAVE_PATH := "user://save_01.json"
 const AUTO_SAVE_PATH := "user://save_auto.json"
 const AUTO_SAVE_INTERVAL_SECONDS := 300.0
 const MAP_SCENE := "res://scenes/map/WorldMap.tscn"
+const WORLD_MAP_PACKED_SCENE := preload("res://scenes/map/WorldMap.tscn")
+const MAP_OVERLAY_META := &"_world_map_overlay"
+const MAP_OVERLAY_LAYER := 100
 const DEFAULT_MAP_RETURN_SCENE := "res://scenes/locations/VillageChiefHouse.tscn"
 const TEMP_DORM_LOCATION_ID := "temporary_dorm"
 const TEMP_DORM_SCENE := "res://scenes/locations/TemporaryDorm.tscn"
@@ -903,10 +906,38 @@ func can_open_world_map() -> bool:
 func open_world_map() -> Error:
 	if not can_open_world_map():
 		return ERR_UNAUTHORIZED
-	return change_scene(MAP_SCENE, true)
+	if get_tree().get_first_node_in_group("world_map") != null:
+		return OK
+	var scene := get_tree().current_scene
+	if scene == null:
+		return ERR_UNAVAILABLE
+	# 地图只是一层导航 UI。保留当前地点场景，避免 Web 端同步释放/重建整棵
+	# 场景树时让音频工作缓冲短暂断流；打开地图也不再触发一次无意义的存档写入。
+	capture_current_scene()
+	remember_map_return_scene(String(scene.scene_file_path))
+	var map_instance := WORLD_MAP_PACKED_SCENE.instantiate()
+	if map_instance == null:
+		return ERR_CANT_CREATE
+	map_instance.set_meta(MAP_OVERLAY_META, true)
+	var overlay_layer := CanvasLayer.new()
+	overlay_layer.name = "WorldMapOverlay"
+	overlay_layer.layer = MAP_OVERLAY_LAYER
+	overlay_layer.add_child(map_instance)
+	AudioManager.set_map_bgm_ducked(true)
+	scene.add_child(overlay_layer)
+	return OK
 
 
 func close_world_map() -> Error:
+	var map_instance := get_tree().get_first_node_in_group("world_map")
+	if map_instance != null and bool(map_instance.get_meta(MAP_OVERLAY_META, false)):
+		AudioManager.set_map_bgm_ducked(false)
+		var overlay_layer := map_instance.get_parent()
+		if overlay_layer is CanvasLayer:
+			overlay_layer.queue_free()
+		else:
+			map_instance.queue_free()
+		return OK
 	if night_rest_required:
 		return change_scene(TEMP_DORM_SCENE)
 	var target := map_return_scene_path

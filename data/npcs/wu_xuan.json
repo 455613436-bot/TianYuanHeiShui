@@ -53,19 +53,22 @@
       }
     },
     {
-      "id": "wu_xuan_factory_notice_completed",
-      "when": "dialogue_open",
+      "id": "wu_xuan_factory_notice_presented",
+      "when": "clue_presented",
       "once": true,
+      "presented_clues": ["factory_withdrawal_notice"],
       "all_of": [
-        {"type": "quest_stage", "id": "wu_xuan_factory_notice", "min": 2}
+        {"type": "quest_stage", "id": "wu_xuan_factory_notice", "min": 1}
       ],
       "pages": [
+        "这就是系统里缺失的那份撤出公告。原件写得很明确：甘艾集团撤出田原村时，已经提醒这里的水流污染严重。你把它留给我核对一下。",
         "这份公告明明在系统目录里标了“已归档”，原件却没有按流程贴出，扫描件也不在服务器。有人只想留下一个编号，不想留下内容。",
         "我爸以前总说，旧档案牵扯太多，别去碰某几个年份。我以前以为他只是怕麻烦……现在看，他是在筛选村民和外来人能看到什么。",
         "我还不能确定村里的水到底有没有问题。你要是能拿出明确的污染证据——检测结果、可信的样本，或者能互相印证的记录——再来找我。档案系统这边，我先给你开限定查阅。"
       ],
       "choices": ["询问哪些年份不能碰", "询问需要什么污染证据"],
       "effects": {
+        "set_quest_stage": {"id": "wu_xuan_factory_notice", "stage": 2},
         "add_items": ["village_committee_archive_access"],
         "trigger_clues": ["wu_xuan_archive_tampering_suspected"]
       }
@@ -99,6 +102,7 @@
     }
   ],
   "presented_clue_responses": {
+    "factory_withdrawal_notice": "这份公告我已经核对过了。系统只留下归档编号，却没有保存原件和扫描件。",
     "wu_xuan_archive_tampering_suspected": "我查到有人只留下档案编号，却移走原件和扫描件。我爸可能参与限制查阅，但还要用具体档案继续核对。",
     "wu_xuan_factory_notice_missing": "甘艾工厂的撤出公告在系统里标着已归档，纸质原件和扫描件却都不见了。这不是正常的整理疏漏。",
     "wu_xuan_safe_key_handover": "我不知道保险柜里有什么，你要是想看就自己去吧。",

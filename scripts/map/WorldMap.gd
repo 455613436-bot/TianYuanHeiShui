@@ -32,14 +32,15 @@ var _mask_hotspots: Array[Dictionary] = []
 
 func _ready() -> void:
 	add_to_group("world_map")
-	GameState.restore_current_scene()
+	if not bool(get_meta(GameState.MAP_OVERLAY_META, false)):
+		GameState.restore_current_scene()
 	AudioManager.set_map_bgm_ducked(true)
 	_load_locations()
-	for raw_location: Variant in _locations:
-		var location: Dictionary = raw_location as Dictionary
-		_create_mask_hotspot(location)
 	resized.connect(_on_resized)
 	call_deferred("_on_resized")
+	# Web 端逐像素 BitMap 的创建比较昂贵；分散到多个渲染帧，避免地图刚打开
+	# 时在同一帧集中处理 12 张 mask 而造成画面和音频一起卡顿。
+	call_deferred("_build_mask_hotspots_over_frames")
 	if GameState.night_rest_required:
 		subtitle_label.text = "已经 22:00，必须回宿舍休息"
 		location_label.text = "今晚的调查结束了"
@@ -64,6 +65,16 @@ func _load_locations() -> void:
 		if number_a != number_b:
 			return number_a < number_b
 		return String(a.get("id", "")) < String(b.get("id", "")))
+
+
+func _build_mask_hotspots_over_frames() -> void:
+	for raw_location: Variant in _locations:
+		if not is_inside_tree():
+			return
+		var location: Dictionary = raw_location as Dictionary
+		_create_mask_hotspot(location)
+		_layout_mask_hotspots()
+		await get_tree().process_frame
 
 
 func _create_mask_hotspot(location: Dictionary) -> void:

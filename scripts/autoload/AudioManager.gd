@@ -11,8 +11,7 @@ const TITLE_BGM_PATH := "res://assets/audio/bgm/title_lightless_dawn.ogg"
 const MAP_BGM_PATH := "res://assets/audio/bgm/field_path.ogg"
 const FALLBACK_BGM_PATH := "res://assets/audio/bgm/field_path.ogg"
 
-const BGM_BUS_NAME := &"BGM"
-const SFX_BUS_NAME := &"SFX"
+const MASTER_BUS_NAME := &"Master"
 const BGM_FADE_SECONDS := 1.2
 ## Web 浏览器和系统音量通常比桌面版更保守；-14dB 容易被误认为没有播放。
 ## 仍保持低于短促 UI 音效的环境声比例，但提升到可明确听见的水平。
@@ -43,6 +42,7 @@ var _sfx_streams: Dictionary = {}
 var _warned_paths: Dictionary = {}
 var _bgm_players: Array[AudioStreamPlayer] = []
 var _sfx_players: Array[AudioStreamPlayer] = []
+var _bgm_player_fade_db: Array[float] = []
 var _sfx_cursor := 0
 var _active_bgm_index := 0
 var _current_track_key := ""
@@ -60,11 +60,9 @@ var _muted := false
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	_ensure_audio_bus(BGM_BUS_NAME)
-	_ensure_audio_bus(SFX_BUS_NAME)
 	_load_audio_settings()
-	_apply_audio_settings()
 	_create_players()
+	_apply_audio_settings()
 	_load_location_tracks()
 	_load_sfx_streams()
 	if not get_tree().node_added.is_connected(_on_tree_node_added):
@@ -83,15 +81,6 @@ func _unhandled_input(event: InputEvent) -> void:
 	if is_unlock_input:
 		request_web_audio_unlock()
 		retry_current_bgm_if_needed()
-
-
-func _ensure_audio_bus(bus_name: StringName) -> void:
-	var bus_index := AudioServer.get_bus_index(bus_name)
-	if bus_index < 0:
-		AudioServer.add_bus()
-		bus_index = AudioServer.bus_count - 1
-		AudioServer.set_bus_name(bus_index, bus_name)
-	AudioServer.set_bus_send(bus_index, &"Master")
 
 
 func get_audio_settings() -> Dictionary:
@@ -201,20 +190,45 @@ func _save_audio_settings() -> void:
 
 
 func _apply_audio_settings() -> void:
-	var master_index := AudioServer.get_bus_index(&"Master")
+	var master_index := AudioServer.get_bus_index(MASTER_BUS_NAME)
 	if master_index >= 0:
 		AudioServer.set_bus_mute(master_index, _muted)
 		AudioServer.set_bus_volume_db(master_index, _percent_to_db(_master_volume_percent))
-	_apply_bgm_bus_volume()
-	var sfx_index := AudioServer.get_bus_index(SFX_BUS_NAME)
-	if sfx_index >= 0:
-		AudioServer.set_bus_volume_db(sfx_index, _percent_to_db(_sfx_volume_percent))
+	_apply_bgm_player_volumes()
+	for player in _sfx_players:
+		player.volume_db = _sfx_player_volume_db()
 
 
-func _apply_bgm_bus_volume() -> void:
-	var bgm_index := AudioServer.get_bus_index(BGM_BUS_NAME)
-	if bgm_index >= 0:
-		AudioServer.set_bus_volume_db(bgm_index, _percent_to_db(_bgm_volume_percent) + _map_bgm_duck_db)
+func _apply_bgm_player_volumes() -> void:
+	for index in range(_bgm_players.size()):
+		_apply_bgm_player_volume(index)
+
+
+func _apply_bgm_player_volume(index: int) -> void:
+	if index < 0 or index >= _bgm_players.size() or index >= _bgm_player_fade_db.size():
+		return
+	var fade_db := _bgm_player_fade_db[index]
+	if fade_db <= -79.9 or _bgm_volume_percent <= 0.0:
+		_bgm_players[index].volume_db = -80.0
+		return
+	_bgm_players[index].volume_db = clampf(
+		fade_db + _percent_to_db(_bgm_volume_percent) + _map_bgm_duck_db,
+		-80.0,
+		6.0
+	)
+
+
+func _set_bgm_player_fade_db(value: float, index: int) -> void:
+	if index < 0 or index >= _bgm_player_fade_db.size():
+		return
+	_bgm_player_fade_db[index] = value
+	_apply_bgm_player_volume(index)
+
+
+func _sfx_player_volume_db() -> float:
+	if _sfx_volume_percent <= 0.0:
+		return -80.0
+	return clampf(SFX_TARGET_DB + _percent_to_db(_sfx_volume_percent), -80.0, 6.0)
 
 
 func _percent_to_db(percent: float) -> float:
@@ -227,16 +241,17 @@ func _create_players() -> void:
 	for index in range(BGM_PLAYER_COUNT):
 		var player := AudioStreamPlayer.new()
 		player.name = "BGMPlayer%d" % index
-		player.bus = BGM_BUS_NAME
+		player.bus = MASTER_BUS_NAME
 		player.volume_db = -80.0
 		add_child(player)
 		_bgm_players.append(player)
+		_bgm_player_fade_db.append(-80.0)
 
 	for index in range(SFX_PLAYER_COUNT):
 		var player := AudioStreamPlayer.new()
 		player.name = "SFXPlayer%d" % index
-		player.bus = SFX_BUS_NAME
-		player.volume_db = SFX_TARGET_DB
+		player.bus = MASTER_BUS_NAME
+		player.volume_db = _sfx_player_volume_db()
 		add_child(player)
 		_sfx_players.append(player)
 
@@ -299,9 +314,6 @@ func set_map_bgm_ducked(ducked: bool, seconds: float = MAP_BGM_DUCK_SECONDS) -> 
 	if _map_bgm_ducked == ducked:
 		return
 	_map_bgm_ducked = ducked
-	var bus_index := AudioServer.get_bus_index(BGM_BUS_NAME)
-	if bus_index < 0:
-		return
 	if _bgm_bus_tween != null and _bgm_bus_tween.is_valid():
 		_bgm_bus_tween.kill()
 	var target_db := MAP_BGM_DUCK_DB if ducked else 0.0
@@ -312,7 +324,7 @@ func set_map_bgm_ducked(ducked: bool, seconds: float = MAP_BGM_DUCK_SECONDS) -> 
 
 func _set_bgm_duck_db(volume_db: float) -> void:
 	_map_bgm_duck_db = volume_db
-	_apply_bgm_bus_volume()
+	_apply_bgm_player_volumes()
 
 
 func play_location_bgm(location_id: String) -> void:
@@ -342,9 +354,10 @@ func retry_current_bgm_if_needed() -> bool:
 	var track_path := _current_track_path
 	if _bgm_tween != null and _bgm_tween.is_valid():
 		_bgm_tween.kill()
-	for player in _bgm_players:
+	for index in range(_bgm_players.size()):
+		var player := _bgm_players[index]
 		player.stop()
-		player.volume_db = -80.0
+		_set_bgm_player_fade_db(-80.0, index)
 	_current_track_key = ""
 	_current_track_path = ""
 	_play_bgm(track_key, track_path)
@@ -370,12 +383,13 @@ func _play_bgm(track_key: String, path: String) -> void:
 		return
 
 	var old_player := _bgm_players[_active_bgm_index]
+	var old_index := _active_bgm_index
 	var next_index := 1 - _active_bgm_index
 	var next_player := _bgm_players[next_index]
 	next_player.stop()
 	next_player.stream = stream
-	next_player.bus = BGM_BUS_NAME
-	next_player.volume_db = -80.0
+	next_player.bus = MASTER_BUS_NAME
+	_set_bgm_player_fade_db(-80.0, next_index)
 	next_player.play()
 
 	_active_bgm_index = next_index
@@ -384,18 +398,23 @@ func _play_bgm(track_key: String, path: String) -> void:
 
 	var fade := create_tween().set_parallel(true)
 	fade.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	fade.tween_property(next_player, "volume_db", BGM_TARGET_DB, BGM_FADE_SECONDS)
+	fade.tween_method(_set_bgm_player_fade_db.bind(next_index), -80.0, BGM_TARGET_DB, BGM_FADE_SECONDS)
 	if old_player.playing:
-		fade.tween_property(old_player, "volume_db", -80.0, BGM_FADE_SECONDS)
-		fade.finished.connect(_finish_crossfade.bind(old_player))
+		fade.tween_method(
+			_set_bgm_player_fade_db.bind(old_index),
+			_bgm_player_fade_db[old_index],
+			-80.0,
+			BGM_FADE_SECONDS
+		)
+		fade.finished.connect(_finish_crossfade.bind(old_player, old_index))
 	_bgm_tween = fade
 
 
-func _finish_crossfade(old_player: AudioStreamPlayer) -> void:
+func _finish_crossfade(old_player: AudioStreamPlayer, old_index: int) -> void:
 	if not is_instance_valid(old_player):
 		return
 	old_player.stop()
-	old_player.volume_db = -80.0
+	_set_bgm_player_fade_db(-80.0, old_index)
 
 
 func fade_out_bgm(seconds: float = BGM_FADE_SECONDS) -> void:
@@ -411,10 +430,15 @@ func fade_out_bgm(seconds: float = BGM_FADE_SECONDS) -> void:
 		return
 	var fade := create_tween()
 	fade.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	fade.tween_property(active_player, "volume_db", -80.0, maxf(seconds, 0.0))
+	fade.tween_method(
+		_set_bgm_player_fade_db.bind(_active_bgm_index),
+		_bgm_player_fade_db[_active_bgm_index],
+		-80.0,
+		maxf(seconds, 0.0)
+	)
 	await fade.finished
 	active_player.stop()
-	active_player.volume_db = -80.0
+	_set_bgm_player_fade_db(-80.0, _active_bgm_index)
 	if _current_track_key == track_key:
 		_current_track_key = ""
 		_current_track_path = ""
@@ -437,8 +461,8 @@ func play_sfx(effect_id: String) -> void:
 	var player := _sfx_players[_sfx_cursor]
 	_sfx_cursor = (_sfx_cursor + 1) % _sfx_players.size()
 	player.stream = stream
-	player.bus = SFX_BUS_NAME
-	player.volume_db = SFX_TARGET_DB
+	player.bus = MASTER_BUS_NAME
+	player.volume_db = _sfx_player_volume_db()
 	player.play()
 
 

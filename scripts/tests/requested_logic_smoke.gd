@@ -33,6 +33,38 @@ func _run() -> void:
 		_fail("Toolbox possession did not skip Gong Zhong's first-meeting event")
 		return
 
+	GameState.reset_for_new_game()
+	GameState.trigger_clue("factory_withdrawal_notice")
+	GameState.set_quest_stage("wu_xuan_photo_location_match", 2)
+	var wu_xuan_profile := NpcRegistry.get_dialogue_profile("wu_xuan")
+	var premature_notice_event := NpcStoryEvent.find_presented_clue_event(wu_xuan_profile, ["factory_withdrawal_notice"])
+	if String(premature_notice_event.get("id", "")) == "wu_xuan_factory_notice_presented":
+		_fail("Presenting the factory notice before Wu Xuan publishes the task advanced the story")
+		return
+	var photo_event := NpcStoryEvent.find_available_event(wu_xuan_profile, "dialogue_open")
+	if String(photo_event.get("id", "")) != "wu_xuan_photo_match_completed":
+		_fail("Wu Xuan photo completion event was not available")
+		return
+	NpcStoryEvent.apply_event(photo_event)
+	if GameState.get_quest_stage("wu_xuan_factory_notice") != 1:
+		_fail("Merely holding the factory notice completed Wu Xuan's newly published task")
+		return
+	var presented_notice_event := NpcStoryEvent.find_presented_clue_event(wu_xuan_profile, ["factory_withdrawal_notice"])
+	if String(presented_notice_event.get("id", "")) != "wu_xuan_factory_notice_presented":
+		_fail("Explicitly presenting the factory notice did not select its authored progression event")
+		return
+	var notice_pages := NpcStoryEvent.get_pages(presented_notice_event)
+	if notice_pages.size() != 4 or not notice_pages[1].contains("已归档") or not notice_pages[3].contains("限定查阅"):
+		_fail("Wu Xuan's factory-notice follow-up was not merged into the presented event")
+		return
+	NpcStoryEvent.apply_event(presented_notice_event)
+	if GameState.get_quest_stage("wu_xuan_factory_notice") != 2:
+		_fail("Explicitly presenting the factory notice did not advance Wu Xuan's task")
+		return
+	if not GameState.has_item("village_committee_archive_access") or not GameState.has_clue("wu_xuan_archive_tampering_suspected"):
+		_fail("The merged factory-notice event did not grant its archive rewards")
+		return
+
 	GameState.set_quest_stage("hermit_pollution_investigation", 1)
 	GameState.trigger_clue("water_contamination_proof")
 	GameState.trigger_event("hermit_first_meeting")

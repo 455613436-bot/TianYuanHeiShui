@@ -817,9 +817,6 @@ func _on_village_chief_television_closet_choice(interaction_id: String, choice_i
 		}
 	)
 	_refresh_village_chief_night_state()
-	if GameState.get_quest_stage("wu_xuan_factory_notice") >= 1:
-		GameState.set_quest_stage("wu_xuan_factory_notice", 2)
-		GameState.save_game(GameState.AUTO_SAVE_PATH, false)
 
 
 func _open_village_chief_safe() -> void:
@@ -2788,7 +2785,7 @@ func _open_dorm_shower(highlight: MaskInteractionHighlight) -> void:
 	shower_ui.open_choice({
 		"id": "dorm_shower",
 		"title": "淋浴",
-		"description": "洗澡每天只能进行一次。洗澡可避免魅力下降，但会接触村内水源并累计污染影响；污染状态将在次日清晨结算。",
+		"description": "洗澡每天只能进行一次。洗澡后魅力回到初始值。",
 		"choices": [
 			{"id": "shower", "label": "洗澡"},
 			{"id": "leave", "label": "离开", "close": true},

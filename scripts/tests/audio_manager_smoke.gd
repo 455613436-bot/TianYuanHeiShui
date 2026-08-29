@@ -20,6 +20,12 @@ func _run() -> void:
 	if audio == null:
 		_fail("AudioManager autoload was not created")
 		return
+	if int(ProjectSettings.get_setting("audio/general/default_playback_type.web", -1)) != 1:
+		_fail("Web audio is not configured for browser-native Sample playback")
+		return
+	if AudioServer.bus_count != 1 or AudioServer.get_bus_name(0) != &"Master":
+		_fail("Sample playback must use a single Master bus on Web-compatible builds")
+		return
 
 	var locations_file := FileAccess.open(LOCATIONS_PATH, FileAccess.READ)
 	if locations_file == null:
@@ -120,15 +126,33 @@ func _run() -> void:
 	if bgm_player_after_click.get_playback_position() + 0.01 < bgm_position_before_click:
 		_fail("Button SFX rewound the active BGM playback position")
 		return
+	if bgm_player_after_click.bus != &"Master":
+		_fail("BGM player is not routed through the Web-compatible Master bus")
+		return
 	var sfx_playing := false
 	var sfx_players: Array = audio.get("_sfx_players") as Array
 	for player in sfx_players:
 		if player is AudioStreamPlayer and (player as AudioStreamPlayer).playing:
+			if (player as AudioStreamPlayer).bus != &"Master":
+				_fail("SFX player is not routed through the Web-compatible Master bus")
+				return
 			sfx_playing = true
 			break
 	if not sfx_playing:
 		_fail("Button press did not start a SFX player")
 		return
+	await get_tree().create_timer(1.3).timeout
+	var position_before_duck := bgm_player_after_click.get_playback_position()
+	var volume_before_duck := bgm_player_after_click.volume_db
+	audio.call("set_map_bgm_ducked", true, 0.0)
+	await get_tree().process_frame
+	if bgm_player_after_click.get_playback_position() + 0.01 < position_before_duck:
+		_fail("Opening the map rewound the active BGM")
+		return
+	if bgm_player_after_click.volume_db >= volume_before_duck - 3.0:
+		_fail("Opening the map did not lower BGM volume on the player")
+		return
+	audio.call("set_map_bgm_ducked", false, 0.0)
 	option.add_item("选择项")
 	option.item_selected.emit(0)
 

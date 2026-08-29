@@ -200,19 +200,20 @@ func _run() -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	var current := get_tree().current_scene
-	if current == null or String(current.scene_file_path) != GameState.MAP_SCENE:
-		_fail("Map request did not leave dialogue and enter WorldMap")
+	var world_map := get_tree().get_first_node_in_group("world_map")
+	if current != main or world_map == null:
+		_fail("Map request did not open WorldMap as an overlay on the source scene")
 		return
-	if is_instance_valid(dialogue) or is_instance_valid(bag):
-		_fail("Dialogue overlays survived the scene transition")
+	if dialogue.is_open() or bag.is_ui_open():
+		_fail("Dialogue overlays remained open beneath WorldMap")
 		return
 
 	_send_global_key(KEY_B)
 	await get_tree().process_frame
 	await get_tree().process_frame
 	current = get_tree().current_scene
-	if current == null or String(current.scene_file_path) != "res://scenes/main/Main.tscn":
-		_fail("B did not return from WorldMap to the source scene")
+	if current != main or get_tree().get_first_node_in_group("world_map") != null:
+		_fail("B did not close WorldMap and reveal the unchanged source scene")
 		return
 
 	print("INPUT_SHORTCUT_SMOKE_OK")

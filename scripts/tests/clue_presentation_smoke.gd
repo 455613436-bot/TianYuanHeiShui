@@ -168,7 +168,6 @@ func _run() -> void:
 	# immediately enter the authored two-page Wu Xuan event.
 	MemoryStore.reset()
 	MemoryStore.append_turn("wu_xuan", "你好", "你好。", [])
-	GameState.trigger_event("wu_xuan_factory_notice_completed")
 	var dialogue_scene := load("res://scenes/ui/DialogueUI.tscn") as PackedScene
 	if dialogue_scene == null:
 		_fail("DialogueUI scene could not be loaded")
