@@ -16,5 +16,6 @@ ui切图/
 # macOS export zip
 思源村探案mac.zip
 
-# LLM config (contains API key)
-llm_config.json
+# 本地实测用的 LLM 配置（含真实 API Key，不要提交）
+# 仓库里的 llm_config.json 是占位示例，填了自己的 Key 后请放进这个文件并妥善保管
+llm_config.local.json
